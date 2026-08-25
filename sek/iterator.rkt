@@ -51,9 +51,15 @@
          sek-iter-jump!
          sek-iter-reach!
          sek-iter-segment
+         sek-iter-segment*
          sek-iter-segment-and-jump!
+         sek-iter-segment-and-jump*!
          sek-iter-set!
+         sek-iter-set-and-move!
          sek-iter-writable-segment
+         sek-iter-writable-segment*
+         sek-iter-writable-segment-and-jump!
+         sek-iter-writable-segment-and-jump*!
          sek-iter-check)
 
 ;; ---------------------------------------------------------------- cursors
@@ -572,6 +578,18 @@
   (cur-jump! (siter-cursor it) dir (segment-length s))
   s)
 
+;; The same two, returning #f at a sentinel rather than raising -- which is
+;; what a traversal loop wants, since reaching a sentinel is how it ends.
+(define (sek-iter-segment* it [dir 'forward])
+  (check-valid! it 'sek-iter-segment*)
+  (define c (siter-cursor it))
+  (and (not (cur-finished? c)) (cur-segment c dir)))
+
+(define (sek-iter-segment-and-jump*! it [dir 'forward])
+  (define s (sek-iter-segment* it dir))
+  (when s (cur-jump! (siter-cursor it) dir (segment-length s)))
+  s)
+
 ;; ---------------------------------------------------------------- writing
 
 ;; Writing through an iterator requires the chunk under the cursor to be
@@ -605,10 +623,29 @@
   (define c (siter-cursor it))
   (vector-set! (cur-support c) (cur-icur c) x))
 
+(define (sek-iter-set-and-move! it x [dir 'forward])
+  (sek-iter-set! it x)
+  (cur-move! (siter-cursor it) dir))
+
 (define (sek-iter-writable-segment it [dir 'forward])
   (check-writable it 'sek-iter-writable-segment)
   (ensure-owned! it 'sek-iter-writable-segment)
   (cur-segment (siter-cursor it) dir))
+
+(define (sek-iter-writable-segment* it [dir 'forward])
+  (check-valid! it 'sek-iter-writable-segment*)
+  (and (not (cur-finished? (siter-cursor it)))
+       (sek-iter-writable-segment it dir)))
+
+(define (sek-iter-writable-segment-and-jump! it [dir 'forward])
+  (define s (sek-iter-writable-segment it dir))
+  (cur-jump! (siter-cursor it) dir (segment-length s))
+  s)
+
+(define (sek-iter-writable-segment-and-jump*! it [dir 'forward])
+  (define s (sek-iter-writable-segment* it dir))
+  (when s (cur-jump! (siter-cursor it) dir (segment-length s)))
+  s)
 
 ;; ------------------------------------------------------------- validation
 

@@ -151,15 +151,42 @@ in a plain vector.
  @math{O(log_K n)} once the chunks along the path are uniquely owned -- which
  is what makes a run of updates at nearby indices cheap (§2.4).}
 
+The five operations that follow rearrange ephemeral sequences in place, and
+they @italic{consume} the sequences they are given: each one is emptied.  That
+is what the reference library does, and for a good reason -- handing over a
+sequence's representation instead of sharing it keeps later updates out of the
+copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
+@racket[sek-sub] when the input must survive.
+
 @defproc[(eseq-append! [e eseq?] [other (or/c eseq? pseq?)]
                        [side (or/c 'front 'back) 'back]) void?]{
  Appends the contents of @racket[other] to @racket[e], in place, at the given
- end.  @racket[other] is left with the same contents.}
+ end.  An ephemeral @racket[other] is emptied; a persistent one is of course
+ untouched.  The two sequences must be distinct.}
 
-@defproc[(eseq-split [e eseq?] [i exact-nonnegative-integer?])
+@defproc[(eseq-concat! [e1 eseq?] [e2 eseq?]) eseq?]{
+ Returns a new sequence holding the concatenation, and empties both arguments,
+ which must be distinct.}
+
+@defproc[(eseq-split! [e eseq?] [i exact-nonnegative-integer?])
          (values eseq? eseq?)]{
- Returns two new ephemeral sequences holding the first @racket[i] elements and
- the rest.  @racket[e] is left with the same contents.}
+ Returns two new sequences holding the first @racket[i] elements and the rest,
+ and empties @racket[e].}
+
+@defproc[(eseq-carve! [e eseq?] [i exact-nonnegative-integer?]
+                      [side (or/c 'front 'back) 'back]) eseq?]{
+ Splits @racket[e] at @racket[i], keeping one part in @racket[e] and returning
+ the other: @racket['back] keeps the front part, @racket['front] keeps the
+ back part.  Cheaper than @racket[eseq-split!] when one part is going back
+ into the same variable.}
+
+@deftogether[(@defproc[(eseq-take! [e eseq?] [i exact-nonnegative-integer?]
+                                   [side (or/c 'front 'back) 'front]) void?]
+              @defproc[(eseq-drop! [e eseq?] [i exact-nonnegative-integer?]
+                                   [side (or/c 'front 'back) 'front]) void?])]{
+ Truncate @racket[e] at index @racket[i].  @racket[eseq-take!] keeps the front
+ part when @racket[side] is @racket['front] and the back part otherwise;
+ @racket[eseq-drop!] keeps the other one.}
 
 @defproc[(eseq-clear! [e eseq?]) void?]{Empties @racket[e].}
 
@@ -250,7 +277,11 @@ is undefined.  Iterators on persistent sequences are never invalidated.
 @deftogether[(@defproc[(sek-iter-get [it sek-iter?]) any/c]
               @defproc[(sek-iter-get* [it sek-iter?]) any/c])]{
  The element under the iterator.  @racket[sek-iter-get] raises an exception at
- a sentinel; @racket[sek-iter-get*] returns @racket[#f] there.  @math{O(1)}.}
+ a sentinel; @racket[sek-iter-get*] returns @racket[#f] there.  @math{O(1)}.
+
+ Throughout this section, a name ending in @tt{*} is the variant that returns
+ @racket[#f] at a sentinel instead of raising -- which is usually what a
+ traversal loop wants, since reaching a sentinel is how it ends.}
 
 @deftogether[(@defproc[(sek-iter-move! [it sek-iter?]
                                        [dir (or/c 'forward 'backward) 'forward]) void?]
@@ -296,9 +327,15 @@ sequence.
 @deftogether[(@defproc[(sek-iter-segment [it sek-iter?]
                                          [dir (or/c 'forward 'backward) 'forward])
                        segment?]
+              @defproc[(sek-iter-segment* [it sek-iter?]
+                                          [dir (or/c 'forward 'backward) 'forward])
+                       (or/c segment? #f)]
               @defproc[(sek-iter-segment-and-jump! [it sek-iter?]
                                                    [dir (or/c 'forward 'backward) 'forward])
-                       segment?])]{
+                       segment?]
+              @defproc[(sek-iter-segment-and-jump*! [it sek-iter?]
+                                                    [dir (or/c 'forward 'backward) 'forward])
+                       (or/c segment? #f)])]{
  The elements from the current position to the end of the run, in the given
  direction.  Note that a backward segment still lists its elements in
  sequence order; it is the elements at and before the cursor.
@@ -308,6 +345,7 @@ sequence.
 @deftogether[(@defproc[(segment [v vector?] [start exact-nonnegative-integer?]
                                 [len exact-nonnegative-integer?]) segment?]
               @defproc[(segment? [v any/c]) boolean?]
+              @defproc[(segment-valid? [s any/c]) boolean?]
               @defproc[(segment-vector [s segment?]) vector?]
               @defproc[(segment-start [s segment?]) exact-nonnegative-integer?]
               @defproc[(segment-length [s segment?]) exact-nonnegative-integer?]
@@ -328,9 +366,20 @@ sequence.
 @subsection{Writing through an iterator}
 
 @deftogether[(@defproc[(sek-iter-set! [it sek-iter?] [v any/c]) void?]
+              @defproc[(sek-iter-set-and-move! [it sek-iter?] [v any/c]
+                                               [dir (or/c 'forward 'backward) 'forward]) void?]
               @defproc[(sek-iter-writable-segment [it sek-iter?]
                                                   [dir (or/c 'forward 'backward) 'forward])
-                       segment?])]{
+                       segment?]
+              @defproc[(sek-iter-writable-segment* [it sek-iter?]
+                                                   [dir (or/c 'forward 'backward) 'forward])
+                       (or/c segment? #f)]
+              @defproc[(sek-iter-writable-segment-and-jump! [it sek-iter?]
+                                                            [dir (or/c 'forward 'backward) 'forward])
+                       segment?]
+              @defproc[(sek-iter-writable-segment-and-jump*! [it sek-iter?]
+                                                             [dir (or/c 'forward 'backward) 'forward])
+                       (or/c segment? #f)])]{
  Write at the iterator's position, or obtain a segment that may be written
  through.  Both require an iterator on an ephemeral sequence, and both
  invalidate every @italic{other} iterator on that sequence.
@@ -369,7 +418,10 @@ names here.
               @defproc[(sek-for-each/index [s sek?] [proc (-> exact-nonnegative-integer? any/c any)]
                                            [dir (or/c 'forward 'backward) 'forward]) void?]
               @defproc[(sek-segments-for-each [s sek?] [proc (-> segment? any)]
-                                              [dir (or/c 'forward 'backward) 'forward]) void?])]{
+                                              [dir (or/c 'forward 'backward) 'forward]) void?]
+              @defproc[(sek-segments-for-each2 [s1 sek?] [s2 sek?]
+                                               [proc (-> segment? segment? any)]
+                                               [dir (or/c 'forward 'backward) 'forward]) void?])]{
  Apply @racket[proc] to each element, to each index and element, or to each
  run of contiguous storage.  The last is the fastest way to sweep a sequence
  and is what the others are built on.}
@@ -478,8 +530,10 @@ names here.
               @defproc[(build-eseq [n exact-nonnegative-integer?]
                                    [proc (-> exact-nonnegative-integer? any/c)]) eseq?]
               @defproc[(make-pseq [n exact-nonnegative-integer?] [v any/c #f]) pseq?]
-              @defproc[(sequence->pseq [s sequence?]) pseq?]
-              @defproc[(sequence->eseq [s sequence?]) eseq?])]{
+              @defproc[(sequence->pseq [s sequence?]
+                                       [n (or/c exact-nonnegative-integer? #f) #f]) pseq?]
+              @defproc[(sequence->eseq [s sequence?]
+                                       [n (or/c exact-nonnegative-integer? #f) #f]) eseq?])]{
  Build a sequence of @racket[n] elements, or from the elements of any Racket
  @racket[sequence], in @math{O(n + K)}.  See also @racket[make-eseq], which
  takes the same arguments as @racket[make-vector].}
@@ -574,8 +628,14 @@ otherwise it is copied, and the copy becomes uniquely owned.
 @section{Differences from the paper}
 
 This library follows the paper, and where the paper is silent, the authors'
-OCaml library @hyperlink["https://gitlab.inria.fr/fpottier/sek/"]{Sek}.  It
-differs from them in the following ways.
+OCaml library @hyperlink["https://gitlab.inria.fr/fpottier/sek/"]{Sek}.
+
+Agreement with the reference is checked by running both implementations on the
+same generated script and comparing the traces: the result of every operation
+and the full contents of a dozen sequences after each one.  The harness, the
+operation-by-operation mapping between the two APIs, and what has been checked
+are all in the @tt{conformance} directory.  The remaining differences are
+these.
 
 @itemlist[
 
@@ -588,17 +648,21 @@ differs from them in the following ways.
        an operation that builds a sequence returns the same flavour it was
        given.}
 
- @item{@racket[eseq-append!] leaves its second argument alone, and
-       @racket[eseq-split] leaves its argument alone, where the OCaml library
-       clears them.  Concatenation and splitting always work on the persistent
-       flavour underneath, going through @racket[eseq-snapshot] and
-       @racket[pseq-edit], which are both cheap.}
+ @item{@racket[sek-append*] builds a fresh result, where the OCaml library's
+       @tt{flatten} clears the sequence of sequences and every sequence in it.}
+
+ @item{@racket[sek-sort] is stable, so it covers @tt{stable_sort} too;
+       @tt{sort} makes no such promise.}
 
  @item{The iterator supports the operations of the OCaml library's @tt{ITER}
        and @tt{ITER_EPHEMERAL} signatures, but @racket[sek-iter-reach!] always
        descends from the root, where the OCaml version can start from the
        iterator's current position when the target is nearby.  Nearby jumps
        that stay inside one segment are still @math{O(1)}.}
+
+ @item{A @racket[#:short-threshold] of 0 is supported here; the reference
+       rejects it, because it still builds a compact node for a two-element
+       sequence and its own validator then refuses that node.}
 
  @item{The paper's @tt{One} and @tt{Short} constructors for short persistent
        sequences are unified into a single vector representation, and appear

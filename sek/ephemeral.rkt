@@ -45,7 +45,11 @@
          pseq-edit
          eseq-copy
          eseq-append!
-         eseq-split
+         eseq-concat!
+         eseq-split!
+         eseq-carve!
+         eseq-take!
+         eseq-drop!
          eseq->list
          list->eseq
          eseq->vector
@@ -303,8 +307,13 @@
     [else (set-esq-back! e (chunk-set (esq-back e) j x 1 1 id))]))
 
 (define (eseq-first e)
+  (when (eseq-empty? e)
+    (raise-arguments-error 'eseq-first "sequence is empty"))
   (eseq-ref e 0))
+
 (define (eseq-last e)
+  (when (eseq-empty? e)
+    (raise-arguments-error 'eseq-last "sequence is empty"))
   (eseq-ref e (sub1 (eseq-length e))))
 
 ;; --------------------------------------------------------------- conversions
@@ -377,16 +386,45 @@
     (eseq-clear! e2))
   (void))
 
-;; Append the contents of other (an ephemeral or persistent sequence) to e.
-;; Unlike the OCaml library's `append`, this leaves `other` alone.
+;; Append the contents of `other` to `e` at the given end.  As in the OCaml
+;; library, an ephemeral `other` is emptied: handing over its representation
+;; rather than sharing it is what keeps later updates to either sequence out
+;; of the copy-on-write path.  A persistent `other` is of course untouched.
 (define (eseq-append! e other [side 'back])
-  (define o (if (esq? other) (eseq-snapshot other) other))
-  (define self (eseq-snapshot e))
+  (when (eq? e other)
+    (raise-arguments-error 'eseq-append! "the two sequences must be distinct"))
+  (define o (if (esq? other) (eseq-snapshot-and-clear! other) other))
+  (define self (eseq-snapshot-and-clear! e))
   (eseq-become! e (if (eq? side 'front) (pseq-append o self) (pseq-append self o))))
 
-(define (eseq-split e i)
-  (define-values (s1 s2) (pseq-split (eseq-snapshot e) i))
+;; The concatenation of e1 and e2, as a new sequence; both are emptied.
+(define (eseq-concat! e1 e2)
+  (when (eq? e1 e2)
+    (raise-arguments-error 'eseq-concat! "the two sequences must be distinct"))
+  (pseq-edit (pseq-append (eseq-snapshot-and-clear! e1)
+                          (eseq-snapshot-and-clear! e2))))
+
+;; Split e at index i into two new sequences; e is emptied.
+(define (eseq-split! e i)
+  (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
   (values (pseq-edit s1) (pseq-edit s2)))
+
+;; Split e at index i, keeping one part in e and returning the other:
+;; 'back keeps the front part, 'front keeps the back part.
+(define (eseq-carve! e i [side 'back])
+  (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
+  (cond
+    [(eq? side 'back) (eseq-become! e s1) (pseq-edit s2)]
+    [else (eseq-become! e s2) (pseq-edit s1)]))
+
+;; Truncate e at index i, keeping the front part ('front) or the back part
+;; ('back).
+(define (eseq-take! e i [side 'front])
+  (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
+  (eseq-become! e (if (eq? side 'front) s1 s2)))
+
+(define (eseq-drop! e i [side 'front])
+  (eseq-take! e i (if (eq? side 'front) 'back 'front)))
 
 (define (eseq-for-each e proc)
   (define (chunk-elems c)

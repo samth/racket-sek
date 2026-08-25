@@ -210,12 +210,65 @@
   (check-equal? (eseq->list e1) '(9 8))
   (check-equal? (eseq->list e2) '())
 
+  ;; segment-wise binary traversal must agree with the element-wise one
+  (for ([n (in-list '(0 1 5 40 300))])
+    (define xs (build-list n values))
+    (define ys (build-list n (lambda (i) (* 10 i))))
+    (define a (list->pseq xs))
+    (define b (list->eseq ys))
+    (define acc '())
+    (sek-segments-for-each2 a b
+                            (lambda (s1 s2)
+                              (check-equal? (segment-length s1) (segment-length s2))
+                              (check-true (segment-valid? s1))
+                              (segment-for-each2 s1 s2
+                                                 (lambda (x y) (set! acc (cons (+ x y) acc))))))
+    (check-equal? (reverse acc) (map + xs ys)))
+
+  ;; building from a prefix of any sequence
+  (check-equal? (pseq->list (sequence->pseq (in-range 100) 4)) '(0 1 2 3))
+  (check-equal? (eseq->list (sequence->eseq '(a b c d) 2)) '(a b))
+
+  ;; the in-place structural operations, which consume their arguments
+  (define c1 (list->eseq '(1 2 3)))
+  (define c2 (list->eseq '(4 5)))
+  (define c3 (eseq-concat! c1 c2))
+  (check-equal? (eseq->list c3) '(1 2 3 4 5))
+  (check-equal? (eseq->list c1) '())
+  (check-equal? (eseq->list c2) '())
+  (define rest (eseq-carve! c3 2 'back))
+  (check-equal? (eseq->list c3) '(1 2))
+  (check-equal? (eseq->list rest) '(3 4 5))
+  (define front-part (eseq-carve! rest 1 'front))
+  (check-equal? (eseq->list rest) '(4 5))
+  (check-equal? (eseq->list front-part) '(3))
+  (define c4 (list->eseq '(1 2 3 4 5)))
+  (eseq-take! c4 2 'front)
+  (check-equal? (eseq->list c4) '(1 2))
+  (define c5 (list->eseq '(1 2 3 4 5)))
+  (eseq-take! c5 2 'back)
+  (check-equal? (eseq->list c5) '(3 4 5))
+  (define c6 (list->eseq '(1 2 3 4 5)))
+  (eseq-drop! c6 2 'front)
+  (check-equal? (eseq->list c6) '(3 4 5))
+  (define c7 (list->eseq '(1 2 3 4 5)))
+  (define-values (h t) (eseq-split! c7 2))
+  (check-equal? (eseq->list h) '(1 2))
+  (check-equal? (eseq->list t) '(3 4 5))
+  (check-equal? (eseq->list c7) '())
+  ;; ... while sek-take and sek-drop leave theirs alone
+  (define c8 (list->eseq '(1 2 3 4 5)))
+  (check-equal? (eseq->list (sek-take c8 2)) '(1 2))
+  (check-equal? (eseq->list (sek-drop c8 2)) '(3 4 5))
+  (check-equal? (eseq->list c8) '(1 2 3 4 5))
+
   ;; append at either end, leaving the other sequence alone
   (define ea (list->eseq '(3 4)))
   (define eb (list->eseq '(1 2)))
   (eseq-append! ea eb 'front)
   (check-equal? (eseq->list ea) '(1 2 3 4))
-  (check-equal? (eseq->list eb) '(1 2))
+  ;; appending an ephemeral sequence empties it
+  (check-equal? (eseq->list eb) '())
   (eseq-append! ea (list->pseq '(5)) 'back)
   (check-equal? (eseq->list ea) '(1 2 3 4 5))
 

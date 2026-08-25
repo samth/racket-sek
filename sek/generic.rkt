@@ -41,6 +41,7 @@
          sek->vector
          sek-equal?
          sek-compare
+         sek-segments-for-each2
          sek-for-each2
          sek-fold-left2
          sek-fold-right2
@@ -271,6 +272,30 @@
   (sek-exists? s (lambda (y) (eq? x y))))
 
 ;; --------------------------------------------------------- binary traversal
+
+;; Hand matching runs of the two sequences to proc, as a pair of segments of
+;; equal length -- the fast path for a binary loop.
+(define (sek-segments-for-each2 s1 s2 proc [dir 'forward])
+  (check-sek 'sek-segments-for-each2 s1)
+  (check-sek 'sek-segments-for-each2 s2)
+  (define it1 (sek-iterator s1 dir))
+  (define it2 (sek-iterator s2 dir))
+  (define (cut sg k)
+    ;; going backward, a segment ends at the cursor, so trim it at the front
+    (if (eq? dir 'forward)
+        (segment (segment-vector sg) (segment-start sg) k)
+        (segment (segment-vector sg)
+                 (- (+ (segment-start sg) (segment-length sg)) k)
+                 k)))
+  (let loop ()
+    (unless (or (sek-iter-finished? it1) (sek-iter-finished? it2))
+      (define a (sek-iter-segment it1 dir))
+      (define b (sek-iter-segment it2 dir))
+      (define k (min (segment-length a) (segment-length b)))
+      (proc (cut a k) (cut b k))
+      (sek-iter-jump! it1 dir k)
+      (sek-iter-jump! it2 dir k)
+      (loop))))
 
 (define (sek-for-each2 s1 s2 proc [dir 'forward])
   (check-sek 'sek-for-each2 s1)
@@ -512,21 +537,23 @@
         (loop (- remaining k)))))
   (close-builder b s))
 
+;; Neither of these modifies s; the in-place versions are eseq-take! and
+;; eseq-drop!.
 (define (sek-take s n)
   (check-sek 'sek-take s)
   (if (pseq? s)
       (let-values ([(a b) (pseq-split s n)])
         a)
-      (let-values ([(a b) (eseq-split s n)])
-        a)))
+      (let-values ([(a b) (pseq-split (eseq-snapshot s) n)])
+        (pseq-edit a))))
 
 (define (sek-drop s n)
   (check-sek 'sek-drop s)
   (if (pseq? s)
       (let-values ([(a b) (pseq-split s n)])
         b)
-      (let-values ([(a b) (eseq-split s n)])
-        b)))
+      (let-values ([(a b) (pseq-split (eseq-snapshot s) n)])
+        (pseq-edit b))))
 
 (define (sek-copy s #:mode [mode 'share])
   (if (pseq? s)
@@ -610,12 +637,15 @@
 ;; ------------------------------------------------------------ construction
 
 ;; Build from any Racket sequence -- the OCaml library's of_seq.
-(define (sequence->eseq seq)
+(define (sequence->eseq seq [n #f])
   (define e (make-eseq))
-  (for ([x seq]) (eseq-push-back! e x))
+  (if n
+      (for ([x seq] [_ (in-range n)]) (eseq-push-back! e x))
+      (for ([x seq]) (eseq-push-back! e x)))
   e)
 
-(define (sequence->pseq seq) (eseq-snapshot-and-clear! (sequence->eseq seq)))
+(define (sequence->pseq seq [n #f])
+  (eseq-snapshot-and-clear! (sequence->eseq seq n)))
 
 (define (build-eseq n proc)
   (define e (make-eseq))

@@ -43,10 +43,11 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 | `sek/check.rkt` | Appendix A, Fig. 19 | the runtime validation function |
 | `sek/bench.rkt` | §4.3 | the push/pop benchmark |
 | `sek/tests/` | §4.2 | randomized differential testing against list/vector references |
+| `conformance/` | — | differential testing against the OCaml library itself |
 
-The paper describes the data structure; the last three rows follow the
-authors' OCaml library, [Sek](https://gitlab.inria.fr/fpottier/sek/), where the
-paper is silent.
+The paper describes the data structure; segments, iterators, the derived
+operations and the conformance harness follow the authors' OCaml library,
+[Sek](https://gitlab.inria.fr/fpottier/sek/), where the paper is silent.
 
 ## The three ideas
 
@@ -118,7 +119,13 @@ sequence return the flavour they were given:
 `sek-sub` `sek-take` `sek-drop` `sek-copy` `sek-for-each2` `sek-fold-left2`
 `sek-fold-right2` `sek-map2` `sek-zip` `sek-unzip` `sek-for-all2?`
 `sek-exists2?` `sek-equal?` `sek-compare` `sek-fill!` `sek-blit!`
-`build-pseq` `build-eseq` `make-pseq`
+`sek-segments-for-each2` `build-pseq` `build-eseq` `make-pseq`
+`sequence->pseq` `sequence->eseq`
+
+Ephemeral sequences also have the reference library's in-place structural
+operations, which consume the sequences they are given: `eseq-append!`
+`eseq-concat!` `eseq-split!` `eseq-carve!` `eseq-take!` `eseq-drop!`
+`eseq-assign!` `eseq-clear!`.
 
 ## Costs
 
@@ -153,6 +160,17 @@ raco test sek/
 
 The suite runs at chunk capacities from 2 upwards, so the trees get deep and
 the cascading cases in `push`, `pop`, `split` and `merge` are actually reached.
+
+Separately, `conformance/` checks this library against the OCaml one directly:
+a generated script of several hundred operations is run by both, and the two
+traces — the result of every command plus the full contents of a dozen
+sequences after it — must be identical.
+
+```
+cd conformance && ./build.sh && ./run.sh 1 8 700
+```
+
+Ten configurations of the tunable settings, eight seeds each, all match.
 
 ## Benchmark
 
@@ -191,14 +209,21 @@ has iterators.
 
 ## Deviations from the paper
 
+Agreement with the reference is not a claim, it is checked: `conformance/`
+runs the OCaml library and this one on the same generated script and compares
+the traces — the result of every operation and the full contents of a dozen
+sequences after each one. See `conformance/README.md` for the harness, the
+operation-by-operation mapping between the two APIs, and what has been
+checked. The remaining differences:
+
 * Sequences are parameterized by neither an element type nor a `default` value;
   logically empty slots get a private sentinel instead, which removes the
   `default` argument the OCaml library threads through every constructor.
 * The two flavours are one set of names rather than two parallel modules: an
   operation that builds a sequence returns the flavour it was given.
-* `eseq-append!` leaves its second argument alone and `eseq-split` leaves its
-  argument alone, where the OCaml versions clear them. Both go through
-  `eseq-snapshot` and `pseq-edit` underneath.
+* `sek-append*` builds a fresh result, where the OCaml `flatten` clears the
+  sequence of sequences and every sequence in it.
+* `sek-sort` is stable, so it covers `stable_sort` too.
 * `sek-iter-reach!` always descends from the root; the OCaml version can start
   from the iterator's current position when the target is nearby. Jumps that
   stay inside one segment are still O(1).
@@ -209,5 +234,6 @@ has iterators.
 * `eseq-snapshot` folds the inner chunks into the middle sequence, as the
   OCaml library does, so it is O(K log_K n) in the worst case rather than the
   O(1) of Figure 16.
+* A `#:short-threshold` of 0 works here and not there.
 * As in the paper, monotonic in-place updates make the persistent flavour
   unsafe to share across threads without synchronization.

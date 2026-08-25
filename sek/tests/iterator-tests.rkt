@@ -160,6 +160,33 @@
       (loop it)))
   (check-equal? (eseq->list e3) (build-list 400 (lambda (i) (* 2 i))))
 
+  ;; the option-flavoured operations return #f at a sentinel instead of raising
+  (define e7 (list->eseq '(1 2 3)))
+  (define it8 (sek-iterator e7 'forward))
+  (check-true (segment? (sek-iter-segment* it8 'forward)))
+  (check-true (segment? (sek-iter-writable-segment* it8 'forward)))
+  (sek-iter-reach! it8 3)
+  (check-false (sek-iter-segment* it8 'forward))
+  (check-false (sek-iter-segment-and-jump*! it8 'forward))
+  (check-false (sek-iter-writable-segment* it8 'forward))
+  (check-false (sek-iter-writable-segment-and-jump*! it8 'forward))
+  (check-false (sek-iter-get* it8))
+
+  ;; set-and-move, and sweeping with writable segments
+  (define e8 (list->eseq (build-list 300 values)))
+  (let loop ([it (sek-iterator e8 'forward)])
+    (unless (sek-iter-finished? it)
+      (sek-iter-set-and-move! it (- (sek-iter-get it)) 'forward)
+      (loop it)))
+  (check-equal? (eseq->list e8) (build-list 300 -))
+  (let loop ([it (sek-iterator e8 'forward)])
+    (define sg (sek-iter-writable-segment-and-jump*! it 'forward))
+    (when sg
+      (for ([i (in-range (segment-length sg))])
+        (segment-set! sg i (abs (segment-ref sg i))))
+      (loop it)))
+  (check-equal? (eseq->list e8) (build-list 300 values))
+
   ;; invalidation
   (define e4 (list->eseq '(1 2 3)))
   (define it4 (sek-iterator e4 'forward))

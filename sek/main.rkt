@@ -91,7 +91,11 @@
          eseq-ref
          eseq-set!
          eseq-append!
-         eseq-split
+         eseq-concat!
+         eseq-split!
+         eseq-carve!
+         eseq-take!
+         eseq-drop!
          eseq-clear!
          eseq-assign!
          eseq->list
@@ -125,9 +129,15 @@
          sek-iter-jump!
          sek-iter-reach!
          sek-iter-segment
+         sek-iter-segment*
          sek-iter-segment-and-jump!
+         sek-iter-segment-and-jump*!
          sek-iter-set!
+         sek-iter-set-and-move!
          sek-iter-writable-segment
+         sek-iter-writable-segment*
+         sek-iter-writable-segment-and-jump!
+         sek-iter-writable-segment-and-jump*!
          sek-iter-check
 
          ;; ---- segments
@@ -136,6 +146,7 @@
          segment-vector
          segment-start
          segment-length
+         segment-valid?
          segment-empty?
          segment-ref
          segment-set!
@@ -169,6 +180,7 @@
          sek->vector
          sek-equal?
          sek-compare
+         sek-segments-for-each2
          sek-for-each2
          sek-fold-left2
          sek-fold-right2

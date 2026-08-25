@@ -1,2 +1,5 @@
 compiled/
 doc/
+conformance/build/
+conformance/sek-ocaml/
+conformance/driver

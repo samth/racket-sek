@@ -150,8 +150,13 @@
        (define other (vector-ref pool j))
        (cond
          [(> (+ len (length (entry-list other))) max-length) en]
+         [(and ephemeral? (eqv? i j)) en]
          [ephemeral?
           (eseq-append! s (entry-seq other))
+          ;; appending an ephemeral sequence empties it, so the pool's record
+          ;; of the other slot has to follow
+          (when (eq? (entry-kind other) 'e)
+            (vector-set! pool j (entry 'e (entry-seq other) '())))
           (entry 'e s (append xs (entry-list other)))]
          [else
           (define o
@@ -163,7 +168,7 @@
        (define j (random (add1 len)))
        (cond
          [ephemeral?
-          (define-values (e1 e2) (eseq-split s j))
+          (define-values (e1 e2) (eseq-split! s j))
           (check-entry (entry 'e e1 (take xs j)) "eseq-split-left")
           (check-entry (entry 'e e2 (drop xs j)) "eseq-split-right")
           (if (zero? (random 2))

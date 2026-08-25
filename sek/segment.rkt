@@ -18,6 +18,7 @@
          segment-vector
          segment-start
          segment-length
+         segment-valid?
          segment-empty?
          segment-ref
          segment-set!
@@ -42,6 +43,12 @@
 (define segment-vector seg-vector)
 (define segment-start seg-start)
 (define segment-length seg-length)
+
+(define (segment-valid? s)
+  (and (seg? s)
+       (exact-nonnegative-integer? (seg-start s))
+       (exact-nonnegative-integer? (seg-length s))
+       (<= (+ (seg-start s) (seg-length s)) (vector-length (seg-vector s)))))
 
 (define (segment-empty? s)
   (eqv? 0 (seg-length s)))
