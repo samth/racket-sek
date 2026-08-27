@@ -22,9 +22,9 @@ for a in "$@"; do
 done
 
 racket_scenarios="stack front-stack queue traversal random-access hops update
-                  construction concat split snapshot fill capacities"
+                  construction concat split snapshot transient filter fill capacities"
 ocaml_scenarios="stack front-stack queue traversal random-access hops update
-                 construction concat split snapshot fill"
+                 construction concat split snapshot transient filter fill"
 
 if [ "$ocaml" = yes ]; then
   if [ ! -x ./bench-ocaml ]; then

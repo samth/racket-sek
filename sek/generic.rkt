@@ -11,7 +11,10 @@
 ;; is processed with a tight vector loop.  That is what keeps `fold` and
 ;; friends close to the speed of the same loop over an array.
 
-(require racket/vector
+(require (for-syntax racket/base)
+         (only-in racket/unsafe/ops
+                  unsafe-vector*-ref unsafe-fx+ unsafe-fx< unsafe-fx>)
+         racket/vector
          "config.rkt"
          "persistent.rkt"
          "ephemeral.rkt"
@@ -25,6 +28,8 @@
          sek-first
          sek-last
          in-sek
+         in-pseq
+         in-eseq
          sek-segments-for-each
          sek-for-each
          sek-for-each/index
@@ -71,7 +76,11 @@
          build-pseq
          build-eseq
          sequence->pseq
-         sequence->eseq)
+         sequence->eseq
+         for/eseq
+         for*/eseq
+         for/pseq
+         for*/pseq)
 
 (define (sek? v)
   (or (pseq? v) (eseq? v)))
@@ -171,7 +180,9 @@
        (loop (for/fold ([acc acc]) ([j (in-range (sub1 (segment-length sg)) -1 -1)])
                (proc (vector-ref v (+ o j)) acc)))])))
 
-(define (in-sek s [dir 'forward])
+;; The generic-dispatch version, used when a sequence value is passed around
+;; rather than written directly in a for clause.
+(define (in-sek/proc s [dir 'forward])
   (check-sek 'in-sek s)
   (make-do-sequence (lambda ()
                       (define it (sek-iterator s dir))
@@ -183,6 +194,76 @@
                               (lambda (_) (not (sek-iter-finished? it)))
                               #f
                               #f))))
+
+;; Refill the loop state from the iterator's next run of contiguous storage.
+;; Returns the vector, the position to read, the limit, and whether there is
+;; anything left.
+(define (sek-loop-refill it dir)
+  (define sg (sek-iter-segment-and-jump*! it dir))
+  (if sg
+      (let ([o (segment-start sg)] [k (segment-length sg)])
+        (if (eq? dir 'forward)
+            (values (segment-vector sg) o (+ o k) #t)
+            ;; going backward the run is read from its far end inwards
+            (values (segment-vector sg) (+ o k -1) (- o 1) #t)))
+      (values #f 0 0 #f)))
+
+;; In a for clause these expand to a loop over the underlying storage, so the
+;; common step is a vector reference and an increment -- the same shape the
+;; segment-based traversals use, rather than one iterator call per element.
+;;
+;; The four loop variables are the run's vector, the position to read, the
+;; limit, and the step (+1 forward, -1 backward).  All the work happens in one
+;; inner binding, because :do-in binds its inner clauses in parallel.
+(begin-for-syntax
+  (define (sek-for-clause stx)
+    (define (expand seq-expr dir-expr id)
+      (with-syntax ([seq-expr seq-expr] [dir-expr dir-expr] [id id])
+        #'[(id)
+           (:do-in
+            ([(it dir)
+              (let ([d dir-expr]) (values (sek-iterator seq-expr d) d))])
+            #t
+            ([v #f] [i 0] [n 0] [step 1])
+            #t
+            ([(v* i* n* step* id)
+              (if (if (unsafe-fx< step 0) (unsafe-fx> i n) (unsafe-fx< i n))
+                  (values v i n step (unsafe-vector*-ref v i))
+                  (let-values ([(v2 i2 n2 ok?) (sek-loop-refill it dir)])
+                    (if ok?
+                        (values v2 i2 n2
+                                (if (eq? dir 'forward) 1 -1)
+                                (unsafe-vector*-ref v2 i2))
+                        (values #f 0 0 1 #f))))])
+            (if (unsafe-fx< step* 0) (unsafe-fx> i* n*) (unsafe-fx< i* n*))
+            #t
+            (v* (unsafe-fx+ i* step*) n* step*))]))
+    (syntax-case stx ()
+      [[(id) (_ seq-expr)] (expand #'seq-expr #''forward #'id)]
+      [[(id) (_ seq-expr dir-expr)] (expand #'seq-expr #'dir-expr #'id)]
+      [_ #f])))
+
+(define-sequence-syntax in-sek
+  (lambda () #'in-sek/proc)
+  sek-for-clause)
+
+;; The same loop, restricted to one flavour.  These shadow the plain readers
+;; that persistent.rkt and ephemeral.rkt define.
+(define (in-pseq/proc s)
+  (unless (pseq? s) (raise-argument-error 'in-pseq "pseq?" s))
+  (in-sek/proc s 'forward))
+
+(define (in-eseq/proc e)
+  (unless (eseq? e) (raise-argument-error 'in-eseq "eseq?" e))
+  (in-sek/proc e 'forward))
+
+(define-sequence-syntax in-pseq
+  (lambda () #'in-pseq/proc)
+  sek-for-clause)
+
+(define-sequence-syntax in-eseq
+  (lambda () #'in-eseq/proc)
+  sek-for-clause)
 
 (define (sek->list s [dir 'forward])
   (check-sek 'sek->list s)
@@ -441,10 +522,21 @@
                   (eseq-push-back! bs (cdr p))))
   (values (close-builder as s) (close-builder bs s)))
 
-;; Concatenate a sequence of sequences.
+;; Concatenate a sequence of sequences.  On the ephemeral side this is a fold
+;; of eseq-append!, exactly as in the reference library, so -- as there -- it
+;; empties every sequence it is given, including the outer one.  Handing over
+;; each sequence's representation rather than copying its elements is also the
+;; faster way to do it.  On the persistent side nothing is consumed.
 (define (sek-append* s)
   (check-sek 'sek-append* s)
-  (build-from s (lambda (emit) (sek-for-each s (lambda (t) (sek-for-each t emit))))))
+  (cond
+    [(pseq? s)
+     (build-from s (lambda (emit) (sek-for-each s (lambda (t) (sek-for-each t emit)))))]
+    [else
+     (define acc (make-eseq))
+     (sek-for-each s (lambda (t) (unless (eq? t acc) (eseq-append! acc t))))
+     (eseq-clear! s)
+     acc]))
 
 (define (sek-append-map s proc)
   (check-sek 'sek-append-map s)
@@ -658,3 +750,30 @@
 
 (define (make-pseq n [v #f])
   (build-pseq n (lambda (_) v)))
+
+;; Comprehensions, in the shape of for/gvector and for/mutable-treelist.
+(define-syntax (for/eseq stx)
+  (syntax-case stx ()
+    [(_ clauses body ... tail-expr)
+     (quasisyntax/loc stx
+       (let ([acc (make-eseq)])
+         (for/fold/derived #,stx () clauses body ... (eseq-push-back! acc tail-expr) (values))
+         acc))]))
+
+(define-syntax (for*/eseq stx)
+  (syntax-case stx ()
+    [(_ clauses body ... tail-expr)
+     (quasisyntax/loc stx
+       (let ([acc (make-eseq)])
+         (for*/fold/derived #,stx () clauses body ... (eseq-push-back! acc tail-expr) (values))
+         acc))]))
+
+(define-syntax (for/pseq stx)
+  (syntax-case stx ()
+    [(_ clauses body ... tail-expr)
+     (quasisyntax/loc stx (eseq-snapshot-and-clear! (for/eseq clauses body ... tail-expr)))]))
+
+(define-syntax (for*/pseq stx)
+  (syntax-case stx ()
+    [(_ clauses body ... tail-expr)
+     (quasisyntax/loc stx (eseq-snapshot-and-clear! (for*/eseq clauses body ... tail-expr)))]))

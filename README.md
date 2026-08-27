@@ -176,13 +176,17 @@ Ten configurations of the tunable settings, eight seeds each, all match.
 
 `bench/` runs the scenarios from the paper and from the OCaml library's own
 benchmark suite — stack, queue, traversal, random access, hops, update,
-construction, concat, split, snapshot, fill — against Racket's `treelist` and
-`mutable-treelist`, `gvector`, lists, and against the OCaml implementation
-itself.
+construction, concat, split, filter, fill — plus transient scenarios, which the
+reference's suite does not measure. Contenders are Racket's `treelist` and
+`mutable-treelist`, `gvector` (the revised one from
+[racket/data#34](https://github.com/racket/data/pull/34)), lists, and the OCaml
+implementation itself. `bench/bm.rkt` is the benchmark from that gvector PR,
+with sek rows added.
 
 ```
-cd bench && ./run.sh              # this library
-./build-ocaml.sh && ./run.sh --ocaml   # the reference, same scenarios
+cd bench && ./run.sh                    # this library
+./build-ocaml.sh && ./run.sh --ocaml    # the reference, same scenarios
+racket -y bm.rkt                        # the gvector PR benchmark, plus sek
 ```
 
 `bench/README.md` has the tables and the analysis. The short version, at a
@@ -190,28 +194,31 @@ million elements, nanoseconds per operation:
 
 | | eseq | treelist | mutable-treelist | gvector | list |
 | === | ===: | ===: | ===: | ===: | ===: |
-| push/pop at the back | **11.5** | 45.6 | 51.2 | 28.4 | — |
-| push/pop at the front | **11.5** | 203.8 | 208.8 | — | 2.4 |
-| queue (back, front) | **11.4** | 69.3 | 74.8 | — | — |
-| traversal, per element | 2.0 | 1.8 | 1.8 | 1.3 | 1.4 |
-| `ref` at a random index | 63.4 | **10.6** | 16.3 | 11.0 | — |
-| `set` at a random index | 72.0 | 190.2 | **16.6** | 9.4 | — |
-| construction, per element | **10.4** | 48.1 | 52.2 | 18.2 | 46.4 |
-| one snapshot | **209** | — | 1417371 | — | — |
+| push/pop at the back | **10.9** | 45.5 | 51.5 | 27.4 | — |
+| push/pop at the front | **10.5** | 204.2 | 206.4 | — | 2.5 |
+| queue (back, front) | **10.9** | 70.3 | 75.1 | — | — |
+| traversal, per element | 2.0 | 1.8 | 1.8 | 1.3 | 1.3 |
+| `ref` at a random index | 59.8 | **10.7** | 16.3 | 10.8 | — |
+| `set` at a random index | 68.1 | 188.5 | **16.2** | 9.7 | — |
+| construction, per element | **9.8** | 46.8 | 51.7 | 20.4 | 41.2 |
+| filter, per element | **6.7** | 17.3 | — | — | 5.0 |
+| one snapshot | **209** | — | 1714328 | — | — |
 
 The ends are flat in the length of the sequence and indifferent to which end
 you use, which is the whole point; indexing and scattered persistent writes are
 what the design gives up, and they cost about 6× a treelist. Snapshots are the
 headline: `eseq-snapshot` does not depend on the length of the sequence, while
-`mutable-treelist-snapshot` copies — 1.4 ms at a million elements against
-209 ns, some 6800×.
+`mutable-treelist-snapshot` copies — 1.7 ms at a million elements against
+209 ns. In a round trip that changes one element between snapshots, sek is four
+orders of magnitude ahead; a treelist catches up only once tens of thousands of
+writes amortize its copy.
 
 Against the OCaml implementation, the persistent operations are at parity
-(push/pop 0.98×, traversal 0.99×, indexing 1.13×, and persistent `set` is
-0.76× — faster), while everything dominated by mutation and allocation costs
-2–5× more, which is the usual Racket-versus-native-OCaml shape. Snapshotting
-after every push is 10× *faster* here, because this implementation shares the
-end chunks where the reference copies them.
+(push/pop 0.95×, traversal 0.98×, indexing 1.07×, and both flavours of `set`
+are faster here), while allocation-bound work costs 2–5× more, which is the
+usual Racket-versus-native-OCaml shape. Snapshotting after every push is 9×
+*faster* here, because this implementation shares the end chunks where the
+reference copies them.
 
 ## Deviations from the paper
 

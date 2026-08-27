@@ -618,6 +618,77 @@
                 (define s (build-pseq n values))
                 (measure n (lambda () (sek-fold-left s + 0))))))))))
 
+(define-scenario transient
+  "the round trip: edit a persistent sequence, update it in place, snapshot"
+  (define n (big-n))
+  (define counts '(1 10 1000 100000))
+  (define ix (build-vector 100000 (lambda (_) (random n))))
+  (define p (build-pseq n values))
+  (define tl (sequence->treelist (in-range n)))
+  ;; Racket's treelist has the same pair of conversions: treelist-copy is its
+  ;; edit, mutable-treelist-snapshot its snapshot.
+  (table
+   (format "transient: edit, m in-place updates, snapshot, over ~a elements, ns per update" n)
+   (map (lambda (m) (format "m=~a" m)) counts)
+   (list
+    (cons "sek edit/snapshot"
+          (for/list ([m (in-list counts)])
+            (measure m #:max-reps 200
+                     (lambda ()
+                       (define e (pseq-edit p))
+                       (for ([k (in-range m)])
+                         (eseq-set! e (vector-ref ix (modulo k 100000)) 0))
+                       (eseq-snapshot e)))))
+    (cons "treelist copy/snapshot"
+          (for/list ([m (in-list counts)])
+            (measure m #:max-reps 200
+                     (lambda ()
+                       (define t (treelist-copy tl))
+                       (for ([k (in-range m)])
+                         (mutable-treelist-set! t (vector-ref ix (modulo k 100000)) 0))
+                       (mutable-treelist-snapshot t)))))
+    (cons "sek persistent set"
+          (for/list ([m (in-list counts)])
+            (measure m #:max-reps 200
+                     (lambda ()
+                       (for/fold ([s p]) ([k (in-range m)])
+                         (pseq-set s (vector-ref ix (modulo k 100000)) 0))))))
+    (cons "treelist persistent set"
+          (for/list ([m (in-list counts)])
+            (measure m #:max-reps 200
+                     (lambda ()
+                       (for/fold ([t tl]) ([k (in-range m)])
+                         (treelist-set t (vector-ref ix (modulo k 100000)) 0)))))))))
+
+(define-scenario filter
+  "the paper's motivating example: filter a persistent sequence"
+  (define sizes (sizes-m))
+  (define (keep? x) (zero? (modulo x 3)))
+  (table
+   "filter: keep one element in three, ns per input element"
+   sizes
+   (list
+    (cons "pseq"
+          (for/list ([n (in-list sizes)])
+            (define s (build-pseq n values))
+            (measure n (lambda () (sek-filter s keep?)))))
+    (cons "eseq"
+          (for/list ([n (in-list sizes)])
+            (define s (build-eseq n values))
+            (measure n (lambda () (sek-filter s keep?)))))
+    (cons "treelist"
+          (for/list ([n (in-list sizes)])
+            (define t (sequence->treelist (in-range n)))
+            (measure n (lambda () (treelist-filter keep? t)))))
+    (cons "  list"
+          (for/list ([n (in-list sizes)])
+            (define l (build-list n values))
+            (measure n (lambda () (filter keep? l)))))
+    (cons "  vector"
+          (for/list ([n (in-list sizes)])
+            (define v (build-vector n values))
+            (measure n (lambda () (vector-filter keep? v))))))))
+
 (module+ main
   (define args (vector->list (current-command-line-arguments)))
   (when (member "--quick" args) (quick? #t))

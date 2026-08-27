@@ -26,7 +26,10 @@
 ;; to the sequence invalidates every live iterator, and using an invalidated
 ;; iterator raises an error rather than quietly reading stale memory.
 
-(require "config.rkt"
+(require (only-in racket/unsafe/ops
+                  unsafe-vector*-ref unsafe-vector*-set!
+                  unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>)
+         "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
          "persistent.rkt"
@@ -97,11 +100,13 @@
 ;; The weight index of the current position.
 (define (cur-index c)
   (if (eqv? (cur-depth c) 0)
-      (+ (cur-w c) (- (cur-icur c) (cur-ishd c)))
+      (unsafe-fx+ (cur-w c) (unsafe-fx- (cur-icur c) (cur-ishd c)))
       (cur-w c)))
 
+;; icur always indexes inside the current segment, which is a range of the
+;; support vector, so the bound check is redundant here.
 (define (cur-get c)
-  (vector-ref (cur-support c) (cur-icur c)))
+  (unsafe-vector*-ref (cur-support c) (cur-icur c)))
 
 (define (cur-item-weight c)
   (if (eqv? (cur-depth c) 0)
@@ -183,7 +188,7 @@
 
 ;; The index of the current item within its chunk.
 (define (icur-sch c)
-  (+ (cur-ishd-sch c) (- (cur-icur c) (cur-ishd c))))
+  (unsafe-fx+ (cur-ishd-sch c) (unsafe-fx- (cur-icur c) (cur-ishd c))))
 
 ;; The weight of the front chunk and of the middle sequence, which together
 ;; give the weight index at which each of the three regions of a level starts.
@@ -200,19 +205,19 @@
 (define (cur-move! c dir)
   (cond
     [(eq? dir 'forward)
-     (define i (add1 (cur-icur c)))
+     (define i (unsafe-fx+ (cur-icur c) 1))
      (cond
-       [(< i (cur-istl c))
+       [(unsafe-fx< i (cur-istl c))
         (unless (eqv? (cur-depth c) 0)
-          (set-cur-w! c (+ (cur-w c) (cur-item-weight c))))
+          (set-cur-w! c (unsafe-fx+ (cur-w c) (cur-item-weight c))))
         (set-cur-icur! c i)]
        [else (move-next-segment! c dir)])]
     [else
      (cond
-       [(> (cur-icur c) (cur-ishd c))
-        (set-cur-icur! c (sub1 (cur-icur c)))
+       [(unsafe-fx> (cur-icur c) (cur-ishd c))
+        (set-cur-icur! c (unsafe-fx- (cur-icur c) 1))
         (unless (eqv? (cur-depth c) 0)
-          (set-cur-w! c (- (cur-w c) (cur-item-weight c))))]
+          (set-cur-w! c (unsafe-fx- (cur-w c) (cur-item-weight c))))]
        [else (move-next-segment! c dir)])]))
 
 ;; A chunk holds at most two segments, because its occupied region wraps
@@ -370,7 +375,14 @@
      (define base (cur-wbase c))
      (cond
        [(and ch (>= target base) (< target (+ base (chunk-weight ch))))
-        (define-values (q j) (chunk-item-at ch (- target base) (cur-depth c)))
+        (define off (- target base))
+        ;; where the cursor already sits inside this chunk, so that an
+        ;; unpacked chunk is scanned from there rather than from its start
+        (define cur-off (- (cur-index c) base))
+        (define-values (q j)
+          (if (>= off cur-off)
+              (chunk-item-at/from ch off (cur-depth c) (icur-sch c) cur-off)
+              (chunk-item-at ch off (cur-depth c))))
         (install-in-chunk! c q (- target j))]
        [else (reach-inside! c target)])]))
 
@@ -646,7 +658,7 @@
   (check-writable it 'sek-iter-set!)
   (ensure-owned! it 'sek-iter-set!)
   (define c (siter-cursor it))
-  (vector-set! (cur-support c) (cur-icur c) x))
+  (unsafe-vector*-set! (cur-support c) (cur-icur c) x))
 
 (define (sek-iter-set-and-move! it x [dir 'forward])
   (sek-iter-set! it x)

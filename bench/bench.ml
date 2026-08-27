@@ -328,6 +328,42 @@ let scenario_fill () =
     [ row "eseq (fill)" fill_run ks; row "eseq (set loop)" set_run ks;
       row "  array" a_run ks ]
 
+let scenario_transient () =
+  let n = big_n () in
+  let counts = [ 1; 10; 1000; 100000 ] in
+  let ix = Array.init 100000 (fun _ -> Random.int n) in
+  let p = p_of n in
+  let edit_run m =
+    measure m (fun () ->
+        let e = Sek.edit p in
+        for k = 0 to m - 1 do
+          E.set e ix.(k mod 100000) 0
+        done;
+        ignore (Sek.snapshot e))
+  in
+  let pset_run m =
+    measure m (fun () ->
+        let s = ref p in
+        for k = 0 to m - 1 do
+          s := P.set !s ix.(k mod 100000) 0
+        done)
+  in
+  table
+    (Printf.sprintf
+       "transient: edit, m in-place updates, snapshot, over %d elements, ns per update" n)
+    (List.map (fun m -> "m=" ^ string_of_int m) counts)
+    [ row "sek edit/snapshot" edit_run counts;
+      row "sek persistent set" pset_run counts ]
+
+let scenario_filter () =
+  let sizes = sizes_m () in
+  let keep x = x mod 3 = 0 in
+  let p_run n = let s = p_of n in measure n (fun () -> ignore (P.filter keep s)) in
+  let e_run n = let s = e_of n in measure n (fun () -> ignore (E.filter keep s)) in
+  let l_run n = let l = l_of n in measure n (fun () -> ignore (List.filter keep l)) in
+  table "filter: keep one element in three, ns per input element" (show_ints sizes)
+    [ row "pseq" p_run sizes; row "eseq" e_run sizes; row "  list" l_run sizes ]
+
 let scenarios =
   [ "stack", scenario_stack;
     "front-stack", scenario_front_stack;
@@ -340,6 +376,8 @@ let scenarios =
     "concat", scenario_concat;
     "split", scenario_split;
     "snapshot", scenario_snapshot;
+    "transient", scenario_transient;
+    "filter", scenario_filter;
     "fill", scenario_fill ]
 
 let () =

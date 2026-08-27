@@ -16,7 +16,24 @@
 ;; with the occupied range of its support, and no other chunk shares that
 ;; support.
 
-(require "config.rkt")
+(require (only-in racket/unsafe/ops
+                  unsafe-vector*-ref unsafe-vector*-set! unsafe-vector*-length
+                  unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>= unsafe-fx=)
+         "config.rkt")
+
+;; Unsafe operations are used on the paths that every push, pop and indexed
+;; access goes through.  Each use rests on an invariant maintained here:
+;;
+;;   * a support's data vector is created by make-vector in this module and is
+;;     never impersonated, so unsafe-vector*- operations apply;
+;;   * an index into a support is always reduced modulo the capacity by wrap+
+;;     or wrap-, so it lies in [0, capacity);
+;;   * heads, sizes and capacities are bounded by a vector length, and weights
+;;     by the length of a sequence, so all of them are fixnums.
+;;
+;; The invariant checker in check.rkt verifies the first two after every
+;; operation in the test suite, and the conformance harness runs the same
+;; operations against the reference implementation.
 
 (provide chunk-weight
          chunk-length
@@ -42,6 +59,7 @@
          chunk-pop-back
          chunk-set
          chunk-item-at
+         chunk-item-at/from
          chunk-ref-atomic
          chunk-set-atomic
          unit-measure
@@ -85,22 +103,22 @@
   #:authentic)
 
 (define (wrap+ i k)
-  (if (< i k)
+  (if (unsafe-fx< i k)
       i
-      (- i k)))
+      (unsafe-fx- i k)))
 (define (wrap- i k)
-  (if (< i 0)
-      (+ i k)
+  (if (unsafe-fx< i 0)
+      (unsafe-fx+ i k)
       i))
 
 (define (chunk-capacity c)
-  (vector-length (support-data (chunk-support c))))
+  (unsafe-vector*-length (support-data (chunk-support c))))
 (define (chunk-length c)
   (chunk-size c))
 (define (chunk-empty? c)
-  (eqv? 0 (chunk-size c)))
+  (unsafe-fx= 0 (chunk-size c)))
 (define (chunk-full? c)
-  (= (chunk-size c) (chunk-capacity c)))
+  (unsafe-fx= (chunk-size c) (chunk-capacity c)))
 
 (define (chunk-owned? c owner)
   (and owner (eqv? (chunk-id c) owner)))
@@ -166,9 +184,10 @@
 (define empty-chunk (chunk (support (vector) 0 0) 0 0 0 #f))
 
 (define (chunk-ref c i)
-  (define s (chunk-support c))
-  (define data (support-data s))
-  (vector-ref data (wrap+ (+ (chunk-head c) i) (vector-length data))))
+  (define data (support-data (chunk-support c)))
+  (unsafe-vector*-ref data
+                      (wrap+ (unsafe-fx+ (chunk-head c) i)
+                             (unsafe-vector*-length data))))
 
 (define (chunk-first c)
   (chunk-ref c 0))
@@ -238,22 +257,24 @@
 (define (owned-push-back! c x w)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
-  (vector-set! (support-data s) (wrap+ (+ (chunk-head c) (chunk-size c)) k) x)
-  (set-support-size! s (add1 (support-size s)))
-  (set-chunk-size! c (add1 (chunk-size c)))
-  (set-chunk-weight! c (+ (chunk-weight c) w))
+  (unsafe-vector*-set! (support-data s)
+                       (wrap+ (unsafe-fx+ (chunk-head c) (chunk-size c)) k)
+                       x)
+  (set-support-size! s (unsafe-fx+ (support-size s) 1))
+  (set-chunk-size! c (unsafe-fx+ (chunk-size c) 1))
+  (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) w))
   c)
 
 (define (owned-push-front! c x w)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
-  (define i (wrap- (sub1 (chunk-head c)) k))
-  (vector-set! (support-data s) i x)
+  (define i (wrap- (unsafe-fx- (chunk-head c) 1) k))
+  (unsafe-vector*-set! (support-data s) i x)
   (set-support-head! s i)
-  (set-support-size! s (add1 (support-size s)))
+  (set-support-size! s (unsafe-fx+ (support-size s) 1))
   (set-chunk-head! c i)
-  (set-chunk-size! c (add1 (chunk-size c)))
-  (set-chunk-weight! c (+ (chunk-weight c) w))
+  (set-chunk-size! c (unsafe-fx+ (chunk-size c) 1))
+  (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) w))
   c)
 
 ;; Persistent push: either a monotonic in-place update of a slot that no view
@@ -315,10 +336,12 @@
      (define s (chunk-support c))
      (define k (chunk-capacity c))
      (when (overwrite-empty-slots?)
-       (vector-set! (support-data s) (wrap+ (+ (chunk-head c) (sub1 n)) k) none))
-     (set-support-size! s (sub1 (support-size s)))
-     (set-chunk-size! c (sub1 n))
-     (set-chunk-weight! c (- (chunk-weight c) w))
+       (unsafe-vector*-set! (support-data s)
+                            (wrap+ (unsafe-fx+ (chunk-head c) (unsafe-fx- n 1)) k)
+                            none))
+     (set-support-size! s (unsafe-fx- (support-size s) 1))
+     (set-chunk-size! c (unsafe-fx- n 1))
+     (set-chunk-weight! c (unsafe-fx- (chunk-weight c) w))
      (values x c)]
     [else
      (values x
@@ -332,12 +355,12 @@
     [(chunk-owned? c owner)
      (define s (chunk-support c))
      (when (overwrite-empty-slots?)
-       (vector-set! (support-data s) (chunk-head c) none))
-     (set-support-head! s (wrap+ (add1 (chunk-head c)) k))
-     (set-support-size! s (sub1 (support-size s)))
-     (set-chunk-head! c (wrap+ (add1 (chunk-head c)) k))
-     (set-chunk-size! c (sub1 (chunk-size c)))
-     (set-chunk-weight! c (- (chunk-weight c) w))
+       (unsafe-vector*-set! (support-data s) (chunk-head c) none))
+     (set-support-head! s (wrap+ (unsafe-fx+ (chunk-head c) 1) k))
+     (set-support-size! s (unsafe-fx- (support-size s) 1))
+     (set-chunk-head! c (wrap+ (unsafe-fx+ (chunk-head c) 1) k))
+     (set-chunk-size! c (unsafe-fx- (chunk-size c) 1))
+     (set-chunk-weight! c (unsafe-fx- (chunk-weight c) w))
      (values x c)]
     [else
      (values x
@@ -356,8 +379,8 @@
     [(chunk-owned? c owner)
      (define s (chunk-support c))
      (define k (chunk-capacity c))
-     (vector-set! (support-data s) (wrap+ (+ (chunk-head c) i) k) x)
-     (set-chunk-weight! c (+ (chunk-weight c) (- wnew wold)))
+     (unsafe-vector*-set! (support-data s) (wrap+ (unsafe-fx+ (chunk-head c) i) k) x)
+     (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) (unsafe-fx- wnew wold)))
      c]
     [else
      (define k (chunk-capacity c))
@@ -375,11 +398,14 @@
 ;;
 ;; A chunk is *packed* when all of its items have maximal weight, which is
 ;; detected in O(1) and lets the linear scan be replaced by a division.
-(define (chunk-item-at c i d)
+;; q0 is an item index whose weight offset within the chunk is acc0; the scan
+;; starts there when the target lies at or after it.  A cursor knows where it
+;; already is, which is what makes a short hop inside an unpacked chunk cheap.
+(define (chunk-item-at/from c i d q0 acc0)
   (define n (chunk-size c))
   (define mw (max-item-weight d))
-  (define (scan)
-    (let loop ([q 0] [acc 0])
+  (define (scan q acc)
+    (let loop ([q q] [acc acc])
       (define w (chunk-weight (chunk-ref c q)))
       (if (< i (+ acc w))
           (values q (- i acc))
@@ -389,13 +415,18 @@
     [else
      (define sh (max-item-weight-shift d))
      (cond
+       ;; a packed chunk is indexed by a shift, or a division when the
+       ;; capacities are not powers of two
        [sh
         (if (eqv? (chunk-weight c) (arithmetic-shift n sh))
             (values (arithmetic-shift i (- sh)) (bitwise-and i (sub1 mw)))
-            (scan))]
+            (scan q0 acc0))]
        [(eqv? (chunk-weight c) (* n mw))
         (let-values ([(q r) (quotient/remainder i mw)]) (values q r))]
-       [else (scan)])]))
+       [else (scan q0 acc0)])]))
+
+(define (chunk-item-at c i d)
+  (chunk-item-at/from c i d 0 0))
 
 ;; Descend from a chunk of depth d items to the atomic element at index i.
 ;; This lives here, beside chunk-item-at and chunk-ref, so that the compiler

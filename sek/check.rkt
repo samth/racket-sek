@@ -107,10 +107,11 @@
 ;; carrying this sequence's id really is aligned with its support.
 (define (check-eseq e)
   (define id (eseq-id e))
+  ;; a side that has never been pushed to carries the shared stand-in
   (define f (eseq-front e))
   (define b (eseq-back e))
-  (check-chunk f 0 id)
-  (check-chunk b 0 id)
+  (unless (eq? f empty-chunk) (check-chunk f 0 id))
+  (unless (eq? b empty-chunk) (check-chunk b 0 id))
   (for ([c (in-list (list (eseq-ifront e) (eseq-iback e)))]
         [name (in-list '(ifront iback))])
     (unless (eq? c empty-chunk)

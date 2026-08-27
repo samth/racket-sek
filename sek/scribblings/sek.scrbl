@@ -110,10 +110,9 @@ in a plain vector.
               @defproc[(pseq->vector [s pseq?]) vector?]
               @defproc[(vector->pseq [v vector?]) pseq?]
               @defproc[(pseq-for-each [s pseq?] [proc (-> any/c any)]) void?]
-              @defproc[(pseq-map [s pseq?] [proc (-> any/c any/c)]) pseq?]
-              @defproc[(in-pseq [s pseq?]) sequence?])]{
- Conversion and iteration, all @math{O(n)}.  @racket[in-pseq] walks the tree
- lazily, so consuming only a prefix costs only that prefix.}
+              @defproc[(pseq-map [s pseq?] [proc (-> any/c any/c)]) pseq?])]{
+ Conversion and iteration, all @math{O(n)}.  See @racket[in-pseq] below for
+ iterating in a @racket[for] clause.}
 
 @subsection{Ephemeral sequences}
 
@@ -197,11 +196,9 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
 @deftogether[(@defproc[(eseq->list [e eseq?]) list?]
               @defproc[(list->eseq [xs list?]) eseq?]
               @defproc[(eseq->vector [e eseq?]) vector?]
-              @defproc[(eseq-for-each [e eseq?] [proc (-> any/c any)]) void?]
-              @defproc[(in-eseq [e eseq?]) sequence?])]{
- Conversion and iteration, all @math{O(n)}.  @racket[in-eseq] walks the tree
- lazily; it does not check for concurrent modification, so do not use it
- across an update to @racket[e] -- @racket[in-sek] is the checked alternative.}
+              @defproc[(eseq-for-each [e eseq?] [proc (-> any/c any)]) void?])]{
+ Conversion and iteration, all @math{O(n)}.  See @racket[in-eseq] below for
+ iterating in a @racket[for] clause.}
 
 @subsection{Converting between the two flavours}
 
@@ -407,10 +404,14 @@ names here.
 
 @subsection{Traversal}
 
-@defproc[(in-sek [s sek?] [dir (or/c 'forward 'backward) 'forward]) sequence?]{
- A @racket[sequence] over the elements.  Unlike @racket[in-pseq] and
- @racket[in-eseq], this goes through a checked iterator, so modifying an
- ephemeral sequence during the loop is detected rather than silently
+@deftogether[(@defform*[((in-sek s) (in-sek s dir))]
+              @defform*[((in-pseq s) (in-pseq s dir))]
+              @defform*[((in-eseq e) (in-eseq e dir))])]{
+ Sequences over the elements, in @racket['forward] order by default.  Written
+ directly in a @racket[for] clause these expand to a loop over the sequence's
+ own storage, so a step is a vector reference and an increment; used as
+ ordinary values they fall back to a checked iterator.  Either way, modifying
+ an ephemeral sequence during the loop is detected rather than silently
  producing nonsense.}
 
 @deftogether[(@defproc[(sek-for-each [s sek?] [proc (-> any/c any)]
@@ -466,7 +467,10 @@ names here.
               @defproc[(sek-append* [s sek?]) sek?]
               @defproc[(sek-append-map [s sek?] [proc (-> any/c sek?)]) sek?])]{
  The usual list-shaped operations, each @math{O(n)} plus the cost of
- @racket[proc].  @racket[sek-append*] concatenates a sequence of sequences.}
+ @racket[proc].  @racket[sek-append*] concatenates a sequence of sequences;
+ given an ephemeral one it empties both it and its elements, as the reference
+ library's @tt{flatten} does, because it hands over each sequence's
+ representation rather than copying its elements.}
 
 @deftogether[(@defproc[(sek-sub [s sek?] [start exact-nonnegative-integer?]
                                 [size exact-nonnegative-integer?]) sek?]
@@ -533,10 +537,15 @@ names here.
               @defproc[(sequence->pseq [s sequence?]
                                        [n (or/c exact-nonnegative-integer? #f) #f]) pseq?]
               @defproc[(sequence->eseq [s sequence?]
-                                       [n (or/c exact-nonnegative-integer? #f) #f]) eseq?])]{
+                                       [n (or/c exact-nonnegative-integer? #f) #f]) eseq?]
+              @defform[(for/eseq (for-clause ...) body ...+)]
+              @defform[(for*/eseq (for-clause ...) body ...+)]
+              @defform[(for/pseq (for-clause ...) body ...+)]
+              @defform[(for*/pseq (for-clause ...) body ...+)])]{
  Build a sequence of @racket[n] elements, or from the elements of any Racket
- @racket[sequence], in @math{O(n + K)}.  See also @racket[make-eseq], which
- takes the same arguments as @racket[make-vector].}
+ @racket[sequence], or from the results of a comprehension, in
+ @math{O(n + K)}.  See also @racket[make-eseq], which takes the same arguments
+ as @racket[make-vector].}
 
 @section{Transient arrays}
 
@@ -625,6 +634,26 @@ otherwise it is copied, and the copy becomes uniquely owned.
  operation.  It costs @math{O(n)} and is meant for testing, not production
  use.}
 
+@section{Implementation notes}
+
+The paths that every push, pop and indexed access goes through use
+@racketmodname[racket/unsafe/ops].  Each use rests on an invariant the
+library maintains: a chunk's backing vector is allocated here and never
+impersonated; an index into it is always reduced modulo the capacity, so it is
+in range; and heads, sizes and weights are bounded by a vector length or a
+sequence length, so they are fixnums.  The runtime validator checks the first
+two after every operation in the test suite, and the conformance harness runs
+the same operations against the reference implementation.
+
+An ephemeral sequence does not allocate its front and back chunks until the
+first push to that side.  Figure 16 gives the cost of creating one as
+@math{O(n + K)}, the @math{K} being those two arrays; deferring them makes
+creation @math{O(1)} without making anything else slower, since the first push
+allocates exactly the chunk it needs.  It is worth having when a program makes
+many short-lived sequences -- though for that use a growable vector is still
+the better tool, because a chunk of capacity @math{K} is a lot of storage for
+a ten-element sequence.
+
 @section{Differences from the paper}
 
 This library follows the paper, and where the paper is silent, the authors'
@@ -648,9 +677,6 @@ these.
        an operation that builds a sequence returns the same flavour it was
        given.}
 
- @item{@racket[sek-append*] builds a fresh result, where the OCaml library's
-       @tt{flatten} clears the sequence of sequences and every sequence in it.}
-
  @item{@racket[sek-sort] is stable, so it covers @tt{stable_sort} too;
        @tt{sort} makes no such promise.}
 
@@ -658,8 +684,14 @@ these.
        and @tt{ITER_EPHEMERAL} signatures.  @racket[sek-iter-reach!] reuses the
        cursor's position when the target lies in the run or the chunk it is
        already on, which is what makes a scan with short hops cheap, but
-       otherwise descends from the root; the reference can additionally search
-       from the current position inside the middle sequence.}
+       descends from the root when the target is in a different chunk, where
+       the reference can sometimes continue from the middle-sequence cursor.}
+
+ @item{@racket[pseq-edit] and @racket[eseq-snapshot] share the front and back
+       chunks instead of copying them.  This is observationally identical and
+       measurably better -- a loop that snapshots after every push runs ten
+       times faster -- because the next push usually extends a chunk
+       monotonically and copies nothing.}
 
  @item{A @racket[#:short-threshold] of 0 is supported here; the reference
        rejects it, because it still builds a compact node for a two-element

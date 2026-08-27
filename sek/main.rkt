@@ -22,8 +22,9 @@
 
 (require "config.rkt"
          "array.rkt"
-         "persistent.rkt"
-         "ephemeral.rkt"
+         ;; generic.rkt provides faster for-clause versions of these two
+         (except-in "persistent.rkt" in-pseq)
+         (except-in "ephemeral.rkt" in-eseq)
          "iterator.rkt"
          "segment.rkt"
          "generic.rkt"
@@ -211,6 +212,10 @@
          build-eseq
          sequence->pseq
          sequence->eseq
+         for/eseq
+         for*/eseq
+         for/pseq
+         for*/pseq
 
          ;; ---- runtime validation (Appendix A)
          (rename-out [check-pseq sek-validate-pseq] [check-eseq sek-validate-eseq]))

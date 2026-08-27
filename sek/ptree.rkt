@@ -135,12 +135,21 @@
 
 ;; populate-sides (§3.2): restore invariant 1 by moving one chunk out of the
 ;; middle sequence onto each side that is empty.
+;; An ephemeral sequence may carry the shared zero-capacity stand-in on a side
+;; it has never pushed to, which saves allocating a chunk that is never used.
+;; A level cannot: pushing into its front chunk has to have somewhere to put
+;; the element.  So a stand-in that survives into a level is replaced here --
+;; and only here, so nothing is allocated when the side gets filled from the
+;; middle sequence instead.
+(define (real-chunk c d owner)
+  (if (eqv? (chunk-capacity c) (capacity-at d)) c (make-chunk (capacity-at d) owner)))
+
 (define (pt-populate-sides f m b d owner)
   (cond
     [(not m)
      (if (and (chunk-empty? f) (chunk-empty? b))
          #f
-         (make-level f #f b))]
+         (make-level (real-chunk f d owner) #f (real-chunk b d owner)))]
     [else
      (define-values (f* m*)
        (if (chunk-empty? f)
@@ -152,7 +161,7 @@
            (values b m*)))
      (if (and (chunk-empty? f*) (chunk-empty? b*) (not m**))
          #f
-         (make-level f* m** b*))]))
+         (make-level (real-chunk f* d owner) m** (real-chunk b* d owner)))]))
 
 ;; ----------------------------------------------------------------- get / set
 

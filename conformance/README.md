@@ -80,7 +80,7 @@ both `Ephemeral.map` and `Persistent.map`.
 | `map` / `mapi` / `rev` | `sek-map` / `sek-map/index` / `sek-reverse` |
 | `zip` / `unzip` | `sek-zip` / `sek-unzip` |
 | `filter` / `filter_map` / `partition` | `sek-filter` / `sek-filter-map` / `sek-partition` |
-| `flatten` / `flatten_map` | `sek-append*` / `sek-append-map` |
+| `flatten` / `flatten_map` | `sek-append*` (consumes an ephemeral argument, as `flatten` does) / `sek-append-map` |
 | `iter2 dir` / `iter2_segments` | `sek-for-each2` / `sek-segments-for-each2` |
 | `fold_left2` / `fold_right2` / `map2` | `sek-fold-left2` / `sek-fold-right2` / `sek-map2` |
 | `for_all2` / `exists2` | `sek-for-all2?` / `sek-exists2?` |
@@ -114,15 +114,15 @@ both `Ephemeral.map` and `Persistent.map`.
 * **No `default` value.** Every OCaml constructor takes one, because the
   library must initialize array slots without knowing the element type. Here
   a private sentinel does that job, so the argument does not appear.
-* **`flatten` is not destructive.** The OCaml version clears the sequence of
-  sequences and every sequence in it, because it is built out of `append`.
-  `sek-append*` builds a fresh result and leaves its input alone.
 * **`sort` is stable**, so it also serves as `stable_sort`.
-* **`sek-iter-reach!` exploits less locality.** It reuses the cursor's position
-  when the target is in the run or the chunk it is already on, and descends
-  from the root otherwise; the OCaml version can also search from the current
-  position inside the middle sequence. Same result either way.
+* **`sek-iter-reach!` exploits slightly less locality.** It reuses the cursor's
+  position when the target is in the run or the chunk it is already on, and
+  scans an unpacked chunk from there; it descends from the root when the
+  target is in a different chunk, where the OCaml version can sometimes
+  continue from the middle-sequence cursor. Same result either way.
 * **`pseq-edit` and `eseq-snapshot` do not copy the front and back chunks**,
-  where the OCaml versions do. Observationally identical; the copy happens on
-  the first write to a shared chunk instead, if there is one.
+  where the OCaml versions do. Observationally identical, and measurably
+  better: a loop that snapshots after every push runs ten times faster this
+  way (see `bench/README.md`), because the next push usually extends a chunk
+  monotonically and copies nothing.
 * **`threshold = 0`** is supported here and not there, as described above.

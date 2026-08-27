@@ -16,7 +16,8 @@
 ;; may be updated in place.  Taking a snapshot installs a fresh id, at which
 ;; point every chunk in the structure silently becomes immutable.
 
-(require "config.rkt"
+(require (only-in racket/unsafe/ops unsafe-fx+ unsafe-fx- unsafe-fx<)
+         "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
          "persistent.rkt"
@@ -93,10 +94,14 @@
           (loop (cdr xs) (add1 n))]))
      (write-string ">" port))])
 
+;; The front and back chunks start as the shared zero-capacity stand-in, and
+;; a real one is allocated by the first push to that side.  Creating a
+;; sequence is then O(1) rather than O(K), which matters when a program makes
+;; many short-lived ones; nothing downstream gets slower, because the first
+;; push allocates exactly the chunk it needs.
 (define (make-eseq [n 0] [v #f])
   (define id (fresh-id!))
-  (define k (capacity-at 0))
-  (define e (esq id (make-chunk k id) empty-chunk #f empty-chunk (make-chunk k id) 0))
+  (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 0))
   (for ([_ (in-range n)]) (eseq-push-back! e v))
   e)
 
@@ -147,26 +152,26 @@
     (set-esq-middle! e (pt-push-front (esq-middle e) ifr (chunk-weight ifr) 1 id))
     (set-esq-ifront! e empty-chunk)))
 
+;; Every component weight is bounded by the length of the sequence, so these
+;; sums are fixnum arithmetic.
 (define (eseq-length e)
-  (+ (chunk-weight (esq-front e))
-     (chunk-weight (esq-ifront e))
-     (pt-weight (esq-middle e))
-     (chunk-weight (esq-iback e))
-     (chunk-weight (esq-back e))))
+  (unsafe-fx+
+   (unsafe-fx+ (chunk-weight (esq-front e)) (chunk-weight (esq-ifront e)))
+   (unsafe-fx+ (pt-weight (esq-middle e))
+               (unsafe-fx+ (chunk-weight (esq-iback e))
+                           (chunk-weight (esq-back e))))))
 
 (define (eseq-empty? e)
   (eqv? 0 (eseq-length e)))
 
 (define (eseq-clear! e)
-  (define id (fresh-id!))
-  (define k (capacity-at 0))
   (eseq-invalidate-iterators! e)
-  (set-esq-id! e id)
-  (set-esq-front! e (make-chunk k id))
+  (set-esq-id! e (fresh-id!))
+  (set-esq-front! e empty-chunk)
   (set-esq-ifront! e empty-chunk)
   (set-esq-middle! e #f)
   (set-esq-iback! e empty-chunk)
-  (set-esq-back! e (make-chunk k id)))
+  (set-esq-back! e empty-chunk))
 
 ;; --------------------------------------------------------------------- push
 
@@ -272,11 +277,14 @@
   (define nj (chunk-weight (esq-iback e)))
   (define nb (chunk-weight (esq-back e)))
   (cond
-    [(< i nf) (values 'front i)]
-    [(< i (+ nf ni)) (values 'ifront (- i nf))]
-    [(< i (+ nf ni nm)) (values 'middle (- i nf ni))]
-    [(< i (+ nf ni nm nj)) (values 'iback (- i nf ni nm))]
-    [(< i (+ nf ni nm nj nb)) (values 'back (- i nf ni nm nj))]
+    [(unsafe-fx< i nf) (values 'front i)]
+    [(unsafe-fx< i (unsafe-fx+ nf ni)) (values 'ifront (unsafe-fx- i nf))]
+    [(unsafe-fx< i (unsafe-fx+ (unsafe-fx+ nf ni) nm))
+     (values 'middle (unsafe-fx- (unsafe-fx- i nf) ni))]
+    [(unsafe-fx< i (unsafe-fx+ (unsafe-fx+ nf ni) (unsafe-fx+ nm nj)))
+     (values 'iback (unsafe-fx- (unsafe-fx- (unsafe-fx- i nf) ni) nm))]
+    [(unsafe-fx< i (unsafe-fx+ (unsafe-fx+ nf ni) (unsafe-fx+ nm (unsafe-fx+ nj nb))))
+     (values 'back (unsafe-fx- (unsafe-fx- (unsafe-fx- (unsafe-fx- i nf) ni) nm) nj))]
     [else (raise-arguments-error who "index out of range"
                                  "index" i "length" (eseq-length e))]))
 
@@ -354,7 +362,7 @@
     [(not r) (make-eseq)]
     [(vector? r)
      (esq id (chunk-of-vector r k unit-measure id) empty-chunk #f empty-chunk
-          (make-chunk k id) 0)]
+          empty-chunk 0)]
     [else
      (esq id (lvl-front r) empty-chunk (lvl-middle r) empty-chunk (lvl-back r) 0)]))
 

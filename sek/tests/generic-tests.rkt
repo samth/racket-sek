@@ -5,8 +5,8 @@
          racket/list
          racket/vector
          "../config.rkt"
-         "../persistent.rkt"
-         "../ephemeral.rkt"
+         (except-in "../persistent.rkt" in-pseq)
+         (except-in "../ephemeral.rkt" in-eseq)
          "../generic.rkt"
          "../segment.rkt"
          "../check.rkt")
@@ -209,6 +209,28 @@
   (eseq-assign! e1 e2)
   (check-equal? (eseq->list e1) '(9 8))
   (check-equal? (eseq->list e2) '())
+
+  ;; comprehensions
+  (check-equal? (eseq->list (for/eseq ([i (in-range 5)]) (* i i))) '(0 1 4 9 16))
+  (check-equal? (pseq->list (for/pseq ([i (in-range 3)]) i)) '(0 1 2))
+  (check-equal? (eseq->list (for*/eseq ([i 2] [j 2]) (list i j)))
+                '((0 0) (0 1) (1 0) (1 1)))
+  (check-equal? (pseq->list (for*/pseq ([i 2] [j 2]) (+ i j))) '(0 1 1 2))
+
+  ;; flatten consumes its argument and its elements, as the reference's does
+  (define f1 (list->eseq '(1 2)))
+  (define f2 (list->eseq '(3)))
+  (define outer (list->eseq (list f1 f2)))
+  (check-equal? (eseq->list (sek-append* outer)) '(1 2 3))
+  (check-equal? (eseq->list f1) '())
+  (check-equal? (eseq->list f2) '())
+  (check-equal? (eseq->list outer) '())
+  ;; ... but the persistent one does not
+  (define p1 (list->pseq '(1 2)))
+  (define pouter (list->pseq (list p1 (list->pseq '(3)))))
+  (check-equal? (pseq->list (sek-append* pouter)) '(1 2 3))
+  (check-equal? (pseq->list p1) '(1 2))
+  (check-equal? (pseq-length pouter) 2)
 
   ;; segment-wise binary traversal must agree with the element-wise one
   (for ([n (in-list '(0 1 5 40 300))])
