@@ -42,6 +42,8 @@
          chunk-pop-back
          chunk-set
          chunk-item-at
+         chunk-ref-atomic
+         chunk-set-atomic
          unit-measure
          weight-measure
          measure-at
@@ -173,14 +175,34 @@
 (define (chunk-last c)
   (chunk-ref c (sub1 (chunk-size c))))
 
+;; Copy the items of c that lie in [start, start+len) into dst at position at.
+;; The occupied region wraps around at most once, so this is one or two
+;; vector-copy!s rather than a loop that redoes the wrap arithmetic per item.
+(define (chunk-blit! c start len dst at)
+  (define data (support-data (chunk-support c)))
+  (define k (vector-length data))
+  (define from (if (eqv? k 0) 0 (wrap+ (+ (chunk-head c) start) k)))
+  (define run (min len (- k from)))
+  (vector-copy! dst at data from (+ from run))
+  (when (< run len)
+    (vector-copy! dst (+ at run) data 0 (- len run))))
+
+;; The total weight of those same items.  At depth 0 every item weighs one, so
+;; the scan is skipped entirely.
+(define (chunk-items-weight c start len mw)
+  (if (eq? mw unit-measure)
+      len
+      (for/fold ([w 0]) ([j (in-range start (+ start len))])
+        (+ w (mw (chunk-ref c j))))))
+
 (define (chunk-of-vector v cap mw owner)
   (define n (vector-length v))
   (define data (make-vector cap none))
+  (vector-copy! data 0 v 0 n)
   (define w
-    (for/fold ([w 0]) ([i (in-range n)])
-      (define x (vector-ref v i))
-      (vector-set! data i x)
-      (+ w (mw x))))
+    (if (eq? mw unit-measure)
+        n
+        (for/fold ([w 0]) ([i (in-range n)]) (+ w (mw (vector-ref v i))))))
   (chunk (support data 0 n) 0 n w owner))
 
 (define (chunk-of-list xs cap mw owner)
@@ -195,14 +217,9 @@
 ;; support: sharing one would break the ownership invariant if c happens to be
 ;; owned by somebody.
 (define (chunk-sub c start len mw)
-  (define n len)
   (define data (make-vector (chunk-capacity c) none))
-  (define w
-    (for/fold ([w 0]) ([i (in-range n)])
-      (define x (chunk-ref c (+ start i)))
-      (vector-set! data i x)
-      (+ w (mw x))))
-  (chunk (support data 0 n) 0 n w no-owner))
+  (chunk-blit! c start len data 0)
+  (chunk (support data 0 len) 0 len (chunk-items-weight c start len mw) no-owner))
 
 ;; The concatenation of two chunks, which must fit within one capacity.
 (define (chunk-fuse a b owner)
@@ -210,10 +227,8 @@
   (define nb (chunk-size b))
   (define cap (max (chunk-capacity a) (chunk-capacity b)))
   (define data (make-vector cap none))
-  (for ([i (in-range na)])
-    (vector-set! data i (chunk-ref a i)))
-  (for ([i (in-range nb)])
-    (vector-set! data (+ na i) (chunk-ref b i)))
+  (chunk-blit! a 0 na data 0)
+  (chunk-blit! b 0 nb data na)
   (chunk (support data 0 (+ na nb)) 0 (+ na nb) (+ (chunk-weight a) (chunk-weight b)) owner))
 
 ;; --------------------------------------------------------------------- push
@@ -256,8 +271,7 @@
      (chunk s (chunk-head c) (add1 n) (+ (chunk-weight c) w) (chunk-id c))]
     [else
      (define data (make-vector k none))
-     (for ([i (in-range n)])
-       (vector-set! data i (chunk-ref c i)))
+     (chunk-blit! c 0 n data 0)
      (vector-set! data n x)
      (chunk (support data 0 (add1 n)) 0 (add1 n) (+ (chunk-weight c) w) owner)]))
 
@@ -275,8 +289,7 @@
     [else
      (define data (make-vector k none))
      (vector-set! data 0 x)
-     (for ([i (in-range n)])
-       (vector-set! data (add1 i) (chunk-ref c i)))
+     (chunk-blit! c 0 n data 1)
      (chunk (support data 0 (add1 n)) 0 (add1 n) (+ (chunk-weight c) w) owner)]))
 
 (define (chunk-push-back c x w owner)
@@ -350,8 +363,7 @@
      (define k (chunk-capacity c))
      (define n (chunk-size c))
      (define data (make-vector k none))
-     (for ([j (in-range n)])
-       (vector-set! data j (chunk-ref c j)))
+     (chunk-blit! c 0 n data 0)
      (vector-set! data i x)
      (chunk (support data 0 n) 0 n (+ (chunk-weight c) (- wnew wold)) owner)]))
 
@@ -366,13 +378,42 @@
 (define (chunk-item-at c i d)
   (define n (chunk-size c))
   (define mw (max-item-weight d))
+  (define (scan)
+    (let loop ([q 0] [acc 0])
+      (define w (chunk-weight (chunk-ref c q)))
+      (if (< i (+ acc w))
+          (values q (- i acc))
+          (loop (add1 q) (+ acc w)))))
   (cond
     [(eqv? mw 1) (values i 0)]
-    [(= (chunk-weight c) (* n mw)) (values (quotient i mw) (remainder i mw))]
     [else
-     (let loop ([q 0]
-                [acc 0])
-       (define w (chunk-weight (chunk-ref c q)))
-       (if (< i (+ acc w))
-           (values q (- i acc))
-           (loop (add1 q) (+ acc w))))]))
+     (define sh (max-item-weight-shift d))
+     (cond
+       [sh
+        (if (eqv? (chunk-weight c) (arithmetic-shift n sh))
+            (values (arithmetic-shift i (- sh)) (bitwise-and i (sub1 mw)))
+            (scan))]
+       [(eqv? (chunk-weight c) (* n mw))
+        (let-values ([(q r) (quotient/remainder i mw)]) (values q r))]
+       [else (scan)])]))
+
+;; Descend from a chunk of depth d items to the atomic element at index i.
+;; This lives here, beside chunk-item-at and chunk-ref, so that the compiler
+;; can see through the calls; it is the inner loop of every indexed access.
+(define (chunk-ref-atomic c i d)
+  (if (eqv? d 0)
+      (chunk-ref c i)
+      (let-values ([(q j) (chunk-item-at c i d)])
+        (chunk-ref-atomic (chunk-ref c q) j (sub1 d)))))
+
+;; The same descent, rebuilding the chunks along the way.
+(define (chunk-set-atomic c i x d owner)
+  (cond
+    [(eqv? d 0) (chunk-set c i x 1 1 owner)]
+    [else
+     (define-values (q j) (chunk-item-at c i d))
+     (define inner (chunk-ref c q))
+     (define inner* (chunk-set-atomic inner j x (sub1 d) owner))
+     (if (eq? inner inner*)
+         c
+         (chunk-set c q inner* (chunk-weight inner) (chunk-weight inner*) owner))]))

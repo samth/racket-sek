@@ -82,7 +82,10 @@
                [ishd-sch #:mutable]
                ;; at depth 0, the weight index of the head of the current
                ;; segment; deeper down, the weight index of the current item
-               [w #:mutable])
+               [w #:mutable]
+               ;; the weight index of the first item of the current chunk,
+               ;; which is what lets a short hop skip the descent
+               [wbase #:mutable])
   #:authentic)
 
 (define empty-support (vector))
@@ -108,7 +111,7 @@
 ;; ------------------------------------------------------------ construction
 
 (define (blank-cur depth wt front middle back sv)
-  (cur depth wt front middle back sv 'sf #f empty-support 0 0 0 0 -1))
+  (cur depth wt front middle back sv 'sf #f empty-support 0 0 0 0 -1 0))
 
 (define (cur-of-tree t depth)
   (if t
@@ -138,7 +141,8 @@
        (cur-ishd c)
        (cur-istl c)
        (cur-ishd-sch c)
-       (cur-w c)))
+       (cur-w c)
+       (cur-wbase c)))
 
 ;; ------------------------------------------------------------- positioning
 
@@ -170,9 +174,11 @@
                   (- wcur (- i shd))
                   wcur)))
 
-(define (install-chunk! c path ch i wcur)
+;; base is the weight index of the chunk's first item within this level.
+(define (install-chunk! c path ch i wcur base)
   (set-cur-path! c path)
   (set-cur-chunk! c ch)
+  (set-cur-wbase! c base)
   (install-in-chunk! c i wcur))
 
 ;; The index of the current item within its chunk.
@@ -252,7 +258,7 @@
            (if (eqv? (cur-depth c) 0)
                1
                (chunk-weight (chunk-ref ch i))))))
-  (install-chunk! c path ch i w))
+  (install-chunk! c path ch i w base))
 
 ;; Enter the middle sequence from one end, or continue with an existing
 ;; cursor into it.
@@ -347,7 +353,26 @@
      (set-cur-icur! c target)
      (set-cur-ishd-sch! c 0)
      (set-cur-w! c 0)]
-    [else (reach-inside! c target)]))
+    ;; Still inside the run of storage the cursor is on: one write.  At depth
+    ;; 0 the items weigh one each, so the offset within the segment is just
+    ;; the difference of the weight indices.
+    [(and (eqv? (cur-depth c) 0)
+          (let ([off (- target (cur-w c))])
+            (and (>= off 0)
+                 (< off (- (cur-istl c) (cur-ishd c)))
+                 (begin (set-cur-icur! c (+ (cur-ishd c) off)) #t))))
+     (void)]
+    [else
+     ;; Still inside the chunk the cursor is on: move within it instead of
+     ;; descending from the root.  A hop shorter than a chunk stays put nearly
+     ;; every time, which is the common case for a scan.
+     (define ch (cur-chunk c))
+     (define base (cur-wbase c))
+     (cond
+       [(and ch (>= target base) (< target (+ base (chunk-weight ch))))
+        (define-values (q j) (chunk-item-at ch (- target base) (cur-depth c)))
+        (install-in-chunk! c q (- target j))]
+       [else (reach-inside! c target)])]))
 
 ;; Descend to the item that covers weight index `target`, exactly as `get`
 ;; does on the tree itself.
@@ -364,11 +389,11 @@
   (cond
     [(< target wf)
      (define-values (q j) (chunk-item-at f target d))
-     (install-chunk! c 'front f q (- target j))]
+     (install-chunk! c 'front f q (- target j) 0)]
     [(>= target (+ wf wm))
      (define t2 (- target wf wm))
      (define-values (q j) (chunk-item-at b t2 d))
-     (install-chunk! c 'back b q (- target j))]
+     (install-chunk! c 'back b q (- target j) (+ wf wm))]
     [else
      (define p (cur-path c))
      (define mi
@@ -380,7 +405,7 @@
      (define ch (cur-get mi))
      (define j (- t2 (cur-index mi)))
      (define-values (q j2) (chunk-item-at ch j d))
-     (install-chunk! c mi ch q (- target j2))]))
+     (install-chunk! c mi ch q (- target j2) (+ wf (cur-index mi)))]))
 
 (define (cur-jump! c dir n)
   (unless (eqv? n 0)

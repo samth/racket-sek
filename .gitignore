@@ -3,3 +3,6 @@ doc/
 conformance/build/
 conformance/sek-ocaml/
 conformance/driver
+bench/build/
+bench/sek-ocaml/
+bench/bench-ocaml

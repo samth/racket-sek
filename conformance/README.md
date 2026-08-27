@@ -118,9 +118,10 @@ both `Ephemeral.map` and `Persistent.map`.
   sequences and every sequence in it, because it is built out of `append`.
   `sek-append*` builds a fresh result and leaves its input alone.
 * **`sort` is stable**, so it also serves as `stable_sort`.
-* **`sek-iter-reach!` always descends from the root**, where the OCaml version
-  can start from the iterator's current position when the target is nearby.
-  Same result; jumps that stay inside one segment are O(1) either way.
+* **`sek-iter-reach!` exploits less locality.** It reuses the cursor's position
+  when the target is in the run or the chunk it is already on, and descends
+  from the root otherwise; the OCaml version can also search from the current
+  position inside the middle sequence. Same result either way.
 * **`pseq-edit` and `eseq-snapshot` do not copy the front and back chunks**,
   where the OCaml versions do. Observationally identical; the copy happens on
   the first write to a shared chunk instead, if there is one.

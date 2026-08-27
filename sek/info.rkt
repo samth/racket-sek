@@ -7,4 +7,4 @@
 (define scribblings '(("scribblings/sek.scrbl" ())))
 (define pkg-desc "Catenable, splittable, transient sequences (Charguéraud & Pottier, ICFP 2026)")
 (define pkg-authors '(samth))
-(define test-omit-paths '("bench.rkt"))
+

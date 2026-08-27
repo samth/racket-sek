@@ -9,6 +9,7 @@
 
 (provide capacity-at
          max-item-weight
+         max-item-weight-shift
          leaf-capacity
          node-capacity
          short-threshold
@@ -41,11 +42,36 @@
 ;; The largest weight an item of depth d can have, i.e. the product of the
 ;; capacities of the levels below it.  A chunk all of whose items have this
 ;; weight is "packed" (§3.2) and can be indexed in O(1) by division.
+;; It is consulted once per level on every indexed access, so it is tabulated
+;; rather than recomputed; 32 levels is past the reach of any real sequence
+;; (with the smallest legal capacity that is already 2^32 elements).
+(define miw-depth 32)
+(define miw-cache (make-vector miw-depth 1))
+;; log2 of the same value when it is a power of two, else #f.  Indexing a
+;; packed chunk is a division by this weight, and capacities are powers of two
+;; often enough -- both defaults are -- that it is worth turning those
+;; divisions into shifts.
+(define miw-shift-cache (make-vector miw-depth #f))
+
+(define (exact-log2 n)
+  (and (positive? n) (zero? (bitwise-and n (sub1 n)))
+       (let loop ([n n] [k 0]) (if (eqv? n 1) k (loop (arithmetic-shift n -1) (add1 k))))))
+
+(define (recompute-max-item-weights!)
+  (vector-set! miw-cache 0 1)
+  (vector-set! miw-shift-cache 0 0)
+  (for ([d (in-range 1 miw-depth)])
+    (define w (* leaf-cap (expt node-cap (sub1 d))))
+    (vector-set! miw-cache d w)
+    (vector-set! miw-shift-cache d (exact-log2 w))))
+
 (define (max-item-weight d)
-  (cond
-    [(eqv? d 0) 1]
-    [(eqv? d 1) leaf-cap]
-    [else (* leaf-cap (expt node-cap (sub1 d)))]))
+  (if (< d miw-depth)
+      (vector-ref miw-cache d)
+      (* leaf-cap (expt node-cap (sub1 d)))))
+
+(define (max-item-weight-shift d)
+  (and (< d miw-depth) (vector-ref miw-shift-cache d)))
 
 ;; Should a slot that becomes logically empty be overwritten?  Leaving it
 ;; alone saves one write but lets the garbage collector retain a value that
@@ -77,4 +103,7 @@
   (set! node-cap k1)
   (set! thresh t)
   (set! overwrite? (and ow #t))
-  (set! checking? (and ck #t)))
+  (set! checking? (and ck #t))
+  (recompute-max-item-weights!))
+
+(recompute-max-item-weights!)

@@ -156,13 +156,6 @@
 
 ;; ----------------------------------------------------------------- get / set
 
-;; Descend from a chunk of depth d items to the atomic element at index i.
-(define (chunk-ref-atomic c i d)
-  (if (eqv? d 0)
-      (chunk-ref c i)
-      (let-values ([(q j) (chunk-item-at c i d)])
-        (chunk-ref-atomic (chunk-ref c q) j (sub1 d)))))
-
 (define (pt-ref t i d)
   (define f (lvl-front t))
   (define m (lvl-middle t))
@@ -172,17 +165,6 @@
     [(< i wf) (chunk-ref-atomic f i d)]
     [(< i (+ wf wm)) (pt-ref m (- i wf) (add1 d))]
     [else (chunk-ref-atomic (lvl-back t) (- i wf wm) d)]))
-
-(define (chunk-set-atomic c i x d owner)
-  (cond
-    [(eqv? d 0) (chunk-set c i x 1 1 owner)]
-    [else
-     (define-values (q j) (chunk-item-at c i d))
-     (define inner (chunk-ref c q))
-     (define inner* (chunk-set-atomic inner j x (sub1 d) owner))
-     (if (eq? inner inner*)
-         c
-         (chunk-set c q inner* (chunk-weight inner) (chunk-weight inner*) owner))]))
 
 (define (pt-set t i x d owner)
   (define f (lvl-front t))

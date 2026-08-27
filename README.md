@@ -41,7 +41,7 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 | `sek/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
 | `sek/generic.rkt` | `Generic`, `PublicSignature` | the derived operation surface |
 | `sek/check.rkt` | Appendix A, Fig. 19 | the runtime validation function |
-| `sek/bench.rkt` | §4.3 | the push/pop benchmark |
+| `bench/` | §4.3 | benchmarks against Racket's sequences and against the OCaml library |
 | `sek/tests/` | §4.2 | randomized differential testing against list/vector references |
 | `conformance/` | — | differential testing against the OCaml library itself |
 
@@ -172,40 +172,46 @@ cd conformance && ./build.sh && ./run.sh 1 8 700
 
 Ten configurations of the tunable settings, eight seeds each, all match.
 
-## Benchmark
+## Benchmarks
 
-`sek/bench.rkt` runs the scenario of §4.3 — repeat `n` pushes followed by `n`
-pops until 2 million pushes have happened — against Racket's `gvector`, a
-mutable box holding a list, and an immutable list. On one machine
-(Racket CS 9.3, ns per push/pop pair):
+`bench/` runs the scenarios from the paper and from the OCaml library's own
+benchmark suite — stack, queue, traversal, random access, hops, update,
+construction, concat, split, snapshot, fill — against Racket's `treelist` and
+`mutable-treelist`, `gvector`, lists, and against the OCaml implementation
+itself.
 
-| n | eseq | gvector | box of list | pseq | immutable list |
-| --- | --- | --- | --- | --- | --- |
-| 10 | 18.5 | 38.6 | 5.4 | 21.6 | 2.5 |
-| 1 000 | 18.5 | 37.8 | 4.1 | 25.3 | 2.1 |
-| 100 000 | 19.1 | 37.6 | 4.1 | 25.7 | 2.3 |
-| 1 000 000 | 19.3 | 55.3 | 8.5 | 27.7 | 5.2 |
+```
+cd bench && ./run.sh              # this library
+./build-ocaml.sh && ./run.sh --ocaml   # the reference, same scenarios
+```
 
-The shape matches the paper's Figures 17 and 18: Sek beats a growable vector by
-about 2x and stays flat as the sequence grows, while structures that pay for
-locality (`gvector`) or allocation (lists) degrade at a million elements.
-Racket's lists remain the fastest way to use a sequence *as a stack* — but they
-are only a stack.
+`bench/README.md` has the tables and the analysis. The short version, at a
+million elements, nanoseconds per operation:
 
-The same file also measures what the iterators and segments buy. Summing a
-million-element persistent sequence:
+| | eseq | treelist | mutable-treelist | gvector | list |
+| === | ===: | ===: | ===: | ===: | ===: |
+| push/pop at the back | **11.5** | 45.6 | 51.2 | 28.4 | — |
+| push/pop at the front | **11.5** | 203.8 | 208.8 | — | 2.4 |
+| queue (back, front) | **11.4** | 69.3 | 74.8 | — | — |
+| traversal, per element | 2.0 | 1.8 | 1.8 | 1.3 | 1.4 |
+| `ref` at a random index | 63.4 | **10.6** | 16.3 | 11.0 | — |
+| `set` at a random index | 72.0 | 190.2 | **16.6** | 9.4 | — |
+| construction, per element | **10.4** | 48.1 | 52.2 | 18.2 | 46.4 |
+| one snapshot | **209** | — | 1417371 | — | — |
 
-| how | ns per element |
-| --- | --- |
-| `sek-fold-left` (segments) | 2.1 |
-| iterator, one element at a time | 11.3 |
-| `pseq-ref` at each index | 48.0 |
-| Racket vector | 0.6 |
-| Racket list | 1.2 |
+The ends are flat in the length of the sequence and indifferent to which end
+you use, which is the whole point; indexing and scattered persistent writes are
+what the design gives up, and they cost about 6× a treelist. Snapshots are the
+headline: `eseq-snapshot` does not depend on the length of the sequence, while
+`mutable-treelist-snapshot` copies — 1.4 ms at a million elements against
+209 ns, some 6800×.
 
-Handing out whole runs of storage rather than stepping per element is worth
-5x, and worth 23x over indexing — which is the whole reason the OCaml library
-has iterators.
+Against the OCaml implementation, the persistent operations are at parity
+(push/pop 0.98×, traversal 0.99×, indexing 1.13×, and persistent `set` is
+0.76× — faster), while everything dominated by mutation and allocation costs
+2–5× more, which is the usual Racket-versus-native-OCaml shape. Snapshotting
+after every push is 10× *faster* here, because this implementation shares the
+end chunks where the reference copies them.
 
 ## Deviations from the paper
 
@@ -224,9 +230,10 @@ checked. The remaining differences:
 * `sek-append*` builds a fresh result, where the OCaml `flatten` clears the
   sequence of sequences and every sequence in it.
 * `sek-sort` is stable, so it covers `stable_sort` too.
-* `sek-iter-reach!` always descends from the root; the OCaml version can start
-  from the iterator's current position when the target is nearby. Jumps that
-  stay inside one segment are still O(1).
+* `sek-iter-reach!` reuses the cursor's position when the target is in the run
+  or the chunk it is already on; beyond that it descends from the root, where
+  the reference can also search from the current position inside the middle
+  sequence.
 * `One` and `Short` (§3.5) are unified into one vector representation, used
   only at the top of the structure, as in the authors' implementation.
 * `pseq-edit` shares the front and back chunks instead of copying them, so it

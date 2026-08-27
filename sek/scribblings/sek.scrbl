@@ -655,10 +655,11 @@ these.
        @tt{sort} makes no such promise.}
 
  @item{The iterator supports the operations of the OCaml library's @tt{ITER}
-       and @tt{ITER_EPHEMERAL} signatures, but @racket[sek-iter-reach!] always
-       descends from the root, where the OCaml version can start from the
-       iterator's current position when the target is nearby.  Nearby jumps
-       that stay inside one segment are still @math{O(1)}.}
+       and @tt{ITER_EPHEMERAL} signatures.  @racket[sek-iter-reach!] reuses the
+       cursor's position when the target lies in the run or the chunk it is
+       already on, which is what makes a scan with short hops cheap, but
+       otherwise descends from the root; the reference can additionally search
+       from the current position inside the middle sequence.}
 
  @item{A @racket[#:short-threshold] of 0 is supported here; the reference
        rejects it, because it still builds a compact node for a two-element
