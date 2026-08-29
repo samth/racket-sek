@@ -225,11 +225,11 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  needed.}
 
 @defproc[(eseq-copy [e eseq?] [#:mode mode (or/c 'share 'copy) 'share]) eseq?]{
- An independent ephemeral copy of @racket[e].  In @racket['share] mode the
- copy initially shares its chunks with @racket[e] and they are separated
- lazily, which costs @math{O(K)} now and makes the next update to either
- sequence more expensive; in @racket['copy] mode the elements are copied up
- front, which costs @math{O(n)} and leaves no latent cost.}
+ An independent ephemeral copy of @racket[e].  In @racket['share] mode the two
+ sequences start out sharing everything and are separated lazily by whichever
+ one writes first, which is @math{O(1)} now and makes the next update to
+ either sequence more expensive; in @racket['copy] mode the elements are
+ copied up front, which costs @math{O(n)} and leaves no latent cost.}
 
 @section{Iterators}
 

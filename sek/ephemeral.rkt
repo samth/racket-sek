@@ -372,7 +372,16 @@
 ;; own chunks.
 (define (eseq-copy e #:mode [mode 'share])
   (case mode
-    [(share) (pseq-edit (eseq-snapshot e))]
+    [(share)
+     ;; Hand both sequences a fresh identity and let them share everything.
+     ;; Neither owns a chunk any more, so a later push either extends a
+     ;; support monotonically -- which no view can observe -- or copies the
+     ;; chunk it is writing to; either way the two stay independent.  The
+     ;; reference's shallow_copy duplicates the end chunks up front; deferring
+     ;; that makes the copy itself O(1).
+     (set-esq-id! e (fresh-id!))
+     (esq (fresh-id!) (esq-front e) (esq-ifront e) (esq-middle e)
+          (esq-iback e) (esq-back e) 0)]
     [(copy) (list->eseq (eseq->list e))]
     [else (raise-argument-error 'eseq-copy "(or/c 'share 'copy)" mode)]))
 

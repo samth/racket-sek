@@ -213,6 +213,15 @@ headline: `eseq-snapshot` does not depend on the length of the sequence, while
 orders of magnitude ahead; a treelist catches up only once tens of thousands of
 writes amortize its copy.
 
+`bench/nqueens.rkt` runs the classic Scheme nqueens benchmark — 8 queens,
+10000 repetitions — over each structure, both as the original pair-list
+program with the operations swapped out and as a backtracking search over one
+mutable stack. Pairs win it outright, as they should for a search that never
+holds more than eight elements; among the sequence structures `pseq` is
+fastest at 3.4 s against `treelist`'s 4.2 s, and the mutable ones pay 2–4×
+more because every `cons` and `append` has to copy where a persistent
+structure shares.
+
 Against the OCaml implementation, the persistent operations are at parity
 (push/pop 0.95×, traversal 0.98×, indexing 1.07×, and both flavours of `set`
 are faster here), while allocation-bound work costs 2–5× more, which is the
