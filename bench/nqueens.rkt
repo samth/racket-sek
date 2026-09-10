@@ -22,7 +22,8 @@
 (require racket/treelist
          racket/mutable-treelist
          data/gvector
-         "../sek/main.rkt")
+         "../sek/main.rkt"
+         (only-in "main.rkt" record-table! dump-json! current-scenario))
 
 ;; ------------------------------------------------------- the classic program
 
@@ -263,27 +264,45 @@
           (let ([s (format "~a" name)])
             (string-append s (make-string (max 1 (- 26 (string-length s))) #\space)))
           (let ([t (number->string (inexact->exact (round ms)))])
-            (string-append (make-string (max 1 (- 6 (string-length t))) #\space) t))))
+            (string-append (make-string (max 1 (- 6 (string-length t))) #\space) t)))
+  ms)
 
 (module+ main
+  (define args (vector->list (current-command-line-arguments)))
+  (define json-file
+    (let loop ([as args])
+      (cond [(null? as) #f]
+            [(and (equal? (car as) "--json") (pair? (cdr as))) (cadr as)]
+            [else (loop (cdr as))])))
   (define reps
-    (let ([a (current-command-line-arguments)])
-      (if (zero? (vector-length a))
-          10000
-          (string->number (vector-ref a 0)))))
+    (or (for/or ([a (in-list args)]
+                 #:unless (regexp-match? #rx"^--" a))
+          (string->number a))
+        10000))
   (printf "nqueens 8, ~a repetitions -- Racket ~a\n" reps (version))
 
-  (printf "\nthe classic program, with the pair operations swapped out\n")
-  (bench 'pairs (lambda () (nqueens/pairs 8)) reps 92)
-  (bench 'treelist (lambda () (nqueens/treelist 8)) reps 92)
-  (bench 'pseq (lambda () (nqueens/pseq 8)) reps 92)
-  (bench 'eseq (lambda () (nqueens/eseq 8)) reps 92)
-  (bench 'gvector (lambda () (nqueens/gvector 8)) reps 92)
-  (bench 'mutable-treelist (lambda () (nqueens/mutable-treelist 8)) reps 92)
+  ;; One column, which the report draws as a plain bar chart.  The title must
+  ;; not itself contain a comma: the recorder splits off the units at the last.
+  (define (group title rows)
+    (printf "\n~a\n" title)
+    (record-table!
+     (format "~a, ms for ~a repetitions" title reps)
+     (list "ms")
+     (for/list ([r (in-list rows)])
+       (cons (car r) (list (bench (car r) (cdr r) reps 92))))))
 
-  (printf "\nthe same problem as a backtracking search over one mutable stack\n")
-  (bench 'vector (lambda () (nqueens/stack/vector 8)) reps 92)
-  (bench 'gvector (lambda () (nqueens/stack/gvector 8)) reps 92)
-  (bench 'mutable-treelist (lambda () (nqueens/stack/mutable-treelist 8)) reps 92)
-  (bench 'eseq (lambda () (nqueens/stack/eseq 8)) reps 92)
-  (bench 'box-of-list (lambda () (nqueens/stack/box-of-list 8)) reps 92))
+  (parameterize ([current-scenario 'nqueens])
+    (group "the classic program with the pair operations swapped out"
+           (list (cons 'pairs (lambda () (nqueens/pairs 8)))
+                 (cons 'treelist (lambda () (nqueens/treelist 8)))
+                 (cons 'pseq (lambda () (nqueens/pseq 8)))
+                 (cons 'eseq (lambda () (nqueens/eseq 8)))
+                 (cons 'gvector (lambda () (nqueens/gvector 8)))
+                 (cons 'mutable-treelist (lambda () (nqueens/mutable-treelist 8)))))
+    (group "the same problem as a backtracking search over one mutable stack"
+           (list (cons 'vector (lambda () (nqueens/stack/vector 8)))
+                 (cons 'gvector (lambda () (nqueens/stack/gvector 8)))
+                 (cons 'mutable-treelist (lambda () (nqueens/stack/mutable-treelist 8)))
+                 (cons 'eseq (lambda () (nqueens/stack/eseq 8)))
+                 (cons 'box-of-list (lambda () (nqueens/stack/box-of-list 8))))))
+  (when json-file (dump-json! json-file)))

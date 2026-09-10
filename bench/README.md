@@ -2,6 +2,8 @@
 
 ```sh
 ./run.sh                     # this library, one scenario per process
+./run.sh --external          # the scenarios borrowed from other libraries
+./run.sh --all               # both
 ./run.sh --quick             # smaller sizes
 racket -y main.rkt stack     # a single scenario
 
@@ -9,18 +11,29 @@ racket -y main.rkt stack     # a single scenario
 ./run.sh --ocaml             # the same scenarios, run against it
 
 racket -y bm.rkt             # the benchmark from racket/data PR #34, plus sek
+racket -y nqueens.rkt        # the classic Scheme nqueens benchmark
+
+./run.sh --all --json results.json     # record every table
+racket -y nqueens.rkt --json results.json    # append
+racket -y report.rkt results.json report.html    # draw it
 ```
 
 `main.rkt` follows the benchmarks that accompany the OCaml library — stack,
 reach, iteration, traversal, construction, fill, split — and Figures 17 and 18
 of the paper, and adds scenarios for transience, which the reference's own
 suite does not measure (it uses `snapshot` and `edit` only to set sequences
-up). `bm.rkt` is the benchmark from the gvector PR, unmodified except for the
-added sek rows, so the comparison is in its terms rather than ours.
+up). `external.rkt` is the shapes that the *other* chunked-sequence libraries
+measure, transcribed from their suites; `bm.rkt` is the benchmark from the
+gvector PR, unmodified except for the added sek rows. In both cases the
+comparison is in their terms rather than ours.
 
-Every number in `main.rkt` is nanoseconds per operation, the best of three
-trials after a calibration run, so numbers are comparable down a column.
-`bm.rkt` reports its own totals in milliseconds, as upstream does.
+`report.rkt` turns the recorded JSON into one static HTML page — the charts are
+SVG generated at write time, so it needs no scripts and no network.
+
+Every number in `main.rkt` and `external.rkt` is nanoseconds per operation, the
+best of three trials after a calibration run, so numbers are comparable down a
+column. `bm.rkt` and `nqueens.rkt` report their own totals in milliseconds, as
+upstream does.
 
 Three things worth knowing if you re-run this:
 
@@ -248,6 +261,136 @@ faster; but a persistent write copies a chunk per level, so `set` is worst at
 both ends and best around 32-element leaves. The shipped default of 128/16 is
 the paper's, and it is the right call unless an application does scattered
 persistent writes.
+
+## Borrowed from other libraries
+
+The scenarios above are the ones the paper and the authors' OCaml suite chose.
+`external.rkt` adds the ones that the *other* chunked-sequence libraries chose,
+transcribed from their own benchmark suites:
+
+* **Scala** — `VectorBenchmark2.scala` from `scala/scala`, the JMH suite Stefan
+  Zeiger wrote for the 2.13 `Vector` rewrite ([scala/scala#8534](https://github.com/scala/scala/pull/8534),
+  "radix-balanced finger tree vectors"). Contributes `apply-sequential`,
+  `update-sequential`, `apprepend`, `ends`, `slice`, `bulk-append`, `map`,
+  `filter-ratio`.
+* **immer** — `benchmark/vector/` from [arximboldi/immer](https://github.com/arximboldi/immer),
+  behind Juan Pedro Bolívar Puente's "Persistence for the Masses: RRB-Vectors in
+  a Systems Language" (ICFP 2017). Its `_move` and `_mut` variants are its
+  transients, which is why its suite is worth borrowing here at all.
+  Contributes `take-drop` and `push-move`.
+* **bifurcan** — `benchmark_test.clj` from [lacuna/bifurcan](https://github.com/lacuna/bifurcan),
+  Zach Tellman's cross-library comparison, which
+  [clojure/core.rrb-vector](https://github.com/clojure/core.rrb-vector/blob/master/doc/benchmarks/benchmarks.md)
+  reuses for its own published numbers. Contributes `split-parts`.
+
+Two of Scala's are deliberately left out. `vBadApplySequential` differs from
+`vApplySequential` only in reading a field rather than a local, which is a JIT
+question with no Racket counterpart, and `nvSliding` measures an API none of the
+Racket structures have.
+
+These were run on the smaller size ladder (`--quick`, up to 10^5 rather than
+10^6): the machine had about 2 GB free at the time, and a full ladder OOMs.
+The trends across the three sizes are the point, and they are already clear.
+Nanoseconds per operation at n = 10^5:
+
+| | eseq | pseq | treelist | mutable-treelist | gvector |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `apply-sequential`, per lookup | 27.5 | 27.3 | **5.8** | 9.9 | 7.5 |
+| `update-sequential`, per set | 30.4 | 237.1 | 42.0 | **9.4** | 10.3 |
+| `apprepend`, per push | **9.7** | 12.9 | 160.7 | 155.6 | — |
+| `peek`, per first+last pair | 40.8 | 16.2 | **9.7** | 23.5 | 21.3 |
+| `tail`, per persistent pop | — | **13.4** | 79.6 | — | — |
+| `slice`, per slice | — | 1020 | **191.0** | — | — |
+| `map`, per element | 10.3 | **10.1** | 39.6 | — | — |
+| `filter` keeping all, per element | 10.3 | **10.2** | 39.2 | — | — |
+| `take-lin`, per step | 521.5 | 466.4 | **79.0** | — | — |
+| `push_move`, per element | **8.7** | 12.4 | 39.8 | 44.5 | 5.1 |
+| `split-parts`, per element | — | 2.00 | **1.97** | — | — |
+
+Five things come out of this.
+
+**`apprepend` is the clearest win in the whole suite, and it is Scala's own
+benchmark.** Alternating a push at each end costs sek a flat 9.7 ns and a
+treelist 160.7 ns — 17× — and the gap is entirely a function of length:
+
+| `apprepend`, ns per push | 10 | 1000 | 100000 |
+| --- | ---: | ---: | ---: |
+| eseq | 15.40 | **9.58** | **9.72** |
+| pseq | 13.66 | 12.72 | 12.86 |
+| treelist | **6.01** | 28.74 | 160.7 |
+| mutable-treelist | 9.42 | 33.63 | 155.6 |
+
+An RRB tree pays for a prepend what it pays for an append, and both go up with
+depth. A sequence with a chunk at each end does not care which end it is
+growing, and never leaves the chunk for K pushes out of K. This is the same
+property Figures 17 and 18 measure separately; Scala's benchmark measures it in
+one program, which makes it harder to miss.
+
+**Sequential indexing is where sek's iterators earn their keep.** Scala
+separates `vApplySequential` from `vApplyRandom` because a tree with a cached
+display answers an ascending walk from cache. sek caches nothing on `ref`:
+
+| `apply-sequential`, ns per lookup | 100 | 10000 | 100000 |
+| --- | ---: | ---: | ---: |
+| eseq | 7.49 | 22.23 | 27.45 |
+| pseq | 8.31 | 21.96 | 27.26 |
+| treelist | 4.55 | 5.06 | 5.78 |
+| gvector | 7.65 | 7.45 | 7.45 |
+| vector | 1.56 | 1.42 | **1.42** |
+| pseq via iterator | **1.83** | **1.78** | 2.73 |
+
+Read through `ref`, sek is 4.7× behind a treelist. Read through `in-pseq`, the
+same walk is 2.7 ns — twice as fast as the treelist's cached `ref`, and within
+2× of a raw vector. The library's answer to sequential access is a first-class
+iterator, and it is a better answer than a display; it is just not spelled
+`ref`.
+
+**Bulk element-wise work is 4× ahead, for the same reason.** `map` and `filter`
+hand out segments, so their inner loop touches a raw vector:
+
+| ns per input element, n = 10^5 | 100% kept | 50% | 0% |
+| --- | ---: | ---: | ---: |
+| pseq | 10.23 | 6.49 | 2.09 |
+| eseq | 10.29 | 6.54 | 2.11 |
+| treelist | 39.16 | 19.67 | **1.77** |
+| list | **4.35** | **2.71** | 1.12 |
+| vector | 6.91 | 3.86 | 1.08 |
+
+Scala measures three filter ratios because they separate two costs. At 100% and
+50%, where the output has to be built, sek is 3–4× ahead of a treelist. At 0%,
+where nothing is built, the treelist wins: all that is left is the traversal,
+and its traversal is slightly cheaper.
+
+**Slicing is what this design gives up.** `slice`, `take-lin` and `drop-lin`
+all say the same thing — a treelist splits 5–6× faster, and the gap grows with
+n where the treelist's is nearly flat. This agrees with the OCaml comparison
+further down, where `split` is the one operation 4.6× off the reference. The
+`eseq (transient)` rows in `take-drop` are immer's `_mut` variants; they are
+slower than the persistent ones here, because an O(1) `eseq-copy` still leaves
+the destructive split to do the same work.
+
+**And `push_move` reproduces immer's headline.** Building through a transient
+and freezing at the end costs 8.7 ns per element against 39.8 for repeated
+persistent `treelist-add` — 4.6× — and it also beats sek's own persistent
+`pseq-push-back` (12.4). That is the comparison Clojure spells
+`(persistent! (reduce conj! (transient []) xs))`, and it holds here.
+
+One oddity worth recording, and it is fixable: `peek` on an `eseq` costs 40.8 ns
+against 16.2 for a `pseq`, where every other operation has the two within a few
+percent. Timed apart, at n = 10^5:
+
+| | first | last |
+| --- | ---: | ---: |
+| `pseq` | 8.21 | 9.25 |
+| `eseq` | 23.06 | 18.44 |
+
+`pseq-first` reads the representation directly — a vector for a short sequence,
+`pt-ref` at 0 otherwise. `eseq-first` calls `eseq-empty?` (which computes the
+length) and then `eseq-ref e 0`, which walks front, inner front, middle, inner
+back, back like any other index; `eseq-last` computes the length a second time
+on top of that. `eseq-ref e 0` alone is 17.56 ns and `eseq-length` is 6.76.
+Nothing depends on this, but the ephemeral ends could read their front and back
+chunks directly the way the persistent ones do.
 
 ## The gvector PR benchmark
 

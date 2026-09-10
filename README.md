@@ -183,17 +183,31 @@ reference's suite does not measure. Contenders are Racket's `treelist` and
 implementation itself. `bench/bm.rkt` is the benchmark from that gvector PR,
 with sek rows added.
 
+`bench/external.rkt` adds the shapes that the *other* chunked-sequence
+libraries measure, transcribed from their own suites: Scala's
+`VectorBenchmark2` (the JMH suite behind the 2.13 `Vector` rewrite), immer's
+`benchmark/vector` (including its transient `_move` and `_mut` variants), and
+bifurcan's list benchmarks, which `clojure/core.rrb-vector` reuses for its
+published numbers.
+
 ```
 cd bench && ./run.sh                    # this library
+./run.sh --external                     # the borrowed scenarios
 ./build-ocaml.sh && ./run.sh --ocaml    # the reference, same scenarios
 racket -y bm.rkt                        # the gvector PR benchmark, plus sek
+racket -y nqueens.rkt                   # the classic Scheme nqueens benchmark
+
+./run.sh --all --json results.json && racket -y report.rkt results.json report.html
 ```
+
+`bench/report.rkt` draws the recorded results as one static HTML page, charts
+included; no scripts and no network.
 
 `bench/README.md` has the tables and the analysis. The short version, at a
 million elements, nanoseconds per operation:
 
 | | eseq | treelist | mutable-treelist | gvector | list |
-| === | ===: | ===: | ===: | ===: | ===: |
+| --- | ---: | ---: | ---: | ---: | ---: |
 | push/pop at the back | **10.9** | 45.5 | 51.5 | 27.4 | — |
 | push/pop at the front | **10.5** | 204.2 | 206.4 | — | 2.5 |
 | queue (back, front) | **10.9** | 70.3 | 75.1 | — | — |
@@ -212,6 +226,19 @@ headline: `eseq-snapshot` does not depend on the length of the sequence, while
 209 ns. In a round trip that changes one element between snapshots, sek is four
 orders of magnitude ahead; a treelist catches up only once tens of thousands of
 writes amortize its copy.
+
+The borrowed suites agree, and sharpen two points. Scala's `vApprepend` —
+alternate a push at each end — is the clearest win in the whole set: 9.7 ns
+against a treelist's 160.7 at 10^5, and flat where the treelist's grows with
+depth. And Scala's `vApplySequential` shows what indexing costs and what it
+need not cost: an ascending walk through `pseq-ref` takes 27.3 ns against the
+treelist's cached 5.8, but the same walk through `in-pseq` takes 2.7 — twice as
+fast as the treelist and within 2× of a raw vector. The answer to sequential
+access in this library is a first-class iterator, and it is a better answer
+than a display; it is just not spelled `ref`. Bulk element-wise work (`map`,
+`filter`) is 4× ahead of a treelist for the same reason, immer's `push_move`
+reproduces its headline (8.7 ns per element against 39.8 for repeated
+persistent `treelist-add`), and slicing remains the thing this design gives up.
 
 `bench/nqueens.rkt` runs the classic Scheme nqueens benchmark — 8 queens,
 10000 repetitions — over each structure, both as the original pair-list
