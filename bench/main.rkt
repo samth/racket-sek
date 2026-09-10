@@ -13,11 +13,16 @@
 ;; a loop that the others do in constant time).
 
 (require racket/list
+         racket/string
          racket/vector
          racket/treelist
          racket/mutable-treelist
          data/gvector
+         json
          "../sek/main.rkt")
+
+;; bench/external.rkt reuses the contenders and the harness below.
+(provide (all-defined-out))
 
 ;; ---------------------------------------------------------------- contenders
 
@@ -210,8 +215,28 @@
   (define str (format "~a" s))
   (string-append (make-string (max 1 (- w (string-length str))) #\space) str))
 
+;; Every table a run produces, newest first, for `--json`.  A table's title is
+;; "<label>, <units>"; splitting on the last comma keeps the axis label out of
+;; the chart heading.
+(define recorded '())
+(define current-scenario (make-parameter 'unknown))
+
+(define (record-table! title sizes rows)
+  (define m (regexp-match #rx"^(.*), ([^,]*)$" title))
+  (set! recorded
+        (cons (hasheq 'scenario (symbol->string (current-scenario))
+                      'title (if m (cadr m) title)
+                      'units (if m (caddr m) "")
+                      'sizes sizes
+                      'rows (for/list ([row (in-list rows)])
+                              (hasheq 'name (string-trim (format "~a" (car row)))
+                                      'values (for/list ([v (in-list (cdr row))])
+                                                (if v (exact->inexact v) (json-null))))))
+              recorded)))
+
 ;; Print one table: rows are implementations, columns are sizes.
 (define (table title sizes rows)
+  (record-table! title sizes rows)
   (printf "\n~a\n" title)
   (printf "~a" (pad "" 24))
   (for ([n (in-list sizes)]) (printf "~a" (rpad n 12)))
@@ -220,6 +245,15 @@
     (printf "~a" (pad (car row) 24))
     (for ([v (in-list (cdr row))]) (printf "~a" (rpad (fmt v) 12)))
     (newline)))
+
+;; Append this run's tables to FILE as one JSON object per line, so that the
+;; one-scenario-per-process runner in run.sh accumulates a single data file.
+(define (dump-json! file)
+  (call-with-output-file file #:exists 'append
+    (lambda (o)
+      (for ([t (in-list (reverse recorded))])
+        (write-json t o)
+        (newline o)))))
 
 ;; --------------------------------------------------------------- scenarios
 
@@ -689,19 +723,38 @@
             (define v (build-vector n values))
             (measure n (lambda () (vector-filter keep? v))))))))
 
-(module+ main
-  (define args (vector->list (current-command-line-arguments)))
+;; The command line shared by main.rkt and external.rkt:
+;;   [--quick] [--careful] [--json FILE] [scenario ...]
+(define (run-scenarios! banner args scenarios scenario-order)
   (when (member "--quick" args) (quick? #t))
   (when (member "--careful" args) (trials 7))
-  (define named (filter (lambda (a) (not (regexp-match? #rx"^--" a))) args))
+  (define json-file
+    (let loop ([as args])
+      (cond [(null? as) #f]
+            [(and (equal? (car as) "--json") (pair? (cdr as))) (cadr as)]
+            [else (loop (cdr as))])))
+  (define named
+    (let loop ([as args])
+      (cond [(null? as) '()]
+            [(equal? (car as) "--json") (loop (if (pair? (cdr as)) (cddr as) '()))]
+            [(regexp-match? #rx"^--" (car as)) (loop (cdr as))]
+            [else (cons (car as) (loop (cdr as)))])))
   (define chosen
     (if (null? named)
         (map car (reverse scenario-order))
         (map string->symbol named)))
-  (printf "sek benchmarks -- Racket ~a~a\n" (version) (if (quick?) " (quick)" ""))
+  (printf "~a -- Racket ~a~a\n" banner (version) (if (quick?) " (quick)" ""))
   (for ([name (in-list chosen)])
     (define run (hash-ref scenarios name #f))
     (cond
-      [run (collect-garbage) (run)]
+      [run
+       (collect-garbage)
+       (parameterize ([current-scenario name]) (run))]
       [else (printf "\nno such scenario: ~a\navailable: ~a\n"
-                    name (map car (reverse scenario-order)))])))
+                    name (map car (reverse scenario-order)))]))
+  (when json-file (dump-json! json-file)))
+
+(module+ main
+  (run-scenarios! "sek benchmarks"
+                  (vector->list (current-command-line-arguments))
+                  scenarios scenario-order))
