@@ -767,10 +767,17 @@ sizes, so the leftwise-dense case still allocates nothing extra:
 Size vectors are never mutated — `treelist-set!` writes only into leaf vectors
 — so they can be shared with the original rather than copied.
 
-Verified against `racket-test-core`'s `treelist.rktl` (1237 tests, passing, and
-failing before the fix with the regression test added), `data-test`'s
+The regression test added to `treelist.rktl` is the failure itself, in the
+style of the mutable-treelist tests beside it: drop from the front of a
+200-element treelist, then copy it and snapshot it, then check that writing to
+the copy leaves the original alone. Without the fix it aborts inside
+`mutable-treelist-copy`.
+
+Verified against `racket-test-core`'s `treelist.rktl` (1237 tests), `data-test`'s
 `treelist-coverage.rkt` (500 randomised model-correspondence tests), and a
-randomised check of copy and snapshot against a list model over
+throwaway randomised check of copy and snapshot against a list model over
 `drop!`/`take!`/`take-right!`/`drop-right!`/`sublist!`/`append!`/`prepend!`/
 `insert!`/`delete!`/`reverse!` — 200 trials of 25 operations, which reproduces
-the crash without the fix and passes with it.
+the crash without the fix and passes with it. (`treelist-props.rkt` and
+`mutable-treelist-props.rkt` do not compile in this checkout — `check-guided-property`
+is undefined anywhere in the tree — which has nothing to do with this change.)
