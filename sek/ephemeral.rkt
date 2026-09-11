@@ -131,23 +131,38 @@
 ;; or zero, no iterator is live, so an update need only test the sign.  An
 ;; iterator records the version at its birth and is valid exactly while the
 ;; sequence still carries that (positive) version.
+;; Nothing here consults `check-iterator-validity?`, even though it governs
+;; whether invalidation happens at all.  It does not need to: the sign of the
+;; version already carries that information.  Only the two functions below --
+;; which run when an iterator is created, not when the sequence is updated --
+;; ever make the version positive, and they decline to when checking is off.
+;; So a mutation tests the sign of a field it has already loaded, and never
+;; reads the setting.  That matters because this runs on every push, pop and
+;; set, and reading a module-level variable from another module is two
+;; dependent loads however it is stored -- an assigned variable, a box, a
+;; vector and a mutable struct field all compile to the same pair.
 (define (eseq-invalidate-iterators! e)
-  (when (and (check-iterator-validity?) (> (esq-version e) 0))
+  (when (> (esq-version e) 0)
     (set-esq-version! e (- (esq-version e)))))
 
 ;; Invalidate every iterator, and return a birth date for the one iterator
 ;; that is allowed to survive.
 (define (eseq-invalidate-iterators-except! e)
-  (define v (esq-version e))
-  (set-esq-version! e (if (> v 0) (add1 v) (add1 (- v))))
-  (esq-version e))
+  (cond
+    [(check-iterator-validity?)
+     (define v (esq-version e))
+     (set-esq-version! e (if (> v 0) (add1 v) (add1 (- v))))
+     (esq-version e)]
+    ;; with checking off the version stays non-positive, so no iterator is ever
+    ;; considered live and the birth date is not consulted
+    [else (esq-version e)]))
 
 ;; Prepare the sequence for iteration and return a birth date.  Flushing the
 ;; inner chunks is what lets an iterator see the plain front/middle/back shape
 ;; of a level.
 (define (eseq-iterator-born! e)
   (eseq-flush-inner! e)
-  (when (<= (esq-version e) 0)
+  (when (and (check-iterator-validity?) (<= (esq-version e) 0))
     (set-esq-version! e (add1 (- (esq-version e)))))
   (esq-version e))
 

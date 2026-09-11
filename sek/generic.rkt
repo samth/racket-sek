@@ -132,10 +132,14 @@
       (eseq-snapshot-and-clear! b)
       b))
 
+;; Collect into chunk-sized buffers and emit whole chunks, rather than pushing
+;; each element into a sequence; the same saving as `pseq-build`, for the
+;; operations that do not know the length in advance.
 (define (build-from like xs-thunk)
-  (define b (open-builder))
-  (xs-thunk (lambda (x) (eseq-push-back! b x)))
-  (close-builder b like))
+  (define b (make-pseq-builder))
+  (xs-thunk (lambda (x) (pseq-builder-add! b x)))
+  (define s (pseq-builder-close b))
+  (if (pseq? like) s (pseq-edit s)))
 
 ;; ------------------------------------------------------------- traversal
 
@@ -751,23 +755,24 @@
 
 ;; Build from any Racket sequence -- the OCaml library's of_seq.
 (define (sequence->eseq seq [n #f])
-  (define e (make-eseq))
+  (define b (make-pseq-builder))
   (if n
-      (for ([x seq] [_ (in-range n)]) (eseq-push-back! e x))
-      (for ([x seq]) (eseq-push-back! e x)))
-  e)
+      (for ([x seq] [_ (in-range n)]) (pseq-builder-add! b x))
+      (for ([x seq]) (pseq-builder-add! b x)))
+  (pseq-edit (pseq-builder-close b)))
 
 (define (sequence->pseq seq [n #f])
   (eseq-snapshot-and-clear! (sequence->eseq seq n)))
 
-(define (build-eseq n proc)
-  (define e (make-eseq))
-  (for ([i (in-range n)])
-    (eseq-push-back! e (proc i)))
-  e)
-
 (define (build-pseq n proc)
-  (eseq-snapshot-and-clear! (build-eseq n proc)))
+  (unless (exact-nonnegative-integer? n)
+    (raise-argument-error 'build-pseq "exact-nonnegative-integer?" n))
+  (pseq-build n proc))
+
+(define (build-eseq n proc)
+  (unless (exact-nonnegative-integer? n)
+    (raise-argument-error 'build-eseq "exact-nonnegative-integer?" n))
+  (pseq-edit (pseq-build n proc)))
 
 (define (make-pseq n [v #f])
   (build-pseq n (lambda (_) v)))
@@ -777,17 +782,17 @@
   (syntax-case stx ()
     [(_ clauses body ... tail-expr)
      (quasisyntax/loc stx
-       (let ([acc (make-eseq)])
-         (for/fold/derived #,stx () clauses body ... (eseq-push-back! acc tail-expr) (values))
-         acc))]))
+       (let ([acc (make-pseq-builder)])
+         (for/fold/derived #,stx () clauses body ... (pseq-builder-add! acc tail-expr) (values))
+         (pseq-edit (pseq-builder-close acc))))]))
 
 (define-syntax (for*/eseq stx)
   (syntax-case stx ()
     [(_ clauses body ... tail-expr)
      (quasisyntax/loc stx
-       (let ([acc (make-eseq)])
-         (for*/fold/derived #,stx () clauses body ... (eseq-push-back! acc tail-expr) (values))
-         acc))]))
+       (let ([acc (make-pseq-builder)])
+         (for*/fold/derived #,stx () clauses body ... (pseq-builder-add! acc tail-expr) (values))
+         (pseq-edit (pseq-builder-close acc))))]))
 
 (define-syntax (for/pseq stx)
   (syntax-case stx ()

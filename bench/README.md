@@ -876,6 +876,84 @@ was to measure rather than to read.
 | `apply-sequential` | 27.5 | **15.1** | — | 6.0 |
 | traversal | 1.78 | **1.67** | 1.9 | 1.77 |
 
+### Where the settings live
+
+`config.rkt` holds its settings in `set!`-ed module-level variables, and the
+disassembly of `eseq-push-back!` showed what that was costing: before doing any
+work it pushed a frame and jumped, to call `(check-iterator-validity?)` and read
+one of them. A cross-module call, per push, to fetch a boolean.
+
+`begin-encourage-inline` on the eight accessors removes the call. What it
+cannot remove is the two dependent loads underneath, and it is worth being
+precise about why, because the obvious fixes do not help. Five ways of holding
+a setting that is chosen at run time and read constantly, each read from
+another module, 40 million reads each:
+
+| | ns |
+| --- | ---: |
+| `set!`-ed module variable *(what config.rkt does)* | **0.457** |
+| vector in an unassigned variable | 0.484 |
+| mutable struct field | 0.489 |
+| box in an unassigned variable | 0.519 |
+| compile-time constant | 0.412 |
+
+The current representation is the fastest of the four mutable ones, and the
+whole spread is 0.08 ns. The generated code says why — they are the same code:
+
+```
+set!-ed:  (mov rcx (mem64+ r15 #xb))     vector:  (mov rcx (mem64+ r15 #xb))
+          (mov rcx (mem64+ rcx #x9))              (add rbp (mem64+ rcx #x9))
+          (add rbp rcx)
+```
+
+Racket already represents an assigned module-level variable as a box, so
+"use a box instead" is not a change of representation; a one-element vector and
+a mutable struct field have the same shape too. Only a constant is cheaper, and
+that would give up runtime configuration.
+
+So the way to stop paying for a setting is to stop reading it.
+`check-iterator-validity?` was read on every push, pop and set, and did not need
+to be: the version protocol already carries the same information in the sign of
+the version, and only iterator *creation* ever makes it positive. Moving the
+test there leaves a mutation testing the sign of a field it has already loaded.
+The setting is still honoured — with checking off the version never goes
+positive, so nothing is ever invalidated and `eseq-iterator-valid?` answers `#t`
+— and `SEK_CHECKITER=0` conformance confirms it.
+
+`overwrite-empty-slots?` is the other hot read, on every owned chunk pop. It
+stays: it governs whether a vacated slot is cleared, which is a real
+garbage-collection semantic with nowhere natural to cache it, and it is a
+well-predicted branch on a value that is in L1 after the first read.
+
+### Building a chunk at a time
+
+Reading `EphemeralSequence.init` in the reference turned up an algorithmic
+difference rather than a compilation one. It builds through
+`create_by_segments`, filling each chunk with `EChunk.init`; `build-eseq` here
+pushed elements one at a time, and a push tests whether the back chunk is full,
+invalidates the iterators and consults the ownership id once per element.
+
+`pseq-build` now assembles the tree directly: the first chunk is the front, the
+last is the back, and the rest are pushed into the middle. Every chunk but the
+last is full, so the density invariant holds by construction. For the
+operations that do not know the length in advance — `map`, `filter`, `reverse`,
+`append-map`, `for/eseq`, `sequence->eseq` — a `pseq-builder` collects into a
+chunk-sized buffer and emits whole chunks, holding one back so that the last
+full chunk can become the level's back.
+
+| ns per element | before | after | OCaml |
+| --- | ---: | ---: | ---: |
+| `build-eseq` | 5.30 | **3.18** | 2.7 |
+| `filter` | 4.32 | **3.62** | 3.2 |
+
+The builder had one bug, and the Appendix A validator caught it rather than any
+test of the result: the case where nothing has been emitted yet returned the
+buffer as a compact vector without testing the short threshold, which may be
+*below* the chunk capacity. At leaf 8 and threshold 6 a seven-element result
+came back compact when it had to be a tree — `compact sequence of length 7
+exceeds the threshold 6`. It only appears at capacities the conformance sweep
+runs and the defaults do not.
+
 ### Would stencil vectors help?
 
 No, for three separate reasons. A Chez stencil vector holds at most **58 slots**

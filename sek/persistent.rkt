@@ -36,6 +36,10 @@
          pseq-set
          pseq-append
          pseq-split
+         pseq-build
+         make-pseq-builder
+         pseq-builder-add!
+         pseq-builder-close
          pseq-take
          pseq-drop
          pseq->list
@@ -105,6 +109,96 @@
 (define (pseq-empty? s)
   (check-pseq 'pseq-empty? s)
   (not (psq-rep s)))
+
+;; Build n elements a whole chunk at a time, rather than pushing one element at
+;; a time, which is what the reference's `init` does (`create_by_segments`,
+;; filling each chunk with `EChunk.init`).  A push tests whether the back chunk
+;; is full, invalidates the iterators and consults the ownership id once per
+;; element; filling a chunk does that once per K elements and writes the rest
+;; straight into a vector.
+;;
+;; The tree is then assembled directly: the first chunk is the front, the last
+;; is the back, and everything between is pushed into the middle sequence,
+;; which is the shape `make-level` wants.  Every chunk but the last is full, so
+;; the density invariant holds by construction.
+(define (pseq-build n proc)
+  (define k (capacity-at 0))
+  (define (chunk-at i len)
+    (chunk-of-vector (build-vector len (lambda (j) (proc (+ i j))))
+                     k unit-measure no-owner))
+  (cond
+    [(eqv? n 0) empty-pseq]
+    [(<= n (short-threshold)) (wrap-rep (build-vector n proc))]
+    [(<= n k) (wrap-rep (make-level (chunk-at 0 n) #f (make-chunk k no-owner)))]
+    [else
+     (define rest (remainder n k))
+     (define last-start (- n (if (eqv? rest 0) k rest)))
+     (define front (chunk-at 0 k))
+     (define middle
+       (for/fold ([t #f]) ([i (in-range k last-start k)])
+         (pt-push-back t (chunk-at i k) k 1 no-owner)))
+     (wrap-rep (make-level front middle (chunk-at last-start (- n last-start))))]))
+
+;; The same idea as `pseq-build`, for callers that do not know the length in
+;; advance: collect elements into a chunk-sized buffer and emit a whole chunk
+;; when it fills, rather than pushing each element into a sequence.  One chunk
+;; is held back so that the last full one can become the back of the level when
+;; the buffer is empty at the end.
+(struct bld ([buf #:mutable] [n #:mutable] [front #:mutable]
+             [held #:mutable] [middle #:mutable])
+  #:authentic #:sealed)
+
+(define (make-pseq-builder)
+  (bld (make-vector (capacity-at 0) #f) 0 #f #f #f))
+
+(define (pseq-builder-emit! b c)
+  (cond
+    [(not (bld-front b)) (set-bld-front! b c)]
+    [(not (bld-held b)) (set-bld-held! b c)]
+    [else
+     (define h (bld-held b))
+     (set-bld-middle! b (pt-push-back (bld-middle b) h (chunk-weight h) 1 no-owner))
+     (set-bld-held! b c)]))
+
+(define (pseq-builder-add! b x)
+  (define n (bld-n b))
+  (define buf (bld-buf b))
+  (vector-set! buf n x)
+  (define n* (add1 n))
+  (cond
+    [(< n* (vector-length buf)) (set-bld-n! b n*)]
+    [else
+     (pseq-builder-emit! b (chunk-of-vector buf (vector-length buf) unit-measure no-owner))
+     (set-bld-buf! b (make-vector (vector-length buf) #f))
+     (set-bld-n! b 0)]))
+
+(define (pseq-builder-close b)
+  (define k (capacity-at 0))
+  (define n (bld-n b))
+  (define partial
+    (and (> n 0) (chunk-of-vector (vector-copy (bld-buf b) 0 n) k unit-measure no-owner)))
+  (define front (bld-front b))
+  (define held (bld-held b))
+  (cond
+    ;; nothing emitted: everything is still in the buffer.  That does not make
+    ;; it short enough for the compact representation -- the threshold may be
+    ;; below the chunk capacity -- so it still has to be tested.
+    [(not front)
+     (cond
+       [(eqv? n 0) empty-pseq]
+       [(<= n (short-threshold)) (wrap-rep (vector-copy (bld-buf b) 0 n))]
+       [else (wrap-rep (make-level partial #f (make-chunk k no-owner)))])]
+    [else
+     (define-values (mid back)
+       (cond
+         [partial
+          (values (if held
+                      (pt-push-back (bld-middle b) held (chunk-weight held) 1 no-owner)
+                      (bld-middle b))
+                  partial)]
+         [held (values (bld-middle b) held)]
+         [else (values (bld-middle b) (make-chunk k no-owner))]))
+     (wrap-rep (normalize (make-level front mid back)))]))
 
 (define (pseq-length s)
   (check-pseq 'pseq-length s)

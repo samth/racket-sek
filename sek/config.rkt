@@ -7,6 +7,13 @@
 ;; internal nodes, with a threshold of 32 for the array representation of short
 ;; persistent sequences (§3.5).
 
+(require racket/performance-hint)
+
+;; Compiled in unsafe mode, and the accessors below are inlined: they are
+;; consulted on every operation in the library, and a cross-module call to
+;; read one mutable variable was costing more than the operation.
+(#%declare #:unsafe)
+
 (provide capacity-at
          max-item-weight
          max-item-weight-shift
@@ -24,19 +31,23 @@
 (define node-cap 16)
 (define thresh 32)
 
-(define (leaf-capacity)
-  leaf-cap)
-(define (node-capacity)
-  node-cap)
-(define (short-threshold)
-  thresh)
+(begin-encourage-inline
+  (define (leaf-capacity)
+    leaf-cap))
+(begin-encourage-inline
+  (define (node-capacity)
+    node-cap))
+(begin-encourage-inline
+  (define (short-threshold)
+    thresh))
 
 ;; capacity-at : depth -> capacity
 ;; A chunk that holds items of depth d has capacity (capacity-at d).  Depth 0
 ;; items are the sequence's own elements; depth d+1 items are chunks of depth d
 ;; items, so an item of depth d+1 is a chunk of capacity (capacity-at d).
-(define (capacity-at d)
-  (if (eqv? d 0) leaf-cap node-cap))
+(begin-encourage-inline
+  (define (capacity-at d)
+    (if (eqv? d 0) leaf-cap node-cap)))
 
 ;; max-item-weight : depth -> nat
 ;; The largest weight an item of depth d can have, i.e. the product of the
@@ -65,26 +76,30 @@
     (vector-set! miw-cache d w)
     (vector-set! miw-shift-cache d (exact-log2 w))))
 
-(define (max-item-weight d)
-  (if (< d miw-depth)
-      (vector-ref miw-cache d)
-      (* leaf-cap (expt node-cap (sub1 d)))))
+(begin-encourage-inline
+  (define (max-item-weight d)
+    (if (< d miw-depth)
+        (vector-ref miw-cache d)
+        (* leaf-cap (expt node-cap (sub1 d))))))
 
-(define (max-item-weight-shift d)
-  (and (< d miw-depth) (vector-ref miw-shift-cache d)))
+(begin-encourage-inline
+  (define (max-item-weight-shift d)
+    (and (< d miw-depth) (vector-ref miw-shift-cache d))))
 
 ;; Should a slot that becomes logically empty be overwritten?  Leaving it
 ;; alone saves one write but lets the garbage collector retain a value that
 ;; the sequence no longer holds.  Overwriting is safer and is the default.
 (define overwrite? #t)
-(define (overwrite-empty-slots?) overwrite?)
+(begin-encourage-inline
+  (define (overwrite-empty-slots?) overwrite?))
 
 ;; Should the use of an invalidated iterator be detected at runtime?  This
 ;; costs a version-number comparison per iterator operation and a sign test
 ;; per update; it catches a real class of programming mistake, so it too is
 ;; on by default.
 (define checking? #t)
-(define (check-iterator-validity?) checking?)
+(begin-encourage-inline
+  (define (check-iterator-validity?) checking?))
 
 ;; Settings must be chosen before any sequence is built; mixing capacities
 ;; within one structure breaks the density invariant checks.

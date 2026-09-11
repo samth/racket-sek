@@ -2,87 +2,87 @@ sek benchmarks -- OCaml reference
 
 stack: push-back / pop-back, ns per operation
                                   10        1000      100000
-eseq                            4.77        4.58        5.06
-pseq                           10.25       13.71       14.30
+eseq                            4.78        4.57        5.06
+pseq                            9.98       13.79       14.44
 list                               -           -           -
 
 front stack: push-front / pop-front, ns per operation
                                   10        1000      100000
-eseq                            5.03        4.80        5.22
-pseq                            9.82       13.69       14.47
-list                            0.38        0.80        4.65
+eseq                            4.96        4.74        5.19
+pseq                            9.57       13.66       14.33
+list                            0.38        0.80        4.83
 
 queue: push-back / pop-front, ns per operation
                                   10        1000      100000
-eseq                            4.73        4.65        5.14
-pseq                            9.81       13.72       14.48
+eseq                            4.59        4.48        5.00
+pseq                            9.54       13.51       14.18
 list                               -           -           -
 
 traversal: fold over the whole sequence, ns per element
                                  100       10000      100000
-eseq                            2.07        1.97        1.94
-pseq                            1.99        1.93        1.96
-  pseq via iter                 4.68        4.78        4.76
-  array                         0.81        0.75        0.76
-  list                          1.07        1.15        1.22
+eseq                            2.07        1.93        1.93
+pseq                            2.02        1.92        1.93
+  pseq via iter                 4.60        4.73        4.72
+  array                         0.80        0.74        0.75
+  list                          1.07        1.15        1.19
 
 random access: get at random indices, ns per read
                                  100       10000      100000
-eseq                            7.87       22.97       32.26
-pseq                            7.93       21.06       29.78
-  array                         1.01        1.07        1.23
+eseq                            7.75       22.41       32.32
+pseq                            7.79       20.65       29.24
+  array                         1.00        1.06        1.20
 
 hops over 200000 elements: get at a fixed stride, ns per read
                                   +1          +8         +64       +4096
-eseq                           22.69       25.26       28.12       31.97
-pseq                           21.26       23.71       26.73       30.90
-pseq iterator                   6.09        9.27       27.58       72.75
-  array                         1.06        1.22        1.24        1.36
+eseq                           22.55       25.31       28.23       31.79
+pseq                           21.15       23.55       26.70       30.92
+pseq iterator                   6.10        9.07       26.43       69.87
+  array                         0.99        1.24        1.30        1.49
 
 update: set at random indices, ns per write
                                  100       10000      100000
-eseq                            8.99       41.19       58.69
-pseq                           36.54       103.7       273.2
-  array                         1.00        1.06        1.23
+eseq                            8.94       41.79       60.49
+pseq                           38.23       108.9       283.3
+  array                         1.02        1.06        1.25
 
 construction: n elements from scratch, ns per element
                                  100       10000      100000
-eseq                            2.07        1.71        2.67
-pseq                            2.12        1.72        2.74
-  array                         1.52        2.20        2.33
-  list                          1.56        3.16       13.94
+eseq                            2.07        1.71        2.68
+pseq                            2.13        1.73        2.75
+  array                         1.52        2.20        2.31
+  list                          1.57        3.15       14.59
 
 concat: append two sequences of n/2 elements, ns per concatenation
                                  100       10000      100000
-pseq                           11.78       231.5       261.0
-  list                         54.67        8536      464096
+pseq                           11.81       233.6       262.0
+  list                         54.87        8674      490589
 
 split: split at a random index, ns per split
                                  100       10000      100000
-pseq                           156.2       129.2       141.4
+pseq                           155.6       129.7       141.3
 
 snapshot: one change plus one snapshot of an n-element sequence, ns
                                  100       10000      100000
-eseq                           76.58       76.49       77.88
+eseq                           77.17       76.84       79.04
 
 snapshot: 12500 pushes, taking a snapshot every m of them, ns per push
                                  m=1        m=10      m=1000    m=100000
-eseq                           786.0       42.56        4.75        4.62
-pseq (persistent)              14.64       14.66       14.69       14.75
+eseq                           847.0       43.41        4.80        4.64
+pseq (persistent)              14.72       14.72       14.76       14.76
 
 transient: edit, m in-place updates, snapshot, over 200000 elements, ns per update
                                  m=1        m=10      m=1000    m=100000
-sek edit/snapshot              225.6       124.5       218.0       76.43
-sek persistent set             94.09       115.8       247.8       305.5
+sek edit/snapshot              227.6       128.3       244.1       81.15
+sek persistent set             96.02       117.5       287.0       355.4
 
 filter: keep one element in three, ns per input element
                                  100       10000      100000
-pseq                            3.96        3.13        3.19
-eseq                            3.94        3.14        3.19
-  list                          1.32        1.53        3.31
+pseq                            4.04        3.13        3.22
+eseq                            3.91        3.16        3.25
+  list                          1.32        1.54        3.55
 
 fill: overwrite k consecutive elements of 200000, ns per element
                                   10        1000
-eseq (fill)                     8.72        0.57
-eseq (set loop)                 9.21       26.51
-  array                         0.38        0.26
+eseq (fill)                     8.80        0.57
+eseq (set loop)                 9.16       26.47
+  array                         0.38        0.25
