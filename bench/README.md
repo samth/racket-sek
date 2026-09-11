@@ -35,7 +35,7 @@ best of three trials after a calibration run, so numbers are comparable down a
 column. `bm.rkt` and `nqueens.rkt` report their own totals in milliseconds, as
 upstream does.
 
-Three things worth knowing if you re-run this:
+Five things worth knowing if you re-run this:
 
 * The reference must be compiled in its **release** configuration. With
   assertions on it runs its own O(n) validator inside every operation and
@@ -47,15 +47,137 @@ Three things worth knowing if you re-run this:
   [racket/data#34](https://github.com/racket/data/pull/34) (`samth:gvector-fast`,
   commit 778009f, "Optimize gvector with unsafe ops and memory-safe
   synchronization"), which is what is installed on this machine.
+* **Every structure is measured on every operation it can perform at all**, and
+  the table below says how the ones that cost a walk are kept affordable.
+* `split-parts`, `take-drop` and `slice` need a Racket newer than 9.3.0.2.
+  Shortening a mutable treelist at the front and then copying or snapshotting
+  it used to raise `vector-length: contract violation`; that was a bug in
+  `treelist-copy-for-mutable`, fixed in `racket/collects/racket/treelist.rkt`
+  with a regression test in `racket-test-core`'s `treelist.rktl`. See
+  "A Racket bug this turned up" at the end.
 
 Numbers below are from one machine: Racket CS 9.3, OCaml 5.4.0 (flambda `-O3`),
 default settings (leaf capacity 128, node capacity 16, threshold 32).
 
+## Filling in every cell
+
+A dash used to mean "this structure has no efficient way to do that", which is
+a judgement rather than a measurement, and it left whole rows blank. Now a dash
+means only that the operation does not exist at all — a gvector has no
+snapshot, a persistent sequence has no in-place fill. Everything else is
+measured, including the cases that cost a walk of the whole sequence: a cons
+list does have a back, it is just Θ(n) away, and the number says so.
+
+Two mechanisms keep those rows from taking forever. Each contender names its
+Θ(n) operations, and:
+
+* **A capped operation count.** A scenario that does 100 000 reads does
+  proportionally fewer for a structure whose `ref` walks, spread over the whole
+  index range so that a shortened sweep still reaches the far end. `measure`
+  reports per operation, so the number stays comparable down the column.
+* **A bounded burst.** "Repeat n pushes then n pops" is quadratic for a
+  structure whose push is Θ(n) and simply will not finish — growing a cons list
+  to 10^5 elements one `append` at a time costs about a minute per round. Those
+  rows build to length n once and then push and pop a bounded number of times,
+  which estimates the same per-operation cost.
+
+The `burst-check` scenario runs both paths against every structure that can
+afford either, so the size of that substitution is on the page rather than
+asserted. They agree within a few percent for sek, gvector and a plain array;
+for a treelist the burst reads about 30% low, because the full loop also pays
+to build and discard the whole sequence once a round and the burst does not.
+
+Two contenders were added at the same time: **`array`**, a hand-rolled growable
+array — the floor that everything else is paying over — and a plain fixed
+**`vector`** row where one applies.
+
+`array` is the same shape as a `gvector`: a vector and a count, doubling on
+demand, with the same memory-safety invariant under concurrent access. What it
+does not have is everything else that makes a gvector a library data structure
+— an argument check on every operation and a range check on `ref`, impersonator
+support, the shrink pass `gvector-remove!` runs on every removal, and a dict /
+`equal+hash` / serialization surface. The gap between the two rows is what that
+costs:
+
+| ns, n = 10^5 | gvector | array |
+| --- | ---: | ---: |
+| `ref` at random indices | 7.56 | **2.96** |
+| `set` at random indices | 10.50 | **3.31** |
+| push and pop at the back | 20.38 | **4.77** |
+| construction, per element | 5.78 | **5.06** |
+| traversal, per element | 1.31 | **1.27** |
+
+Most of the push/pop gap is the shrink pass: `gvector-remove-last!` goes
+through `gvector-remove!`, so every pop runs `trim!`'s capacity computation and
+its CAS even when nothing shrinks. Push-only, in `sync-cost` below, a gvector
+costs 10.7 rather than 20.4. Most of the `ref` gap is the two argument checks.
+
+Two things about the floor took getting right, and both are worth recording
+because each moved the number by more than the thing being measured.
+
+**The growth path has to be a separate function.** With `make-vector` inlined
+beside the store, `arr-push-back!` measured 8.7 ns per element against
+gvector's 5.9; split out, it measures 5.1. The common case is a bounds test, a
+store and an increment, and burying that next to an allocation hides it.
+
+**Traversal has to hoist both fields.** An index loop calling `arr-ref` re-reads
+`vec` and `n` per element and costs 1.40 ns; reading them once and handing the
+bounds to `in-vector` costs 1.27, the same as a gvector and within 2.5× of a
+raw vector sweep. `in-arr` is that loop as a sequence form, expanded in place
+by `for`.
+
+### What thread safety costs
+
+`array` maintains `n ≤ (vector-length vec)` at every observable point, which is
+what lets its `unsafe-vector*-ref` stay in bounds while another thread is
+growing the array. Three rules keep it:
+
+* a writer stores into the vector and only then raises `n`;
+* `arr-ensure!` installs a larger vector with `unsafe-struct*-cas!`, retrying
+  if another thread got there first;
+* a writer captures `n` once and asks for room for *that* `n`, never a re-read
+  one — and `arr-ensure!` consequently never reads `n` at all.
+
+The third rule is the subtle one, and `bench/array-tests.rkt` found it the hard
+way. `n` is written as an absolute value computed from a stale read, so a
+concurrent writer can lower it; by itself that only loses an update. But a
+growth path that re-read `n` could see the lowered value, conclude no growth
+was needed, and then store at the `n` its caller had already captured — past
+the end of the vector, through an unsafe write. Under futures the test violated
+the invariant in 13 of 20 rounds before the fix and 0 of 20 after.
+
+Like gvector, this is memory safety and not atomicity: two threads pushing at
+once can still lose an update, because no slot is reserved. Actual mutual
+exclusion needs a lock, and `sync-cost` prices all three:
+
+| ns per push, n = 10^5 | |
+| --- | ---: |
+| unsynchronised | 7.24 |
+| memory-safe (`array`) | **6.97** |
+| gvector | 10.74 |
+| locked (semaphore) | 16.77 |
+
+| ns per `ref` | |
+| --- | ---: |
+| memory-safe (`array`) | **1.62** |
+| gvector | 7.33 |
+| locked (semaphore) | 14.25 |
+
+The invariant is free — it is discipline about the order of two writes, not
+extra work, and on the reading side it costs nothing at all, because readers do
+not maintain it. A lock is not free: 2.4× on a push and 9× on a read.
+
+A destructive operation needs an instance of its own, so the ephemeral rows in
+`concat`, `split`, `slice`, `take-drop`, `split-parts` and `bulk-append` copy
+first and are charged for the copy. That is the honest figure: it is what using
+a mutable sequence in a persistent way actually costs. `eseq-copy` is O(1),
+`mutable-treelist-copy` about 0.5 ns an element, a gvector's about 1.4.
+
 ## Against other Racket sequences
 
 Contenders: `treelist` and `mutable-treelist` from `racket/treelist` (RRB
-trees, the closest analogue), `gvector`, immutable lists, and a mutable box
-holding a list. A dash means the structure has no constant-time way to do it.
+trees, the closest analogue), `gvector`, immutable lists, a mutable box holding
+a list, and a hand-rolled growable `array`.
 
 ### The ends
 
@@ -556,3 +678,58 @@ here.
 Finally, the OCaml comparison is what settles the random-access question above:
 at 55.97 ns for the reference against 60.15 here, indexing is slow because of
 how the structure is shaped, not because of how it was ported.
+
+## A Racket bug this turned up
+
+Measuring `mutable-treelist` on the operations it had previously been excluded
+from ran straight into a bug in `racket/mutable-treelist`, as of Racket 9.3.0.2:
+
+```racket
+(require racket/mutable-treelist racket/list)
+(define a (list->mutable-treelist (build-list 200 values)))
+(mutable-treelist-drop! a 12)
+(mutable-treelist-copy a)       ; vector-length: contract violation
+(mutable-treelist-snapshot a)   ; the same
+```
+
+The treelist itself is fine after the drop — `ref`, `length` and iteration all
+give the right answers — so nothing detects the damage until you try to copy it.
+
+A treelist node is either a bare vector, when the subtree below it is leftwise
+dense, or a `(cons children sizes)` pair when it is not. `treelist-drop` leaves
+size vectors behind on the nodes it rebuilds, which is exactly what they are
+for. `treelist-copy-for-mutable`, which is what both `mutable-treelist-copy`
+and `mutable-treelist-snapshot` call to give the copy private leaf vectors,
+walked the tree assuming every node was a bare vector:
+
+```racket
+(for/vector #:length (vector-length n) ([e (in-vector n)])
+  (copy-node e (fx- height 1)))
+```
+
+so it handed a pair to `vector-length`. Every other node walk in the file goes
+through `node-leftwise-dense?` / `node-children` / `node-sizes`; this was the
+one that did not. The failure needs a tree with interior nodes, which is why
+the existing tests — all on four-element treelists — never saw it.
+
+The fix reaches the children through `node-children` and puts the size vector
+back with `Node`, which returns the children vector unchanged when there are no
+sizes, so the leftwise-dense case still allocates nothing extra:
+
+```racket
+(define children (node-children n))
+(Node (for/vector #:length (vector*-length children) ([e (in-vector children)])
+        (copy-node e (fx- height 1)))
+      (node-sizes n))
+```
+
+Size vectors are never mutated — `treelist-set!` writes only into leaf vectors
+— so they can be shared with the original rather than copied.
+
+Verified against `racket-test-core`'s `treelist.rktl` (1237 tests, passing, and
+failing before the fix with the regression test added), `data-test`'s
+`treelist-coverage.rkt` (500 randomised model-correspondence tests), and a
+randomised check of copy and snapshot against a list model over
+`drop!`/`take!`/`take-right!`/`drop-right!`/`sublist!`/`append!`/`prepend!`/
+`insert!`/`delete!`/`reverse!` — 200 trials of 25 operations, which reproduces
+the crash without the fix and passes with it.

@@ -30,8 +30,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-main_scenarios="stack front-stack queue traversal random-access hops update
-                construction concat split snapshot transient filter fill capacities"
+main_scenarios="stack front-stack queue burst-check sync-cost traversal random-access hops
+                update construction concat split snapshot transient filter fill
+                capacities"
 external_scenarios="apply-sequential update-sequential apprepend ends slice
                     bulk-append map filter-ratio take-drop push-move split-parts"
 ocaml_scenarios="stack front-stack queue traversal random-access hops update

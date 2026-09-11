@@ -53,15 +53,11 @@
   (begin (hash-set! ext-scenarios 'name (lambda () body ...))
          (set! ext-scenario-order (cons (cons 'name doc) ext-scenario-order))))
 
-;; The two structures whose `ref` is O(n): timing them against the others
-;; measures the loop, not the structure.
-(define (indexable? i) (not (member (impl-name i) '("list" "box of list"))))
-
 ;; A row per contender for which `pick` yields an operation, plus whatever
-;; extra rows the caller supplies.  Unlike main.rkt, a contender with no
-;; measurement at any size is left out rather than shown as a row of dashes:
-;; several of these tables are restricted to one flavour of sequence, and a
-;; column of dashes under a heading that already says so is just noise.
+;; extra rows the caller supplies.  A contender with no measurement at any
+;; size is left out rather than shown as a row of dashes -- with every
+;; structure carrying every operation it can perform, that now happens only
+;; where the operation genuinely does not exist.
 (define (rows-for sizes pick #:only [only (lambda (i) #t)] #:extra [extra '()])
   (append
    (for*/list ([i (in-list all-impls)]
@@ -82,18 +78,23 @@
   "index in ascending order, Scala's vApplySequential and immer's access_idx"
   (define sizes (sizes-m))
   (define k (scale 1000000))
-  (define (sweep rf s n)
-    (measure k (lambda ()
-                 (let loop ([j 0] [i 0] [acc 0])
-                   (cond [(= j k) acc]
-                         [(= i n) (loop (add1 j) 0 (+ acc (rf s 0)))]
-                         [else (loop (add1 j) (add1 i) (+ acc (rf s i)))])))))
+  ;; A structure whose `ref` walks the sequence gets fewer reads, but they have
+  ;; to stay spread over the whole range: twenty reads at indices 0 to 19 would
+  ;; measure the head of a cons list rather than the list.
+  (define (sweep rf s n [reads k])
+    (define step (max 1 (quotient n reads)))
+    (measure reads
+             (lambda ()
+               (let loop ([j 0] [i 0] [acc 0])
+                 (cond [(= j reads) acc]
+                       [(>= i n) (loop (add1 j) 0 (+ acc (rf s 0)))]
+                       [else (loop (add1 j) (+ i step) (+ acc (rf s i)))])))))
   (table
    "apply-sequential: ref at i for i ascending, ns per lookup"
    sizes
    (rows-for
-    sizes #:only indexable?
-    (lambda (i n) (sweep (impl-ref i) (build-of i n) n))
+    sizes
+    (lambda (i n) (sweep (impl-ref i) (build-of i n) n (cap i 'ref n k)))
     #:extra
     (list
      (cons "  vector"
@@ -124,16 +125,19 @@
    "update-sequential: set at i for i ascending, ns per update"
    sizes
    (rows-for
-    sizes #:only indexable?
+    sizes
     (lambda (i n)
       (define st (impl-set i))
+      (define writes (cap i 'set n m))
+      (define step (max 1 (quotient n writes)))
       (and st
            (let ([s (build-of i n)])
-             (measure m (lambda ()
-                          (let loop ([j 0] [k 0] [s s])
-                            (cond [(= j m) s]
-                                  [(= k n) (loop (add1 j) 0 (st s 0 0))]
-                                  [else (loop (add1 j) (add1 k) (st s k 0))])))))))
+             (measure writes
+                      (lambda ()
+                        (let loop ([j 0] [k 0] [s s])
+                          (cond [(= j writes) s]
+                                [(>= k n) (loop (add1 j) 0 (st s 0 0))]
+                                [else (loop (add1 j) (+ k step) (st s k 0))])))))))
     #:extra
     (list
      (cons "  vector"
@@ -163,18 +167,34 @@
       (define pb (impl-push-back i))
       (define pf (impl-push-front i))
       (and pb pf
-           (let* ([rounds (max 1 (quotient total n))]
-                  [ops (* rounds n)])
-             (measure ops
-                      (lambda ()
-                        (let loop ([r 0])
-                          (unless (= r rounds)
-                            (let inner ([k 0] [s ((impl-empty i) n)])
-                              (if (= k n)
-                                  (void)
-                                  (inner (add1 k)
-                                         (if (even? k) (pb s k) (pf s k)))))
-                            (loop (add1 r))))))))))))
+           (if (or (linear? i 'push-back) (linear? i 'push-front))
+               ;; growing to n one Theta(n) push at a time is quadratic: push a
+               ;; bounded number onto a sequence already at length n, and pop
+               ;; them off again so the next repetition starts where this did
+               (let* ([m (max 1 (min 100 (quotient 1000000 (max n 1))))]
+                      [qb (impl-pop-back i)]
+                      [qf (impl-pop-front i)]
+                      [base (build-of i n)])
+                 (measure m
+                          #:max-reps 20000
+                          (lambda ()
+                            (define up
+                              (for/fold ([s base]) ([k (in-range m)])
+                                (if (even? k) (pb s k) (pf s k))))
+                            (for/fold ([s up]) ([k (in-range m)])
+                              (if (even? k) (qf s) (qb s))))))
+               (let* ([rounds (max 1 (quotient total n))]
+                      [ops (* rounds n)])
+                 (measure ops
+                          (lambda ()
+                            (let loop ([r 0])
+                              (unless (= r rounds)
+                                (let inner ([k 0] [s ((impl-empty i) n)])
+                                  (if (= k n)
+                                      (void)
+                                      (inner (add1 k)
+                                             (if (even? k) (pb s k) (pf s k)))))
+                                (loop (add1 r)))))))))))))
 
 ;; vHead / vLast, then vTail: peeking at each end, and then walking the whole
 ;; sequence off the front one persistent pop at a time.
@@ -184,13 +204,14 @@
   (define k (scale 1000000))
   ;; Scala calls `.head` and `.last`, not `apply(0)` and `apply(size-1)`, and
   ;; every structure here has dedicated accessors for its ends, so use them.
-  (define (peek-row name build first last)
+  (define (peek-row name build first last [linear? #f])
     (cons name
           (for/list ([n (in-list sizes)])
             (define s (build n))
-            (measure k (lambda ()
-                         (for/fold ([acc 0]) ([_ (in-range k)])
-                           (+ acc (first s) (last s))))))))
+            (define reads (if linear? (max 1 (min k (quotient 2000000 n))) k))
+            (measure reads (lambda ()
+                             (for/fold ([acc 0]) ([_ (in-range reads)])
+                               (+ acc (first s) (last s))))))))
   (table
    "peek: first and last, ns per pair of reads"
    sizes
@@ -205,7 +226,14 @@
     (peek-row "gvector" (lambda (n) ((impl-build gvector-impl) (build-list n values)))
               (lambda (g) (gvector-ref g 0))
               (lambda (g) (gvector-ref g (sub1 (gvector-count g)))))
-    ;; a list is left out: its `last` is O(n), and the loop would be quadratic
+    (peek-row "list" (lambda (n) (build-list n values)) car last #t)
+    (peek-row "box of list" (lambda (n) (box (build-list n values)))
+              (lambda (b) (car (unbox b)))
+              (lambda (b) (last (unbox b)))
+              #t)
+    (peek-row "array" (lambda (n) ((impl-build array-impl) (build-list n values)))
+              (lambda (a) ((impl-ref array-impl) a 0))
+              (lambda (a) ((impl-ref array-impl) a (sub1 (arr-n a)))))
     (peek-row "  vector" (lambda (n) (build-vector n values))
               (lambda (v) (vector-ref v 0))
               (lambda (v) (vector-ref v (sub1 (vector-length v)))))))
@@ -216,13 +244,15 @@
     sizes
     (lambda (i n)
       (define qf (impl-pop-front i))
+      ;; The loop consumes the sequence, so an ephemeral structure pops a copy
+      ;; of its own and is charged for making it.
+      (define pops (cap i 'pop-front n n))
       (and qf
            (let ([s (build-of i n)])
-             (measure n (lambda ()
-                          (for/fold ([s s]) ([_ (in-range n)]) (qf s)))))))
-    ;; A mutable structure is consumed by the loop, so rebuild it each time;
-    ;; that cost is charged to it, which is the honest way round.
-    #:only (lambda (i) (memq (impl-kind i) '(persistent))))))
+             (measure pops
+                      (lambda ()
+                        (for/fold ([s (fresh-of i s)]) ([_ (in-range pops)])
+                          (qf s))))))))))
 
 ;; ----------------------------------------------------------- Scala: subranges
 
@@ -250,10 +280,9 @@
                              (for ([ab (in-list bounds)])
                                ;; take the prefix, then drop from it: the
                                ;; two-sided slice every library spells this way
-                               (let-values ([(front _) (sp s (cdr ab))])
+                               (let-values ([(front _) (sp (fresh-of i s) (cdr ab))])
                                  (let-values ([(_ mid) (sp front (car ab))])
-                                   (void mid))))))))))
-    #:only (lambda (i) (memq (impl-kind i) '(persistent))))))
+                                   (void mid)))))))))))))
 
 ;; ------------------------------------------------------- Scala: bulk appending
 
@@ -268,15 +297,24 @@
   (table
    (format "bulk-append: append a sequence of the given size to one of ~a, ns per append" n)
    variants
-   (for/list ([i (in-list all-impls)]
-              #:when (and (impl-append i) (memq (impl-kind i) '(persistent))))
-     (cons (impl-name i)
-           (let ([s (build-of i n)]
-                 [ap (impl-append i)])
-             (for/list ([v (in-list variants)])
-               (define m (case v [("2") 2] [("n/10") (quotient n 10)] [else n]))
-               (define other (if (equal? v "self") s (build-of i m)))
-               (measure 1 #:max-reps 2000 (lambda () (ap s other)))))))))
+   (append
+    (for/list ([i (in-list all-impls)] #:when (impl-append i))
+      (cons (impl-name i)
+            (let ([s (build-of i n)]
+                  [ap (impl-append i)])
+              (for/list ([v (in-list variants)])
+                (define m (case v [("2") 2] [("n/10") (quotient n 10)] [else n]))
+                (define other (if (equal? v "self") s (build-of i m)))
+                ;; a destructive append eats its left argument, so it gets a
+                ;; copy -- and is charged for it
+                (measure 1 #:max-reps 2000 (lambda () (ap (fresh-of i s) other)))))))
+    (list
+     (cons "  vector"
+           (let ([v (build-vector n values)])
+             (for/list ([w (in-list variants)])
+               (define m (case w [("2") 2] [("n/10") (quotient n 10)] [else n]))
+               (define other (if (equal? w "self") v (build-vector m values)))
+               (measure 1 #:max-reps 2000 (lambda () (vector-append v other))))))))))
 
 ;; ---------------------------------------------------------- Scala: map, filter
 
@@ -287,22 +325,16 @@
   "build a new sequence element by element, Scala's vMapNew"
   (define sizes (sizes-m))
   (define (rows f)
-    (list
-     (cons "pseq" (for/list ([n (in-list sizes)])
-                    (define s (build-pseq n values))
-                    (measure n (lambda () (sek-map s f)))))
-     (cons "eseq" (for/list ([n (in-list sizes)])
-                    (define s (build-eseq n values))
-                    (measure n (lambda () (sek-map s f)))))
-     (cons "treelist" (for/list ([n (in-list sizes)])
-                        (define t (sequence->treelist (in-range n)))
-                        (measure n (lambda () (treelist-map t f)))))
-     (cons "  list" (for/list ([n (in-list sizes)])
-                      (define l (build-list n values))
-                      (measure n (lambda () (map f l)))))
-     (cons "  vector" (for/list ([n (in-list sizes)])
-                        (define v (build-vector n values))
-                        (measure n (lambda () (vector-map f v)))))))
+    (rows-for
+     sizes
+     (lambda (i n)
+       (define mp (impl-map i))
+       (and mp (let ([s (build-of i n)]) (measure n (lambda () (mp s f))))))
+     #:extra
+     (list
+      (cons "  vector" (for/list ([n (in-list sizes)])
+                         (define v (build-vector n values))
+                         (measure n (lambda () (vector-map f v))))))))
   (table "map: apply a function to every element, ns per element" sizes (rows add1)))
 
 (define-ext-scenario filter-ratio
@@ -317,22 +349,17 @@
   (table
    (format "filter: keep the given fraction of ~a elements, ns per input element" n)
    ratios
-   (list
-    (cons "pseq" (let ([s (build-pseq n values)])
-                   (for/list ([r (in-list ratios)])
-                     (measure n (lambda () (sek-filter s (pred r)))))))
-    (cons "eseq" (let ([s (build-eseq n values)])
-                   (for/list ([r (in-list ratios)])
-                     (measure n (lambda () (sek-filter s (pred r)))))))
-    (cons "treelist" (let ([t (sequence->treelist (in-range n))])
-                       (for/list ([r (in-list ratios)])
-                         (measure n (lambda () (treelist-filter (pred r) t))))))
-    (cons "  list" (let ([l (build-list n values)])
-                     (for/list ([r (in-list ratios)])
-                       (measure n (lambda () (filter (pred r) l))))))
-    (cons "  vector" (let ([v (build-vector n values)])
-                       (for/list ([r (in-list ratios)])
-                         (measure n (lambda () (vector-filter (pred r) v)))))))))
+   (append
+    (for/list ([i (in-list all-impls)] #:when (impl-filter i))
+      (cons (impl-name i)
+            (let ([s (build-of i n)]
+                  [fl (impl-filter i)])
+              (for/list ([r (in-list ratios)])
+                (measure n (lambda () (fl s (pred r))))))))
+    (list
+     (cons "  vector" (let ([v (build-vector n values)])
+                        (for/list ([r (in-list ratios)])
+                          (measure n (lambda () (vector-filter (pred r) v))))))))))
 
 ;; ---------------------------------------------------------- immer: take, drop
 
@@ -345,21 +372,10 @@
   "repeatedly shorten the result, immer's take_lin and drop_lin"
   (define sizes (sizes-m))
   (define steps 10)
-  ;; immer's `_mut` variant, on the transient: `eseq-copy` is O(1), so what
-  ;; the row measures past the first step is the destructive split itself.
-  (define (transient-row keep-front?)
-    (cons "eseq (transient)"
-          (for/list ([n (in-list sizes)])
-            (define s (build-eseq n values))
-            (define cut (quotient n steps))
-            (and (> cut 0)
-                 (measure steps
-                          (lambda ()
-                            (for/fold ([s (eseq-copy s)]) ([_ (in-range (sub1 steps))])
-                              (define-values (a b)
-                                (eseq-split! s (if keep-front? (- (eseq-length s) cut) cut)))
-                              (if keep-front? a b))))))))
-  (define (shrink title one-step keep-front?)
+  ;; immer pairs each of these with a `_mut` variant on a transient, which here
+  ;; is just the ephemeral row: a destructive split gets a copy of its own, and
+  ;; `eseq-copy` being O(1) is exactly what immer's `_mut` is claiming.
+  (define (shrink title one-step vector-step)
     (table
      title sizes
      (rows-for
@@ -371,22 +387,30 @@
                (and (> cut 0)
                     (measure steps
                              (lambda ()
-                               (for/fold ([s s]) ([_ (in-range (sub1 steps))])
+                               (for/fold ([s (fresh-of i s)]) ([_ (in-range (sub1 steps))])
                                  (op s cut))))))))
-      #:only (lambda (i) (memq (impl-kind i) '(persistent)))
-      #:extra (list (transient-row keep-front?)))))
+      #:extra
+      (list
+       (cons "  vector"
+             (for/list ([n (in-list sizes)])
+               (define v (build-vector n values))
+               (define cut (quotient n steps))
+               (and (> cut 0)
+                    (measure steps
+                             (lambda ()
+                               (for/fold ([v v]) ([_ (in-range (sub1 steps))])
+                                 (vector-step v cut)))))))))))
   (shrink "take-lin: drop a tenth off the back, ten times, ns per step"
           (lambda (i)
-            (define sp (impl-split i))
+            (define tk (impl-take i))
             (define ln (impl-len i))
-            (and sp ln (lambda (s cut)
-                         (let-values ([(a b) (sp s (- (ln s) cut))]) a))))
-          #t)
+            (and tk ln (lambda (s cut) (tk s (- (ln s) cut)))))
+          (lambda (v cut) (vector-copy v 0 (- (vector-length v) cut))))
   (shrink "drop-lin: drop a tenth off the front, ten times, ns per step"
           (lambda (i)
-            (define sp (impl-split i))
-            (and sp (lambda (s cut) (let-values ([(a b) (sp s cut)]) b))))
-          #f))
+            (define dp (impl-drop i))
+            (and dp (lambda (s cut) (dp s cut))))
+          (lambda (v cut) (vector-copy v cut))))
 
 ;; ---------------------------------------------------------- immer: push_move
 
@@ -424,6 +448,16 @@
          (lambda (n) (measure n (lambda ()
                                   (define g (make-gvector))
                                   (for ([k (in-range n)]) (gvector-add! g k))))))
+    (row "array push-back"
+         (lambda (n) (measure n (lambda ()
+                                  (define a ((impl-empty array-impl) 8))
+                                  (define pb (impl-push-back array-impl))
+                                  (for ([k (in-range n)]) (pb a k))))))
+    ;; the idiomatic way to build a list in order: cons at the front, reverse
+    (row "list cons, reverse"
+         (lambda (n) (measure n (lambda ()
+                                  (reverse (for/fold ([l '()]) ([k (in-range n)])
+                                             (cons k l)))))))
     (row "  vector fill"
          (lambda (n) (measure n (lambda ()
                                   (define v (make-vector n 0))
@@ -449,9 +483,11 @@
       (define fe (impl-for-each i))
       (and sp fe (>= n k)
            (let ([s (build-of i n)] [cut (quotient n k)])
+             ;; a destructive split consumes the sequence, so the ephemeral
+             ;; rows cut up a copy of their own and are charged for making it
              (measure n
                       (lambda ()
-                        (let loop ([s s] [j 0] [acc 0])
+                        (let loop ([s (fresh-of i s)] [j 0] [acc 0])
                           (cond
                             [(= j (sub1 k))
                              (fe s (lambda (x) (set! acc (+ acc 1))))
@@ -460,7 +496,6 @@
                              (define-values (a b) (sp s cut))
                              (fe a (lambda (x) (set! acc (+ acc 1))))
                              (loop b (add1 j) acc)])))))))
-    #:only (lambda (i) (memq (impl-kind i) '(persistent)))
     #:extra
     (list
      (cons "  vector"

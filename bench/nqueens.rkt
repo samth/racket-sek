@@ -21,6 +21,7 @@
 
 (require racket/treelist
          racket/mutable-treelist
+         racket/vector
          data/gvector
          "../sek/main.rkt"
          (only-in "main.rkt" record-table! dump-json! current-scenario))
@@ -54,6 +55,16 @@
 
 ;; pairs: the original
 (define-nqueens nqueens/pairs ('() null? car cdr cons append))
+
+;; vector: immutable in use, so rest, cons and append all copy -- which at
+;; eight elements is a handful of words and perfectly competitive
+(define (vec-rest v)
+  (vector-copy v 1))
+(define (vec-cons x v)
+  (vector-append (vector x) v))
+(define-nqueens nqueens/vector
+                ('#() (lambda (v) (eqv? 0 (vector-length v))) (lambda (v) (vector-ref v 0))
+                      vec-rest vec-cons vector-append))
 
 ;; treelist: an immutable structure, so the translation is direct
 (define (tl-rest t)
@@ -230,6 +241,22 @@
    eseq-length))
 
 ;; A list is a stack already: the k-th from the top is the k-th pair.
+;; A box holding a persistent sequence is a stack too, and is what you would
+;; reach for if the search had to keep snapshots of the placed rows.
+(define-nqueens/stack nqueens/stack/box-of-pseq
+  ((lambda () (box empty-pseq))
+   (lambda (b x) (set-box! b (pseq-push-back (unbox b) x)))
+   (lambda (b) (set-box! b (let-values ([(x r) (pseq-pop-back (unbox b))]) r)))
+   (lambda (b k) (let ([s (unbox b)]) (pseq-ref s (- (pseq-length s) 1 k))))
+   (lambda (b) (pseq-length (unbox b)))))
+
+(define-nqueens/stack nqueens/stack/box-of-treelist
+  ((lambda () (box empty-treelist))
+   (lambda (b x) (set-box! b (treelist-add (unbox b) x)))
+   (lambda (b) (set-box! b (treelist-drop-right (unbox b) 1)))
+   (lambda (b k) (let ([t (unbox b)]) (treelist-ref t (- (treelist-length t) 1 k))))
+   (lambda (b) (treelist-length (unbox b)))))
+
 (define-nqueens/stack nqueens/stack/box-of-list
   ((lambda () (box (cons '() 0)))
    (lambda (b x) (set-box! b (cons (cons x (car (unbox b))) (add1 (cdr (unbox b))))))
@@ -298,11 +325,14 @@
                  (cons 'pseq (lambda () (nqueens/pseq 8)))
                  (cons 'eseq (lambda () (nqueens/eseq 8)))
                  (cons 'gvector (lambda () (nqueens/gvector 8)))
-                 (cons 'mutable-treelist (lambda () (nqueens/mutable-treelist 8)))))
+                 (cons 'mutable-treelist (lambda () (nqueens/mutable-treelist 8)))
+                 (cons 'vector (lambda () (nqueens/vector 8)))))
     (group "the same problem as a backtracking search over one mutable stack"
            (list (cons 'vector (lambda () (nqueens/stack/vector 8)))
                  (cons 'gvector (lambda () (nqueens/stack/gvector 8)))
                  (cons 'mutable-treelist (lambda () (nqueens/stack/mutable-treelist 8)))
                  (cons 'eseq (lambda () (nqueens/stack/eseq 8)))
-                 (cons 'box-of-list (lambda () (nqueens/stack/box-of-list 8))))))
+                 (cons 'box-of-list (lambda () (nqueens/stack/box-of-list 8)))
+                 (cons 'box-of-pseq (lambda () (nqueens/stack/box-of-pseq 8)))
+                 (cons 'box-of-treelist (lambda () (nqueens/stack/box-of-treelist 8))))))
   (when json-file (dump-json! json-file)))

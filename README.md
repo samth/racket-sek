@@ -179,9 +179,17 @@ benchmark suite — stack, queue, traversal, random access, hops, update,
 construction, concat, split, filter, fill — plus transient scenarios, which the
 reference's suite does not measure. Contenders are Racket's `treelist` and
 `mutable-treelist`, `gvector` (the revised one from
-[racket/data#34](https://github.com/racket/data/pull/34)), lists, and the OCaml
+[racket/data#34](https://github.com/racket/data/pull/34)), lists, a mutable box
+holding a list, a hand-rolled growable `array` as the floor, and the OCaml
 implementation itself. `bench/bm.rkt` is the benchmark from that gvector PR,
 with sek rows added.
+
+Every structure is measured on every operation it can perform at all, including
+where that costs it a walk of the whole sequence — a cons list does have a back,
+it is just Θ(n) away. A dash means only that the operation does not exist.
+Rows that would otherwise be quadratic are measured as a bounded burst against
+a sequence already at length n; the `burst-check` scenario runs both paths side
+by side so the size of that substitution is visible rather than asserted.
 
 `bench/external.rkt` adds the shapes that the *other* chunked-sequence
 libraries measure, transcribed from their own suites: Scala's
@@ -255,6 +263,13 @@ are faster here), while allocation-bound work costs 2–5× more, which is the
 usual Racket-versus-native-OCaml shape. Snapshotting after every push is 9×
 *faster* here, because this implementation shares the end chunks where the
 reference copies them.
+
+Measuring `mutable-treelist` on the operations it had previously been left out
+of turned up a bug in `racket/mutable-treelist`, since fixed: shortening one at
+the front and then copying or snapshotting it raised `vector-length: contract
+violation`, because `treelist-copy-for-mutable` assumed every node was a bare
+vector and a `treelist-drop` leaves nodes carrying a size vector. `bench/README.md`
+has the diagnosis; the fix and its regression test are in the Racket tree.
 
 ## Deviations from the paper
 
