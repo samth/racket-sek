@@ -16,7 +16,8 @@
 ;; with the occupied range of its support, and no other chunk shares that
 ;; support.
 
-(require (only-in racket/unsafe/ops
+(require racket/vector
+         (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-set! unsafe-vector*-length
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>= unsafe-fx=)
          "config.rkt")
@@ -58,6 +59,8 @@
          chunk-pop-front
          chunk-pop-back
          chunk-set
+         chunk-own
+         chunk-own-atomic
          chunk-item-at
          chunk-item-at/from
          chunk-ref-atomic
@@ -232,13 +235,27 @@
   (vector-set! data 0 x)
   (chunk (support data 0 1) 0 1 w owner))
 
-;; The sub-chunk holding items [start, start+len) of c.  It gets a fresh
-;; support: sharing one would break the ownership invariant if c happens to be
-;; owned by somebody.
-(define (chunk-sub c start len mw)
-  (define data (make-vector (chunk-capacity c) none))
-  (chunk-blit! c start len data 0)
-  (chunk (support data 0 len) 0 len (chunk-items-weight c start len mw) no-owner))
+;; The sub-chunk holding items [start, start+len) of c, whose total weight the
+;; caller already knows.
+;;
+;; This follows ShareableChunk.three_way_split in the reference, which branches
+;; on ownership.  A *shared* chunk -- which is every chunk a persistent split
+;; touches, since a persistent sequence owns nothing -- yields a new view onto
+;; the same support: one small record, no array allocated and no item copied.
+;; That is what the support/view representation is for.  Only a *uniquely
+;; owned* chunk has to be copied, for two reasons: its owner may go on to write
+;; into it in place, and the ownership invariant requires a uniquely-owned
+;; chunk's view to coincide with its support's range, which a sub-view does
+;; not.  The reference copies both sides in that case too, and notes that the
+;; larger side could instead reuse the support in place; so could this.
+(define (chunk-sub c start len w owner)
+  (cond
+    [(chunk-owned? c owner)
+     (define data (make-vector (chunk-capacity c) none))
+     (chunk-blit! c start len data 0)
+     (chunk (support data 0 len) 0 len w owner)]
+    [else
+     (chunk (chunk-support c) (chunk-index->support-index c start) len w no-owner)]))
 
 ;; The concatenation of two chunks, which must fit within one capacity.
 (define (chunk-fuse a b owner)
@@ -374,6 +391,36 @@
 
 ;; Replace item i.  wold/wnew are the weights of the outgoing and incoming
 ;; items.
+;; Make the chunk uniquely owned by `owner`, copying it if it is shared.  This
+;; is what a caller wants when it is about to write into the chunk's data
+;; vector directly, rather than through `chunk-set` -- iterators do exactly
+;; that.  It used to be spelled "set element i to itself", which forced the
+;; copy-on-write path as a side effect; that stopped working once `chunk-set`
+;; learned to recognise a write that changes nothing.
+;; A private copy of a chunk's backing store, and the head the copy should use.
+;;
+;; When the view covers the whole support there is nothing to clear and nothing
+;; to move, so a straight `vector-copy` writes every slot exactly once.
+;; Building a fresh vector and blitting into it writes the empty slots twice --
+;; once with the filler and once with nothing -- which is the reference's
+;; "approach 2", used there only when it has to be (EphemeralChunk.sub).
+(define (chunk-copy-store c)
+  (cond
+    [(chunk-aligned? c)
+     (values (vector-copy (support-data (chunk-support c))) (chunk-head c))]
+    [else
+     (define data (make-vector (chunk-capacity c) none))
+     (chunk-blit! c 0 (chunk-size c) data 0)
+     (values data 0)]))
+
+(define (chunk-own c owner)
+  (cond
+    [(chunk-owned? c owner) c]
+    [else
+     (define n (chunk-size c))
+     (define-values (data head) (chunk-copy-store c))
+     (chunk (support data head n) head n (chunk-weight c) owner)]))
+
 (define (chunk-set c i x wold wnew owner)
   (cond
     [(chunk-owned? c owner)
@@ -382,13 +429,19 @@
      (unsafe-vector*-set! (support-data s) (wrap+ (unsafe-fx+ (chunk-head c) i) k) x)
      (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) (unsafe-fx- wnew wold)))
      c]
+    ;; Writing back what is already there changes nothing, and the reference
+    ;; checks for it before copying (`set_shared`: `if delta = 0 && x == get p i
+    ;; then p`).  Worth having even though it looks like a special case: the
+    ;; recursive `chunk-set-atomic` below already relies on the same identity
+    ;; test one level up, and a set that does not change anything should not
+    ;; cost a chunk copy.
+    [(and (eqv? wold wnew) (eq? x (chunk-ref c i))) c]
     [else
      (define k (chunk-capacity c))
      (define n (chunk-size c))
-     (define data (make-vector k none))
-     (chunk-blit! c 0 n data 0)
-     (vector-set! data i x)
-     (chunk (support data 0 n) 0 n (+ (chunk-weight c) (- wnew wold)) owner)]))
+     (define-values (data head) (chunk-copy-store c))
+     (vector-set! data (wrap+ (+ head i) k) x)
+     (chunk (support data head n) head n (+ (chunk-weight c) (- wnew wold)) owner)]))
 
 ;; -------------------------------------------------------------- get-from-chunk
 
@@ -438,6 +491,19 @@
         (chunk-ref-atomic (chunk-ref c q) j (sub1 d)))))
 
 ;; The same descent, rebuilding the chunks along the way.
+;; chunk-own, descending to the depth-0 chunk that holds atomic index i.
+(define (chunk-own-atomic c i d owner)
+  (cond
+    [(eqv? d 0) (chunk-own c owner)]
+    [else
+     (define-values (q j) (chunk-item-at c i d))
+     (define inner (chunk-ref c q))
+     (define inner* (chunk-own-atomic inner j (sub1 d) owner))
+     (define c* (chunk-own c owner))
+     (if (eq? inner inner*)
+         c*
+         (chunk-set c* q inner* (chunk-weight inner) (chunk-weight inner*) owner))]))
+
 (define (chunk-set-atomic c i x d owner)
   (cond
     [(eqv? d 0) (chunk-set c i x 1 1 owner)]

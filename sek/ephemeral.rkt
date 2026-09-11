@@ -42,6 +42,7 @@
          eseq-last
          eseq-ref
          eseq-set!
+         eseq-own-at!
          eseq-snapshot
          pseq-edit
          eseq-copy
@@ -314,6 +315,21 @@
     [(iback) (set-esq-iback! e (chunk-set (esq-iback e) j x 1 1 id))]
     [else (set-esq-back! e (chunk-set (esq-back e) j x 1 1 id))]))
 
+;; Take ownership of whichever chunk holds index i, so that a caller may write
+;; into its data vector directly.  The middle sequence is handled by writing
+;; the element back through pt-set, which copies the spine; only the end chunks
+;; are on the hot path for iterators.
+(define (eseq-own-at! e i)
+  (eseq-invalidate-iterators! e)
+  (define id (esq-id e))
+  (define-values (where j) (eseq-locate e i 'eseq-own-at!))
+  (case where
+    [(front) (set-esq-front! e (chunk-own (esq-front e) id))]
+    [(ifront) (set-esq-ifront! e (chunk-own (esq-ifront e) id))]
+    [(middle) (set-esq-middle! e (pt-own (esq-middle e) j 1 id))]
+    [(iback) (set-esq-iback! e (chunk-own (esq-iback e) id))]
+    [else (set-esq-back! e (chunk-own (esq-back e) id))]))
+
 (define (eseq-first e)
   (when (eseq-empty? e)
     (raise-arguments-error 'eseq-first "sequence is empty"))
@@ -436,9 +452,11 @@
 
 ;; Truncate e at index i, keeping the front part ('front) or the back part
 ;; ('back).
+;; Only one side is kept, so only one side is built -- pseq-take and pseq-drop
+;; are the specialised splits.
 (define (eseq-take! e i [side 'front])
-  (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
-  (eseq-become! e (if (eq? side 'front) s1 s2)))
+  (define s (eseq-snapshot-and-clear! e))
+  (eseq-become! e (if (eq? side 'front) (pseq-take s i) (pseq-drop s i))))
 
 (define (eseq-drop! e i [side 'front])
   (eseq-take! e i (if (eq? side 'front) 'back 'front)))

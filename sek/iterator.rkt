@@ -642,7 +642,7 @@
      (set-siter-birth! it (eseq-invalidate-iterators-except! e))]
     [else
      (define i (cur-index c))
-     (eseq-set! e i (cur-get c))
+     (eseq-own-at! e i)
      (set-siter-birth! it (eseq-iterator-born! e))
      (reload! it)
      (cur-reach! c i)]))

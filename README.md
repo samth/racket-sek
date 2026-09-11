@@ -245,9 +245,19 @@ faster than the treelist, faster than an indexed read on a growable array, and
 within 1.7× of a raw vector. The answer to sequential access in this library is
 a first-class iterator, and it is a better answer than a display; it is just
 not spelled `ref`. Bulk element-wise work (`map`, `filter`) is 4× ahead of a
-treelist for the same reason, immer's `push_move` reproduces its headline
-(8.7 ns per element against 40.2 for repeated persistent `treelist-add`), and
-slicing remains the thing this design gives up.
+treelist for the same reason, and immer's `push_move` reproduces its headline
+(8.7 ns per element against 40.2 for repeated persistent `treelist-add`).
+
+Slicing used to be the thing this design gives up — `slice`, `take` and `split`
+all read several times a treelist, and `split` 4.6× the OCaml reference. That
+turned out to be wrong, and reading the reference next to this code found seven
+places where the port copied a chunk where the reference shares a view of it,
+rescanned a weight it already knew, or built a half of a split it then threw
+away. Closing them took `split` to 1.07× the reference, `take` from 600 ns to
+86, `slice` from 1073 to 257, and made persistent `set` 1.8× *faster* than the
+reference. What remains is 1.3× a treelist on a two-sided slice: the density
+invariant is real work an RRB tree does not do, and that is the honest residue.
+`bench/README.md` has the full account.
 
 `bench/nqueens.rkt` runs the classic Scheme nqueens benchmark — 8 queens,
 10000 repetitions — over each structure, both as the original pair-list
@@ -258,12 +268,13 @@ fastest at 3.4 s against `treelist`'s 4.2 s, and the mutable ones pay 2–4×
 more because every `cons` and `append` has to copy where a persistent
 structure shares.
 
-Against the OCaml implementation, the persistent operations are at parity
-(push/pop 0.95×, traversal 0.98×, indexing 1.07×, and both flavours of `set`
-are faster here), while allocation-bound work costs 2–5× more, which is the
-usual Racket-versus-native-OCaml shape. Snapshotting after every push is 9×
-*faster* here, because this implementation shares the end chunks where the
-reference copies them.
+Against the OCaml implementation, the persistent operations are at parity or
+better — push/pop 0.94×, traversal 1.01×, indexing 1.17×, splitting 1.07×, and
+both flavours of `set` faster here (0.57× persistent, 0.69× ephemeral) — while
+allocation-bound work costs 1.9–3.3× more, which is the usual
+Racket-versus-native-OCaml shape. Snapshotting after every push is 9× *faster*
+here, because this implementation shares the end chunks where the reference
+copies them.
 
 Measuring `mutable-treelist` on the operations it had previously been left out
 of turned up a bug in `racket/mutable-treelist`, since fixed: shortening one at

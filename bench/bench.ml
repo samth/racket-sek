@@ -228,19 +228,23 @@ let scenario_hops () =
 let scenario_update () =
   let sizes = sizes_m () in
   let k = scale 100000 in
+  (* Write a value that differs from what is already there.  Writing a constant
+     means that after the first pass every slot already holds it, and [set]
+     returns the sequence unchanged (ShareableChunk.set_shared checks for
+     exactly that), so the benchmark measures the fast path and not the write. *)
   let e_run n =
     let s = e_of n and ix = random_indices n k in
-    measure k (fun () -> Array.iter (fun j -> E.set s j 0) ix)
+    measure k (fun () -> Array.iteri (fun c j -> E.set s j c) ix)
   in
   let p_run n =
     let s0 = p_of n and ix = random_indices n k in
     measure k (fun () ->
         let s = ref s0 in
-        Array.iter (fun j -> s := P.set !s j 0) ix)
+        Array.iteri (fun c j -> s := P.set !s j c) ix)
   in
   let a_run n =
     let a = a_of n and ix = random_indices n k in
-    measure k (fun () -> Array.iter (fun j -> a.(j) <- 0) ix)
+    measure k (fun () -> Array.iteri (fun c j -> a.(j) <- c) ix)
   in
   table "update: set at random indices, ns per write" (show_ints sizes)
     [ row "eseq" e_run sizes; row "pseq" p_run sizes; row "  array" a_run sizes ]

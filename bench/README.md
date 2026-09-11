@@ -417,15 +417,15 @@ Nanoseconds per operation at n = 10^5:
 
 | | eseq | pseq | treelist | mutable-treelist | gvector | array |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `apply-sequential`, per lookup | 27.7 | 27.5 | 6.1 | 9.6 | 7.5 | **2.5** |
-| `update-sequential`, per set | 36.3 | 270.0 | 48.6 | 9.5 | 10.6 | **3.3** |
+| `apply-sequential`, per lookup | 27.5 | 27.7 | 6.2 | 10.2 | 7.6 | **2.5** |
+| `update-sequential`, per set | 36.3 | 158.0 | 48.6 | 9.5 | 10.6 | **3.3** |
 | `apprepend`, per push | **10.3** | 13.0 | 151.1 | 159.6 | 62642 | 62441 |
-| `peek`, per first+last pair | 40.5 | 16.2 | 11.1 | 23.9 | 21.6 | **8.1** |
-| `tail`, per pop | 10.4 | 14.2 | 81.7 | 91.1 | 73515 | 69663 |
-| `slice`, per slice | 1252 | 1073 | **197.5** | 259347 | 429172 | 259493 |
+| `peek`, per first+last pair | 40.5 | 16.2 | 11.2 | 25.1 | 21.1 | **8.1** |
+| `tail`, per pop | **10.2** | 13.8 | 78.9 | 88.7 | 70086 | 67330 |
+| `slice`, per slice | 431.9 | 256.7 | **190.3** | 241517 | 406531 | 247621 |
 | `map`, per element | 10.4 | 10.3 | 39.6 | 6.6 | **5.1** | 5.3 |
 | `filter` keeping all, per element | 10.4 | 10.4 | 39.8 | 6.4 | **5.3** | 5.1 |
-| `take-lin`, per step | 516.9 | 463.9 | **29.1** | 4855 | 80918 | 8718 |
+| `take-lin`, per step | 134.7 | 86.3 | **31.5** | 5131 | 85739 | 9213 |
 | `push_move`, per element | 8.7 | 12.6 | 40.2 | 45.1 | **5.5** | 7.1 |
 | `split-parts`, per element | 2.02 | 2.01 | **1.97** | 7.68 | 10.2 | 6.19 |
 
@@ -501,15 +501,22 @@ and its traversal is slightly cheaper. The flat structures beat both, which is
 the honest shape of this operation — filtering is a traversal and an append,
 and neither is what a chunked tree is for.
 
-**Slicing is what this design gives up.** `slice`, `take-lin` and `drop-lin`
-all say the same thing — a treelist is 5× faster at a two-sided slice and 16×
-faster at a repeated one-sided `take`, and the gap grows with n where the
-treelist's is nearly flat. This agrees with the OCaml comparison further down,
-where `split` is the one operation 4.6× off the reference. The ephemeral rows
-in `take-drop` are immer's `_mut` variants, and their shape is worth reading:
-`eseq` is slower than `pseq` because an O(1) copy still leaves the destructive
-split the same work, while `mutable-treelist` is 100× worse than `treelist`
-because its copy is Θ(n) and there are only ten steps to amortise it over.
+**Slicing was once what this design gives up, and it turned out not to be.**
+`slice`, `take-lin` and `drop-lin` used to read 5×, 16× and 7× a treelist, and
+the obvious reading was that a chunked sequence pays for splitting. It was not
+that: it was seven places where this port copied where the reference shares,
+rescanned what it already knew, or built a half it then discarded. Closing them
+took `slice` from 1073 ns to 257, `take` from 600 to 86, and `split` from 4.6×
+the OCaml reference to 1.07×. "Closing the split and concat gaps" below is the
+account. What is left is 1.3× a treelist on a two-sided slice and 2.7× on a
+repeated one-sided `take` — the density invariant is real work that an RRB tree
+does not do, and that is the honest residue.
+
+The ephemeral rows in `take-drop` are immer's `_mut` variants, and their shape
+is still worth reading: `eseq` is slower than `pseq` because an O(1) copy
+still leaves the destructive split the same work to do, while
+`mutable-treelist` is 60× worse than `treelist` because its copy is Θ(n) and
+there are only ten steps to amortise it over.
 
 **And `push_move` reproduces immer's headline.** Building through a transient
 and freezing at the end costs 8.7 ns per element against 40.2 for repeated
@@ -671,36 +678,33 @@ O(n + K). That is a 3× improvement on the `eseq` row above.
 
 ## Against the OCaml reference
 
-Both implementations running the same scenarios, at n = 10^6 (or the natural
-size for the scenario). The ratio is Racket ÷ OCaml, so above one means this
-library is slower.
+Both implementations running the same scenarios, at n = 10^5. The ratio is
+Racket ÷ OCaml, so above one means this library is slower.
 
 | scenario | Racket | OCaml | ratio |
 | --- | ---: | ---: | ---: |
-| stack push/pop, ephemeral | 10.93 | 5.72 | 1.9 |
-| stack push/pop, persistent | 14.08 | 14.81 | **0.95** |
-| queue push/pop, ephemeral | 10.88 | 5.95 | 1.8 |
-| traversal, persistent | 1.94 | 1.98 | **0.98** |
-| traversal via iterator | 11.06 | 4.72 | 2.3 |
-| random access, persistent | 60.15 | 55.97 | 1.07 |
-| hops of one, via iterator | 9.59 | 6.00 | 1.6 |
-| set at random indices, persistent | 650.5 | 767.8 | **0.85** |
-| set at random indices, ephemeral | 68.06 | 97.10 | **0.70** |
-| construction | 9.62 | 3.23 | 3.0 |
-| concat | 827.9 | 328.0 | 2.5 |
-| split | 705.4 | 153.9 | 4.6 |
-| filter | 6.68 | 3.84 | 1.7 |
-| edit, one update, snapshot | 352.5 | 249.1 | 1.4 |
-| one change plus one snapshot | 209.2 | 74.83 | 2.8 |
-| snapshot after every push | 127.6 | 1141 | **0.11** |
-| fill, 10^5 elements | 2.44 | 0.51 | 4.8 |
+| stack push/pop, ephemeral | 10.8 | 5.0 | 2.15 |
+| stack push/pop, persistent | 13.5 | 14.3 | **0.94** |
+| queue push/pop, ephemeral | 10.8 | 6.1 | 1.77 |
+| traversal, persistent | 2.0 | 1.9 | 1.01 |
+| random access, persistent | 35.0 | 29.8 | 1.17 |
+| **split** | **153.8** | **144.2** | **1.07** |
+| set at random indices, persistent | 161.6 | 282.4 | **0.57** |
+| set at random indices, ephemeral | 41.6 | 60.4 | **0.69** |
+| filter | 6.8 | 3.3 | 2.05 |
+| concat | 503.2 | 261.9 | 1.92 |
+| construction | 9.1 | 2.7 | 3.33 |
 
 The persistent operations are at parity or better — pushing, popping,
 traversing and indexing a persistent sequence costs what it costs in native
-OCaml, and both flavours of `set` are faster here. What costs more is
-everything dominated by allocation: construction 3×, `concat` 2.5×, `fill` 5×.
-That is the shape one expects from Racket's allocator against native code with
-flambda.
+OCaml, splitting is within 7%, and both flavours of `set` are now faster here
+than there. What costs more is everything dominated by allocation:
+construction 3.3×, `concat` 1.9×, ephemeral push/pop 2.2×. That is the shape
+one expects from Racket's allocator against native code with flambda.
+
+The `split` row is the one that moved. It used to read 4.6×, and what closed
+it was following the reference more carefully rather than anything about
+Racket; "Closing the split and concat gaps" below is the whole account.
 
 Two entries stand out.
 
@@ -719,6 +723,98 @@ here.
 Finally, the OCaml comparison is what settles the random-access question above:
 at 55.97 ns for the reference against 60.15 here, indexing is slow because of
 how the structure is shaped, not because of how it was ported.
+
+## Closing the split and concat gaps
+
+`split` was once 4.6× the reference and `concat` 2.5×, and the first
+explanation on offer — that a chunked sequence gives up slicing — turned out to
+be wrong. Reading `ShareableSequence.ml` and `ShareableChunk.cppo.ml` next to
+this code found seven differences, none of them about Racket. Measured at
+n = 10^5, persistent:
+
+| | before | after | treelist | OCaml |
+| --- | ---: | ---: | ---: | ---: |
+| `split` | 591 | **153** | 121 | 144 |
+| `take` | 600 | **86** | 31 | — |
+| `drop` | 600 | **82** | 67 | — |
+| `slice` (two splits) | 1073 | **257** | 190 | — |
+| `concat` | 598 | **520** | 1090 | 262 |
+| `concat`, n = 100 | 104 | **24** | 40 | 12 |
+| `set` at a random index | 325 | **158** | 58 | 282 |
+
+**A persistent split copies no chunk at all.** `ShareableChunk.three_way_split`
+branches on ownership: a *shared* chunk yields `share`, a new view onto the same
+support, where only a *uniquely owned* one calls `sub` and copies. A persistent
+sequence owns nothing — `PersistentSequence.split` passes `Owner.none`, and
+`is_uniquely_owned o1 o2 = o1 = o2 && o2 <> none` is then always false — so the
+copying branch never runs. `chunk-sub` here copied unconditionally, even though
+the `(support, head, size)` representation it needed was already in place. This
+was 69% of split.
+
+**Weights are arithmetic, not a scan.** `chunk-item-at` returns the offset `j`
+of the atomic index within item `q`, so the prefix weighs `i - j` and the
+suffix is `chunk-weight - w1 - wq`: the same two subtractions the reference gets
+from `reach` and `weight2`. The old code re-walked the copied items with a
+`chunk-ref` each, 16% of split.
+
+**`take`, `drop` and `get` are separate functions there.** `ShareableSequence`
+specialises `three_way_split` three ways, each building only what is asked for.
+`sek-take` here ran a full split and discarded half of it.
+
+**The split element need not be pushed back.** Both implementations put the
+item at the split point on the right by pushing it onto the front afterwards
+(`SSeq.push Front s2 x`), which copies a chunk to prepend one element — 62% of
+split once the above landed. But the right half's leading chunk is a view
+starting at item q+1 of the chunk that was split, so item q is the slot
+immediately before it: starting the view at q puts the element where it belongs
+for nothing. Only sound where the item is not itself subdivided, so it is
+enabled only in the outermost call. This one goes beyond the reference.
+
+**`concat` allocated an empty chunk where the reference swaps one.** When a
+level's front chunk is empty the back takes its place; the displaced chunk is
+already empty and already the right capacity, so it can stand in on the other
+side, which is what `eject` does. Allocating a fresh K-slot vector instead was
+most of what concatenating two short sequences cost: 104 → 29 ns. `merge-levels`
+had the same bug.
+
+**`fuse-chunks` used `filter` and `reverse` on a list of at most four chunks**,
+which was 30% of `concat` at scale. It now skips empty chunks as it goes and
+builds its answer in order.
+
+**A write that changes nothing should not copy.** `set_shared` checks
+`delta = 0 && x == get p i` and returns the chunk untouched; `pt-set` here now
+propagates the same test up the spine. That one had a sting in it — see below.
+
+**A chunk copy is one pass, not two.** `make-vector` with a filler writes every
+slot and the blit then writes them again. `EphemeralChunk.sub` documents the
+choice and takes the single-pass `Array.copy` whenever it may. Measured on a
+58-slot vector: 63 ns for fill-then-blit, 21 ns for a straight copy.
+
+### What the identity fast path broke
+
+`ensure-owned!` in the iterator forced copy-on-write by **writing the current
+element back to itself**, relying on `set` always copying. The new fast path
+turned that into a no-op, so the iterator handed out a still-shared vector and
+`sek-blit!` wrote into its own snapshot; `generic-tests.rkt` caught it on the
+overlapping-blit case. The reference cannot use that idiom either, having the
+same fast path, so the fix is to say what is meant: `chunk-own` / `pt-own` /
+`eseq-own-at!` take ownership explicitly.
+
+### Would stencil vectors help?
+
+No, for three separate reasons. A Chez stencil vector holds at most **58 slots**
+(26 on a 32-bit build), and the default leaf capacity is 128, so they could not
+back the chunks that hold the data. They are *slower* at the one operation they
+would be used for — `unsafe-stencil-vector-update` fuses allocate, copy and
+substitute into one primitive, which is exactly the copy-on-write step in
+`chunk-set`, and it measures 10.1 ns against `vector-copy` plus `vector-set!`'s
+7.0 at 16 slots, 18.2 against 11.5 at 32, and 36.1 against 20.9 at 58. And the
+representation is wrong: a stencil vector's mask is a *set* of occupied slots,
+which is what makes it right for a HAMT node, where children are sparse. A
+chunk is a contiguous ring with a `(head, size)` view that has to push and pop
+at both ends in constant time and share one mutable support between several
+views. Its mask would always be a run of ones — strictly less information than
+`(head, size)` — and indexing would need a popcount where `wrap+` does now.
 
 ## A Racket bug this turned up
 

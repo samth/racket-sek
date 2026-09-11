@@ -107,8 +107,10 @@
       #:len eseq-length
       #:append (lambda (a b) (eseq-append! a b) a)
       #:split (lambda (s i) (eseq-split! s i))
-      #:take (lambda (s i) (let-values ([(a b) (eseq-split! s i)]) a))
-      #:drop (lambda (s i) (let-values ([(a b) (eseq-split! s i)]) b))
+      ;; eseq-take! keeps one side in place, which is the ephemeral spelling of
+      ;; immer's take_mut; eseq-split! would build both halves
+      #:take (lambda (s i) (eseq-take! s i 'front) s)
+      #:drop (lambda (s i) (eseq-take! s i 'back) s)
       #:for-each (lambda (s f) (sek-for-each s f))
       #:filter sek-filter
       #:map sek-map
@@ -866,9 +868,15 @@
                    (let* ([writes (cap i 'set n k)]
                           [s0 (build-of i n)]
                           [ix (build-vector writes (lambda (_) (random n)))])
+                     ;; write a value that differs from what is already there:
+                     ;; writing a constant means that after the first pass every
+                     ;; slot already holds it, and a structure with an identity
+                     ;; fast path (sek has one, and so does the reference)
+                     ;; measures the fast path rather than the write
                      (measure writes
                               (lambda ()
-                                (for/fold ([s s0]) ([j (in-vector ix)]) (st s j 0)))))))))
+                                (for/fold ([s s0]) ([j (in-vector ix)] [c (in-naturals)])
+                                  (st s j c)))))))))
     (list
      (cons "  vector"
            (for/list ([n (in-list sizes)])

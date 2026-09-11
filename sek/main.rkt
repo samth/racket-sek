@@ -69,6 +69,8 @@
          pseq-set
          pseq-append
          pseq-split
+         pseq-take
+         pseq-drop
          pseq->list
          list->pseq
          pseq->vector

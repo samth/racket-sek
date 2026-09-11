@@ -30,6 +30,8 @@
          pseq-set
          pseq-append
          pseq-split
+         pseq-take
+         pseq-drop
          pseq->list
          list->pseq
          pseq->vector
@@ -245,17 +247,45 @@
 
 ;; Split into the first i elements and the rest.
 (define (pseq-split s i)
-  (unless (and (exact-nonnegative-integer? i) (<= i (pseq-length s)))
+  (define n (pseq-length s))
+  (unless (and (exact-nonnegative-integer? i) (<= i n))
     (raise-arguments-error 'pseq-split "index out of range"
-                           "index" i "length" (pseq-length s)))
+                           "index" i "length" n))
   (define r (psq-rep s))
   (cond
     [(eqv? i 0) (values empty-pseq s)]
-    [(eqv? i (pseq-length s)) (values s empty-pseq)]
+    [(eqv? i n) (values s empty-pseq)]
     [(vector? r) (values (wrap-rep (vector-copy r 0 i)) (wrap-rep (vector-copy r i)))]
     [else
      (define-values (t1 t2) (pt-split r i no-owner))
      (values (wrap-rep (normalize t1)) (wrap-rep (normalize t2)))]))
+
+;; One-sided versions, which build only the half that is wanted.  The reference
+;; specialises `three_way_split` the same way, into `take`, `drop` and `get`
+;; (ShareableSequence.ml); `get` is `pseq-ref` here and was already separate.
+(define (pseq-take s i)
+  (define n (pseq-length s))
+  (unless (and (exact-nonnegative-integer? i) (<= i n))
+    (raise-arguments-error 'pseq-take "index out of range"
+                           "index" i "length" n))
+  (define r (psq-rep s))
+  (cond
+    [(eqv? i 0) empty-pseq]
+    [(eqv? i n) s]
+    [(vector? r) (wrap-rep (vector-copy r 0 i))]
+    [else (wrap-rep (normalize (pt-take r i no-owner)))]))
+
+(define (pseq-drop s i)
+  (define n (pseq-length s))
+  (unless (and (exact-nonnegative-integer? i) (<= i n))
+    (raise-arguments-error 'pseq-drop "index out of range"
+                           "index" i "length" n))
+  (define r (psq-rep s))
+  (cond
+    [(eqv? i 0) s]
+    [(eqv? i n) empty-pseq]
+    [(vector? r) (wrap-rep (vector-copy r i))]
+    [else (wrap-rep (normalize (pt-drop r i no-owner)))]))
 
 ;; -------------------------------------------------------------- conversions
 
