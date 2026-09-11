@@ -72,6 +72,12 @@
    'capacities
    '("sek's own suite"
      "The same operations at several chunk capacities, which is the one tuning knob.")
+   'burst-check
+   '("methodology"
+     "A structure whose push walks the sequence cannot be grown to n one push at a time -- that loop is quadratic -- so those rows are measured as a bounded burst against a sequence already at length n. This runs both paths against everything that can afford either, so the size of that substitution is on the page rather than asserted.")
+   'sync-cost
+   '("methodology"
+     "What concurrency safety costs a growable array. The memory-safety invariant is what lets an unsafe read stay in bounds while another thread grows the array; a lock is what it takes for two threads pushing at once to both be recorded. The invariant is free. The lock is not.")
    'apply-sequential
    '("Scala, vApplySequential"
      "Index at ascending positions. A structure that remembers the chunk it last touched answers all but one lookup in K from cache. sek does not cache on ref -- that is what its iterators are for -- so the last row shows the same walk through one.")
@@ -121,7 +127,9 @@
           transient
           filter
           fill
-          capacities))
+          capacities
+          burst-check
+          sync-cost))
 (define external-order
   '(apply-sequential update-sequential
                      apprepend
@@ -151,6 +159,7 @@
     [(has? "eseq") "indigo"]
     [(has? "pseq") "indigo2"]
     [(has? "sek") "indigo"]
+    [(has? "array") "steel"]
     [(has? "vector") "slate"]
     [(has? "list") "grey"]
     [else "slate"]))
@@ -554,6 +563,7 @@
   --clay2: #d9974f;
   --green: #2c7a5c;
   --slate: #414a58;
+  --steel: #4b7f93;
   --grey: #8d95a1;
   --grey2: #bcc3cc;
   --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
@@ -574,6 +584,7 @@
     --clay2: #9c6134;
     --green: #4fae87;
     --slate: #9aa5b4;
+    --steel: #6fb0c6;
     --grey: #6d7686;
     --grey2: #454e5d;
   }
@@ -592,6 +603,7 @@
   --clay2: #9c6134;
   --green: #4fae87;
   --slate: #9aa5b4;
+  --steel: #6fb0c6;
   --grey: #6d7686;
   --grey2: #454e5d;
 }
@@ -739,6 +751,7 @@ section h2::before { content: "\00a7\00a0"; color: var(--muted); font-weight: 40
 .bar.clay2 { fill: var(--clay2); }
 .bar.green { fill: var(--green); }
 .bar.slate { fill: var(--slate); }
+.bar.steel { fill: var(--steel); }
 .bar.grey { fill: var(--grey); }
 .bar.grey2 { fill: var(--grey2); }
 
@@ -786,6 +799,7 @@ tbody tr + tr th, tbody tr + tr td { border-top: 1px solid var(--hair-soft); }
 .swatch.clay2 { background: var(--clay2); }
 .swatch.green { background: var(--green); }
 .swatch.slate { background: var(--slate); }
+.swatch.steel { background: var(--steel); }
 .swatch.grey { background: var(--grey); }
 .swatch.grey2 { background: var(--grey2); }
 

@@ -415,32 +415,43 @@ These were run on the smaller size ladder (`--quick`, up to 10^5 rather than
 The trends across the three sizes are the point, and they are already clear.
 Nanoseconds per operation at n = 10^5:
 
-| | eseq | pseq | treelist | mutable-treelist | gvector |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `apply-sequential`, per lookup | 27.5 | 27.3 | **5.8** | 9.9 | 7.5 |
-| `update-sequential`, per set | 30.4 | 237.1 | 42.0 | **9.4** | 10.3 |
-| `apprepend`, per push | **9.7** | 12.9 | 160.7 | 155.6 | — |
-| `peek`, per first+last pair | 40.8 | 16.2 | **9.7** | 23.5 | 21.3 |
-| `tail`, per persistent pop | — | **13.4** | 79.6 | — | — |
-| `slice`, per slice | — | 1020 | **191.0** | — | — |
-| `map`, per element | 10.3 | **10.1** | 39.6 | — | — |
-| `filter` keeping all, per element | 10.3 | **10.2** | 39.2 | — | — |
-| `take-lin`, per step | 521.5 | 466.4 | **79.0** | — | — |
-| `push_move`, per element | **8.7** | 12.4 | 39.8 | 44.5 | 5.1 |
-| `split-parts`, per element | — | 2.00 | **1.97** | — | — |
+| | eseq | pseq | treelist | mutable-treelist | gvector | array |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `apply-sequential`, per lookup | 27.7 | 27.5 | 6.1 | 9.6 | 7.5 | **2.5** |
+| `update-sequential`, per set | 36.3 | 270.0 | 48.6 | 9.5 | 10.6 | **3.3** |
+| `apprepend`, per push | **10.3** | 13.0 | 151.1 | 159.6 | 62642 | 62441 |
+| `peek`, per first+last pair | 40.5 | 16.2 | 11.1 | 23.9 | 21.6 | **8.1** |
+| `tail`, per pop | 10.4 | 14.2 | 81.7 | 91.1 | 73515 | 69663 |
+| `slice`, per slice | 1252 | 1073 | **197.5** | 259347 | 429172 | 259493 |
+| `map`, per element | 10.4 | 10.3 | 39.6 | 6.6 | **5.1** | 5.3 |
+| `filter` keeping all, per element | 10.4 | 10.4 | 39.8 | 6.4 | **5.3** | 5.1 |
+| `take-lin`, per step | 516.9 | 463.9 | **29.1** | 4855 | 80918 | 8718 |
+| `push_move`, per element | 8.7 | 12.6 | 40.2 | 45.1 | **5.5** | 7.1 |
+| `split-parts`, per element | 2.02 | 2.01 | **1.97** | 7.68 | 10.2 | 6.19 |
 
-Five things come out of this.
+The `array` column is the floor described above, and reading down it is the
+quickest way to see which of these operations are inherently about the shape of
+the data structure and which are not. Indexing, peeking and mapping are all
+things a flat array does several times faster than any tree, and the numbers
+say by how much. `apprepend`, `tail` and `slice` are the ones where the array
+is catastrophic — Θ(n) per operation — and where the trees are earning their
+keep.
+
+Six things come out of this.
 
 **`apprepend` is the clearest win in the whole suite, and it is Scala's own
-benchmark.** Alternating a push at each end costs sek a flat 9.7 ns and a
-treelist 160.7 ns — 17× — and the gap is entirely a function of length:
+benchmark.** Alternating a push at each end costs sek a flat 10.3 ns and a
+treelist 151.1 ns — 15× — and the gap is entirely a function of length:
 
 | `apprepend`, ns per push | 10 | 1000 | 100000 |
 | --- | ---: | ---: | ---: |
-| eseq | 15.40 | **9.58** | **9.72** |
-| pseq | 13.66 | 12.72 | 12.86 |
-| treelist | **6.01** | 28.74 | 160.7 |
-| mutable-treelist | 9.42 | 33.63 | 155.6 |
+| eseq | 16.32 | **10.20** | **10.28** |
+| pseq | 13.87 | 12.75 | 12.99 |
+| treelist | **6.67** | 30.75 | 151.1 |
+| mutable-treelist | 10.51 | 35.53 | 159.6 |
+| array | 67.49 | 709.0 | 62441 |
+| gvector | 94.79 | 745.8 | 62642 |
+| list | 223.9 | 3189 | 665062 |
 
 An RRB tree pays for a prepend what it pays for an append, and both go up with
 depth. A sequence with a chunk at each end does not care which end it is
@@ -454,50 +465,68 @@ display answers an ascending walk from cache. sek caches nothing on `ref`:
 
 | `apply-sequential`, ns per lookup | 100 | 10000 | 100000 |
 | --- | ---: | ---: | ---: |
-| eseq | 7.49 | 22.23 | 27.45 |
-| pseq | 8.31 | 21.96 | 27.26 |
-| treelist | 4.55 | 5.06 | 5.78 |
-| gvector | 7.65 | 7.45 | 7.45 |
-| vector | 1.56 | 1.42 | **1.42** |
-| pseq via iterator | **1.83** | **1.78** | 2.73 |
+| eseq | 7.74 | 22.37 | 27.69 |
+| pseq | 8.42 | 22.23 | 27.51 |
+| treelist | 4.91 | 5.41 | 6.14 |
+| gvector | 7.54 | 7.55 | 7.54 |
+| array | 2.64 | 2.51 | **2.51** |
+| list | 29.30 | 3979 | 42000 |
+| vector | 1.66 | 1.59 | 1.59 |
+| pseq via iterator | **1.83** | **1.77** | 2.71 |
 
-Read through `ref`, sek is 4.7× behind a treelist. Read through `in-pseq`, the
-same walk is 2.7 ns — twice as fast as the treelist's cached `ref`, and within
-2× of a raw vector. The library's answer to sequential access is a first-class
-iterator, and it is a better answer than a display; it is just not spelled
-`ref`.
+Read through `ref`, sek is 4.5× behind a treelist. Read through `in-pseq`, the
+same walk is 2.7 ns — 2.3× faster than the treelist's cached `ref`, faster than
+a growable array's indexed read, and within 1.7× of a raw vector. The library's
+answer to sequential access is a first-class iterator, and it is a better
+answer than a display; it is just not spelled `ref`.
 
-**Bulk element-wise work is 4× ahead, for the same reason.** `map` and `filter`
-hand out segments, so their inner loop touches a raw vector:
+**Bulk element-wise work is 4× ahead of a treelist, for the same reason.**
+`map` and `filter` hand out segments, so their inner loop touches a raw vector:
 
 | ns per input element, n = 10^5 | 100% kept | 50% | 0% |
 | --- | ---: | ---: | ---: |
-| pseq | 10.23 | 6.49 | 2.09 |
-| eseq | 10.29 | 6.54 | 2.11 |
-| treelist | 39.16 | 19.67 | **1.77** |
-| list | **4.35** | **2.71** | 1.12 |
-| vector | 6.91 | 3.86 | 1.08 |
+| pseq | 10.39 | 6.60 | 2.08 |
+| eseq | 10.37 | 6.55 | 2.10 |
+| treelist | 39.76 | 19.85 | **1.74** |
+| mutable-treelist | 6.37 | 4.93 | 2.58 |
+| gvector | 5.27 | 3.26 | 1.54 |
+| array | 5.13 | 3.40 | 1.17 |
+| list | **4.62** | **2.81** | 1.07 |
+| vector | 7.22 | 3.92 | 1.08 |
 
 Scala measures three filter ratios because they separate two costs. At 100% and
-50%, where the output has to be built, sek is 3–4× ahead of a treelist. At 0%,
+50%, where the output has to be built, sek is 4× ahead of a treelist. At 0%,
 where nothing is built, the treelist wins: all that is left is the traversal,
-and its traversal is slightly cheaper.
+and its traversal is slightly cheaper. The flat structures beat both, which is
+the honest shape of this operation — filtering is a traversal and an append,
+and neither is what a chunked tree is for.
 
 **Slicing is what this design gives up.** `slice`, `take-lin` and `drop-lin`
-all say the same thing — a treelist splits 5–6× faster, and the gap grows with
-n where the treelist's is nearly flat. This agrees with the OCaml comparison
-further down, where `split` is the one operation 4.6× off the reference. The
-`eseq (transient)` rows in `take-drop` are immer's `_mut` variants; they are
-slower than the persistent ones here, because an O(1) `eseq-copy` still leaves
-the destructive split to do the same work.
+all say the same thing — a treelist is 5× faster at a two-sided slice and 16×
+faster at a repeated one-sided `take`, and the gap grows with n where the
+treelist's is nearly flat. This agrees with the OCaml comparison further down,
+where `split` is the one operation 4.6× off the reference. The ephemeral rows
+in `take-drop` are immer's `_mut` variants, and their shape is worth reading:
+`eseq` is slower than `pseq` because an O(1) copy still leaves the destructive
+split the same work, while `mutable-treelist` is 100× worse than `treelist`
+because its copy is Θ(n) and there are only ten steps to amortise it over.
 
 **And `push_move` reproduces immer's headline.** Building through a transient
-and freezing at the end costs 8.7 ns per element against 39.8 for repeated
+and freezing at the end costs 8.7 ns per element against 40.2 for repeated
 persistent `treelist-add` — 4.6× — and it also beats sek's own persistent
-`pseq-push-back` (12.4). That is the comparison Clojure spells
+`pseq-push-back` (12.6) and a hand-rolled growable array (7.1, once you count
+the array's own growth). That is the comparison Clojure spells
 `(persistent! (reduce conj! (transient []) xs))`, and it holds here.
 
-One oddity worth recording, and it is fixable: `peek` on an `eseq` costs 40.8 ns
+**`tail` is the one where filling the table changed the answer.** Popping the
+front until empty used to be a persistent-only row, and `pseq` won it at 13.4
+ns against a treelist's 79.6. With the ephemeral structures measured too —
+each popping a copy of its own, and charged for making it — `eseq` wins at
+10.4, because `eseq-copy` is O(1) and the pops are what the front chunk is for.
+A `mutable-treelist` pays 91.1 for the same loop and a growable array 69663,
+since every pop moves the whole array down one.
+
+One oddity worth recording, and it is fixable: `peek` on an `eseq` costs 40.5 ns
 against 16.2 for a `pseq`, where every other operation has the two within a few
 percent. Timed apart, at n = 10^5:
 
@@ -577,21 +606,24 @@ structure. Each variant is generated by a macro, so it compiles to direct
 calls rather than dispatching through a table of closures.
 
 ```
-the classic program, with the pair operations swapped out
+the classic program with the pair operations swapped out
 pairs                        413 ms
-pseq                        3423 ms
-treelist                    4187 ms
-mutable-treelist            7903 ms
-gvector                    10686 ms
-eseq                       15850 ms
+vector                      1967 ms
+pseq                        3487 ms
+treelist                    4376 ms
+mutable-treelist            8225 ms
+gvector                    10791 ms
+eseq                       16295 ms
 ```
 
 Pairs win by a factor of eight, and should: the search never holds more than
 eight elements, `cons` is two words, `cdr` is free, and appending two lists of
 four is nothing. Nothing in this benchmark asks for anything a pair list is
-bad at.
+bad at — which is also why an immutable `vector` comes second, at 1967 ms.
+Copying on every `cons` is Θ(n), but n is at most eight, and eight words is
+cheaper than any tree's indirection.
 
-Among the sequence structures, `pseq` is the fastest — 22% ahead of
+Among the sequence structures, `pseq` is the fastest — 20% ahead of
 `treelist`. Both are persistent, so the translation is direct: the search
 keeps three sequences alive across two recursive calls, and `cons` and
 `append` leave their arguments alone for free.
@@ -608,11 +640,13 @@ puts the mutable structures on their own ground:
 
 ```
 the same problem as a backtracking search over one mutable stack
-vector                      1363 ms
-box-of-list                 1608 ms
-eseq                        7957 ms
-mutable-treelist            8033 ms
-gvector                     9588 ms
+vector                      1365 ms
+box-of-list                 1534 ms
+box-of-treelist             4199 ms
+box-of-pseq                 4641 ms
+eseq                        8024 ms
+mutable-treelist            8179 ms
+gvector                     9463 ms
 ```
 
 Here `eseq` is level with `mutable-treelist` and ahead of `gvector`. All three
@@ -620,6 +654,13 @@ are about six times a bare vector, because a stack that never exceeds eight
 entries has no use for any of their machinery: the vector version is a
 `vector-set!` and an integer, and everything else is paying for growth it will
 never need.
+
+The two `box-of-` rows are a persistent sequence held in a box and pushed and
+popped by replacement, which is what you would write if the search also had to
+keep snapshots of the placed rows. Both land at about 4.2–4.6 s, between the
+pair list and the mutable structures — the allocation per push is real, but so
+is not having to copy anything, and at eight elements that trade is close to
+even.
 
 Writing this benchmark turned up one fixable thing. `eseq-copy` went through
 `eseq-snapshot` and `pseq-edit`, which for a short sequence converted the tree

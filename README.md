@@ -236,17 +236,18 @@ orders of magnitude ahead; a treelist catches up only once tens of thousands of
 writes amortize its copy.
 
 The borrowed suites agree, and sharpen two points. Scala's `vApprepend` —
-alternate a push at each end — is the clearest win in the whole set: 9.7 ns
-against a treelist's 160.7 at 10^5, and flat where the treelist's grows with
+alternate a push at each end — is the clearest win in the whole set: 10.3 ns
+against a treelist's 151.1 at 10^5, and flat where the treelist's grows with
 depth. And Scala's `vApplySequential` shows what indexing costs and what it
-need not cost: an ascending walk through `pseq-ref` takes 27.3 ns against the
-treelist's cached 5.8, but the same walk through `in-pseq` takes 2.7 — twice as
-fast as the treelist and within 2× of a raw vector. The answer to sequential
-access in this library is a first-class iterator, and it is a better answer
-than a display; it is just not spelled `ref`. Bulk element-wise work (`map`,
-`filter`) is 4× ahead of a treelist for the same reason, immer's `push_move`
-reproduces its headline (8.7 ns per element against 39.8 for repeated
-persistent `treelist-add`), and slicing remains the thing this design gives up.
+need not cost: an ascending walk through `pseq-ref` takes 27.5 ns against the
+treelist's cached 6.1, but the same walk through `in-pseq` takes 2.7 — 2.3×
+faster than the treelist, faster than an indexed read on a growable array, and
+within 1.7× of a raw vector. The answer to sequential access in this library is
+a first-class iterator, and it is a better answer than a display; it is just
+not spelled `ref`. Bulk element-wise work (`map`, `filter`) is 4× ahead of a
+treelist for the same reason, immer's `push_move` reproduces its headline
+(8.7 ns per element against 40.2 for repeated persistent `treelist-add`), and
+slicing remains the thing this design gives up.
 
 `bench/nqueens.rkt` runs the classic Scheme nqueens benchmark — 8 queens,
 10000 repetitions — over each structure, both as the original pair-list
