@@ -20,6 +20,12 @@
          "config.rkt"
          "chunk.rkt")
 
+;; Compiled in unsafe mode: this module is the inner loop of the whole
+;; library, and its safe operations were costing a type check on every struct
+;; field read.  Every index that reaches here has already been bounds-checked
+;; by the public entry points, which do it with an explicit `unless`.
+(#%declare #:unsafe)
+
 (provide (struct-out lvl)
          pt-weight
          make-level
@@ -40,7 +46,7 @@
          pt-of-list)
 
 ;; weight : total number of atomic elements below this level
-(struct lvl (weight front middle back) #:authentic)
+(struct lvl (weight front middle back) #:authentic #:sealed)
 
 (define (pt-weight t)
   (if t

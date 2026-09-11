@@ -58,7 +58,7 @@
 
 (struct psq (rep)
   #:constructor-name wrap-rep
-  #:authentic
+  #:authentic #:sealed
   #:property prop:sequence
   (lambda (s) (in-pseq s))
   #:methods gen:equal+hash
@@ -217,12 +217,19 @@
     (raise-arguments-error who "index out of range"
                            "index" i "length" (pseq-length s))))
 
+;; The bounds check and the dispatch both have to look at the representation,
+;; so do it once: `check-index` would go back through `pseq-length`, which
+;; re-tests whether the rep is a vector or a tree.
 (define (pseq-ref s i)
-  (check-index 'pseq-ref s i)
   (define r (psq-rep s))
-  (if (vector? r)
-      (vector-ref r i)
-      (pt-ref r i 0)))
+  (cond
+    [(and (lvl? r) (exact-nonnegative-integer? i) (< i (lvl-weight r)))
+     (pt-ref r i 0)]
+    [(and (vector? r) (exact-nonnegative-integer? i) (< i (vector-length r)))
+     (vector-ref r i)]
+    [else
+     (check-index 'pseq-ref s i)
+     (if (vector? r) (vector-ref r i) (pt-ref r i 0))]))
 
 (define (pseq-set s i x)
   (check-index 'pseq-set s i)

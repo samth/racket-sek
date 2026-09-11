@@ -89,7 +89,7 @@
                ;; the weight index of the first item of the current chunk,
                ;; which is what lets a short hop skip the descent
                [wbase #:mutable])
-  #:authentic)
+  #:authentic #:sealed)
 
 (define empty-support (vector))
 
@@ -440,7 +440,7 @@
 ;; ------------------------------------------------------- the public iterator
 
 (struct siter (seq kind [birth #:mutable] cursor)
-  #:authentic
+  #:authentic #:sealed
   #:reflection-name 'sek-iterator
   #:methods gen:custom-write
   [(define (write-proc it port mode)

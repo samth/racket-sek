@@ -417,17 +417,17 @@ Nanoseconds per operation at n = 10^5:
 
 | | eseq | pseq | treelist | mutable-treelist | gvector | array |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `apply-sequential`, per lookup | 27.5 | 27.7 | 6.2 | 10.2 | 7.6 | **2.5** |
-| `update-sequential`, per set | 36.3 | 158.0 | 48.6 | 9.5 | 10.6 | **3.3** |
-| `apprepend`, per push | **10.3** | 13.0 | 151.1 | 159.6 | 62642 | 62441 |
-| `peek`, per first+last pair | 40.5 | 16.2 | 11.2 | 25.1 | 21.1 | **8.1** |
-| `tail`, per pop | **10.2** | 13.8 | 78.9 | 88.7 | 70086 | 67330 |
-| `slice`, per slice | 431.9 | 256.7 | **190.3** | 241517 | 406531 | 247621 |
-| `map`, per element | 10.4 | 10.3 | 39.6 | 6.6 | **5.1** | 5.3 |
-| `filter` keeping all, per element | 10.4 | 10.4 | 39.8 | 6.4 | **5.3** | 5.1 |
-| `take-lin`, per step | 134.7 | 86.3 | **31.5** | 5131 | 85739 | 9213 |
-| `push_move`, per element | 8.7 | 12.6 | 40.2 | 45.1 | **5.5** | 7.1 |
-| `split-parts`, per element | 2.02 | 2.01 | **1.97** | 7.68 | 10.2 | 6.19 |
+| `apply-sequential`, per lookup | 17.5 | 15.1 | 6.0 | 10.0 | 7.5 | **2.5** |
+| `update-sequential`, per set | 24.5 | 130.9 | 48.9 | 9.5 | 10.7 | **3.2** |
+| `apprepend`, per push | **6.4** | 9.3 | 149.3 | 157.9 | 62113 | 61987 |
+| `peek`, per first+last pair | 22.1 | 11.4 | 11.2 | 24.9 | 21.1 | **8.1** |
+| `tail`, per pop | **6.4** | 9.5 | 78.1 | 87.9 | 69884 | 67142 |
+| `slice`, per slice | 342.8 | **180.9** | 190.2 | 242687 | 408674 | 245213 |
+| `map`, per element | 8.9 | 8.8 | 39.4 | 6.5 | **5.0** | 5.2 |
+| `filter` keeping all, per element | 8.8 | 8.8 | 39.5 | 6.3 | 5.2 | **5.0** |
+| `take-lin`, per step | 92.6 | 54.4 | **28.6** | 4820 | 81126 | 8760 |
+| `push_move`, per element | **4.8** | 5.9 | 39.9 | 44.6 | 5.4 | 7.0 |
+| `split-parts`, per element | 1.97 | 1.95 | 1.97 | 7.6 | 10.1 | 6.2 |
 
 The `array` column is the floor described above, and reading down it is the
 quickest way to see which of these operations are inherently about the shape of
@@ -683,28 +683,30 @@ Racket ÷ OCaml, so above one means this library is slower.
 
 | scenario | Racket | OCaml | ratio |
 | --- | ---: | ---: | ---: |
-| stack push/pop, ephemeral | 10.8 | 5.0 | 2.15 |
-| stack push/pop, persistent | 13.5 | 14.3 | **0.94** |
-| queue push/pop, ephemeral | 10.8 | 6.1 | 1.77 |
-| traversal, persistent | 2.0 | 1.9 | 1.01 |
-| random access, persistent | 35.0 | 29.8 | 1.17 |
-| **split** | **153.8** | **144.2** | **1.07** |
-| set at random indices, persistent | 161.6 | 282.4 | **0.57** |
-| set at random indices, ephemeral | 41.6 | 60.4 | **0.69** |
-| filter | 6.8 | 3.3 | 2.05 |
-| concat | 503.2 | 261.9 | 1.92 |
-| construction | 9.1 | 2.7 | 3.33 |
+| set at random indices, persistent | 131.7 | 267.0 | **0.49** |
+| set at random indices, ephemeral | 32.4 | 58.8 | **0.55** |
+| stack push/pop, persistent | 9.4 | 14.0 | **0.67** |
+| split | 101.4 | 139.2 | **0.73** |
+| random access, persistent | 22.2 | 29.9 | **0.75** |
+| random access, ephemeral | 25.8 | 32.2 | **0.80** |
+| traversal, persistent | 1.8 | 1.9 | **0.97** |
+| concat | 294.9 | 259.3 | 1.14 |
+| queue push/pop, ephemeral | 6.3 | 5.1 | 1.25 |
+| stack push/pop, ephemeral | 6.4 | 5.0 | 1.30 |
+| filter | 5.4 | 3.2 | 1.72 |
+| construction | 5.0 | 2.7 | 1.86 |
 
-The persistent operations are at parity or better — pushing, popping,
-traversing and indexing a persistent sequence costs what it costs in native
-OCaml, splitting is within 7%, and both flavours of `set` are now faster here
-than there. What costs more is everything dominated by allocation:
-construction 3.3×, `concat` 1.9×, ephemeral push/pop 2.2×. That is the shape
-one expects from Racket's allocator against native code with flambda.
+Nine of these twelve are now at or better than the reference, on a runtime with
+a garbage collector against native code compiled with flambda. Both flavours of
+`set` cost about half what they cost there, splitting a quarter less, indexing a
+quarter less. What is still slower is what allocation dominates: construction
+1.9×, `filter` 1.7×, ephemeral push/pop 1.3×.
 
-The `split` row is the one that moved. It used to read 4.6×, and what closed
-it was following the reference more carefully rather than anything about
-Racket; "Closing the split and concat gaps" below is the whole account.
+Two of these rows used to be the embarrassing ones. `split` read 4.6× and
+`construction` 3.3×. Neither turned out to be about Racket: the first was
+seven places where this port copied where the reference shares, and the second
+was two lines of declaration. "Closing the split and concat gaps" and "What the
+generated code said" below are the accounts.
 
 Two entries stand out.
 
@@ -799,6 +801,71 @@ turned that into a no-op, so the iterator handed out a still-shared vector and
 overlapping-blit case. The reference cannot use that idiom either, having the
 same fast path, so the fix is to say what is meant: `chunk-own` / `pt-own` /
 `eseq-own-at!` take ownership explicitly.
+
+## What the generated code said
+
+`PLT_LINKLET_SHOW_CP0=1 raco make` dumps each module after Chez's source
+optimiser, and the `disassemble` package prints the machine code for a
+procedure. Both were worth reading.
+
+**Every struct was paying for a type check it did not need.** In the cp0 output,
+each `#:authentic` field read still came out as
+
+```racket
+(if (unsafe-struct? t struct:lvl) (unsafe-struct*-ref t 1) (lvl-front t))
+```
+
+— five of them per level in `pt-ref`. The disassembly showed what that costs:
+the predicate is not a comparison but a walk of the struct type's *ancestry
+vector*, three dependent loads and a depth test:
+
+```
+(mov rdx (mem64+ rsi #x1))                     ; the record type
+(mov r11 (mem64+ rdx #x9))                     ; its ancestry vector
+(cmp (mem64+ r11 #x1) rdx) (jl ...)            ; compare depth
+(shr rdx #x1)
+(cmp (mem64+ r11 #x1 (* rdx #x1)) r8) (jnz ...)
+```
+
+Declaring the struct `#:sealed` — which only forbids subtyping, and which
+`racket/treelist` does — reduces the whole thing to one comparison:
+
+```
+(cmp (mem64+ rsi #x1) rdi) (jnz ...)
+```
+
+Thirteen structs across seven files. On its own that is 11% off an `eseq`
+push-back.
+
+**The two innermost modules are compiled in unsafe mode.** `chunk.rkt` and
+`ptree.rkt` never see a user's arguments: every index that reaches them has
+been through an explicit `unless` at a public entry point. `(#%declare
+#:unsafe)` removes the implicit checks that remained, and is worth 1.4× on
+indexing and 1.7× on push-back.
+
+This stops at the module boundary on purpose. Adding the same declaration to
+`ephemeral.rkt` measures a further 9-13% — push-back 5.30 to 4.83 ns,
+`eseq-ref` 27.0 to 23.5 — but that module holds public entry points whose
+argument checking is implicit, and the suite has only eight tests that assert
+an error is raised. Calling `eseq-push-back!` on a non-sequence would stop
+raising a contract error and start corrupting the heap. Taking that 10% safely
+means auditing the entry points and giving each an explicit predicate test
+first; the check itself costs about 0.35 ns, so it should pay for itself.
+
+**And one thing the generated code made look worse than it is.** `chunk-item-at`
+returns two values, which cp0 renders as a `call-with-values` around an
+arity-checking `case-lambda` — alarming to read on the hottest path in the
+library. Measured, returning two values costs 1.18 ns where packing the same
+two numbers into one fixnum and unpacking them costs 2.19. Chez handles it;
+the "optimisation" would have been a pessimisation, and the only way to know
+was to measure rather than to read.
+
+| ns | before | after | OCaml | treelist |
+| --- | ---: | ---: | ---: | ---: |
+| `pseq-ref` | 35.6 | **22.2** | 29.9 | 6.6 |
+| `eseq` push-back | 8.8 | **4.7** | 4.7 | — |
+| `apply-sequential` | 27.5 | **15.1** | — | 6.0 |
+| traversal | 1.78 | **1.67** | 1.9 | 1.77 |
 
 ### Would stencil vectors help?
 

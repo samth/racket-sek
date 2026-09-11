@@ -29,7 +29,7 @@
          segment->vector)
 
 (struct seg (vector start length)
-  #:authentic
+  #:authentic #:sealed
   #:reflection-name 'segment
   #:methods gen:custom-write
   [(define (write-proc s port mode)

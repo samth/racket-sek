@@ -36,6 +36,12 @@
 ;; operation in the test suite, and the conformance harness runs the same
 ;; operations against the reference implementation.
 
+;; Compiled in unsafe mode: this module is the inner loop of the whole
+;; library, and its safe operations were costing a type check on every struct
+;; field read.  Every index that reaches here has already been bounds-checked
+;; by the public entry points, which do it with an explicit `unless`.
+(#%declare #:unsafe)
+
 (provide chunk-weight
          chunk-length
          chunk-capacity
@@ -95,7 +101,7 @@
 ;; head : index of the first occupied slot
 ;; size : number of occupied slots, 0 <= size <= K; the occupied region is
 ;;        [head, head+size) taken modulo K
-(struct support ([data #:mutable] [head #:mutable] [size #:mutable]) #:authentic)
+(struct support ([data #:mutable] [head #:mutable] [size #:mutable]) #:authentic #:sealed)
 
 ;; support : the underlying circular buffer
 ;; head, size : the view, which must be a sub-range of the support's range
@@ -103,7 +109,7 @@
 ;; id : ownership id, or #f
 (struct chunk
         ([support #:mutable] [head #:mutable] [size #:mutable] [weight #:mutable] [id #:mutable])
-  #:authentic)
+  #:authentic #:sealed)
 
 (define (wrap+ i k)
   (if (unsafe-fx< i k)

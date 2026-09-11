@@ -39,10 +39,10 @@
          earray->list)
 
 ;; A node holds either elements (at depth 0) or subtrees (above).
-(struct node (id data) #:authentic)
+(struct node (id data) #:authentic #:sealed)
 
-(struct parr (depth tree length) #:authentic)
-(struct earr ([id #:mutable] depth [tree #:mutable] length) #:authentic)
+(struct parr (depth tree length) #:authentic #:sealed)
+(struct earr ([id #:mutable] depth [tree #:mutable] length) #:authentic #:sealed)
 
 ;; The number of elements spanned by one child of a node at depth d, and the
 ;; number of elements a whole tree of depth d can hold.

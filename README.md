@@ -268,13 +268,23 @@ fastest at 3.4 s against `treelist`'s 4.2 s, and the mutable ones pay 2–4×
 more because every `cons` and `append` has to copy where a persistent
 structure shares.
 
-Against the OCaml implementation, the persistent operations are at parity or
-better — push/pop 0.94×, traversal 1.01×, indexing 1.17×, splitting 1.07×, and
-both flavours of `set` faster here (0.57× persistent, 0.69× ephemeral) — while
-allocation-bound work costs 1.9–3.3× more, which is the usual
-Racket-versus-native-OCaml shape. Snapshotting after every push is 9× *faster*
-here, because this implementation shares the end chunks where the reference
-copies them.
+Against the OCaml implementation, nine of twelve scenarios are now at or better
+than the reference, on a runtime with a garbage collector against native code
+compiled with flambda: `set` at a random index costs about half what it costs
+there (0.49× persistent, 0.55× ephemeral), splitting 0.73×, indexing 0.75×,
+persistent push/pop 0.67×, traversal 0.97×. What is still slower is what
+allocation dominates — construction 1.9×, `filter` 1.7×, ephemeral push/pop
+1.3×. Snapshotting after every push is 9× *faster* here, because this
+implementation shares the end chunks where the reference copies them.
+
+Two of those numbers used to be embarrassing: `split` read 4.6× and
+`construction` 3.3×. Neither was about Racket. The first was seven places where
+this port copied a chunk where the reference shares a view of it; the second
+was two lines of declaration, found by reading what the compiler generated —
+every struct was paying a walk of its type's ancestry vector on each field
+access, which `#:sealed` collapses to one comparison, and the two innermost
+modules had implicit checks that `(#%declare #:unsafe)` removes. `pseq-ref`
+went from 35.6 ns to 22.2 and `eseq` push-back from 8.8 to 4.7.
 
 Measuring `mutable-treelist` on the operations it had previously been left out
 of turned up a bug in `racket/mutable-treelist`, since fixed: shortening one at

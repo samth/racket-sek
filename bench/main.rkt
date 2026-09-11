@@ -324,7 +324,7 @@
 ;; Like gvector, this buys memory safety and not atomicity: two threads pushing
 ;; at once can still lose an update or overwrite each other's slot.  The
 ;; `sync-cost` scenario prices that distinction, including what a lock costs.
-(struct arr ([vec #:mutable] [n #:mutable]) #:authentic)
+(struct arr ([vec #:mutable] [n #:mutable]) #:authentic #:sealed)
 
 ;; The growth path is deliberately a separate, un-inlined function: the whole
 ;; point of the row is that the common case is a bounds test, a store and an
@@ -651,7 +651,7 @@
 ;;
 ;; The last row is the honest price of the word "thread-safe", as opposed to
 ;; the memory safety the other two rows are about.
-(struct usarr ([vec #:mutable] [n #:mutable]) #:authentic)
+(struct usarr ([vec #:mutable] [n #:mutable]) #:authentic #:sealed)
 (define (usarr-push! a x)
   (define n (usarr-n a))
   (define v (usarr-vec a))

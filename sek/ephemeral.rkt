@@ -75,7 +75,7 @@
                         [iback #:mutable]
                         [back #:mutable]
                         [version #:mutable])
-  #:authentic
+  #:authentic #:sealed
   #:property prop:sequence
   (lambda (e) (in-eseq e))
   #:methods gen:custom-write
