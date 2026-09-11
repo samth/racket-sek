@@ -20,6 +20,12 @@
          "config.rkt"
          "chunk.rkt")
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide (rename-out [parr? parray?] [earr? earray?])
          make-parray
          make-earray
@@ -46,6 +52,15 @@
 
 ;; The number of elements spanned by one child of a node at depth d, and the
 ;; number of elements a whole tree of depth d can hold.
+
+;; Argument checking is explicit here, because this module is compiled in
+;; unsafe mode: a struct accessor no longer raises on the wrong kind of
+;; value, it reads whatever happens to be at that offset.
+(define-syntax-rule (check-parray who v)
+  (unless (parr? v) (raise-argument-error who "parray?" v)))
+(define-syntax-rule (check-earray who v)
+  (unless (earr? v) (raise-argument-error who "earray?" v)))
+
 (define (span d)
   (max-item-weight d))
 (define (tree-capacity d)
@@ -87,8 +102,10 @@
     (raise-arguments-error who "index out of range" "index" i "length" len)))
 
 (define (parray-length a)
+  (check-parray 'parray-length a)
   (parr-length a))
 (define (earray-length a)
+  (check-earray 'earray-length a)
   (earr-length a))
 
 (define (parray-ref a i)
@@ -147,19 +164,23 @@
 ;; Handing the array a fresh id makes every node in it unrecognizable as
 ;; uniquely owned, hence immutable (§2.4).
 (define (earray-snapshot a)
+  (check-earray 'earray-snapshot a)
   (set-earr-id! a (fresh-id!))
   (parr (earr-depth a) (earr-tree a) (earr-length a)))
 
 (define (parray-edit a)
+  (check-parray 'parray-edit a)
   (earr (fresh-id!) (parr-depth a) (parr-tree a) (parr-length a)))
 
 (define (parray->vector a)
   (build-vector (parr-length a) (lambda (i) (parray-ref a i))))
 
 (define (earray->vector a)
+  (check-earray 'earray->vector a)
   (build-vector (earr-length a) (lambda (i) (earray-ref a i))))
 
 (define (parray->list a)
+  (check-parray 'parray->list a)
   (vector->list (parray->vector a)))
 (define (earray->list a)
   (vector->list (earray->vector a)))

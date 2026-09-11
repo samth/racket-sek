@@ -13,6 +13,12 @@
 
 (require racket/vector)
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide (rename-out [seg segment])
          segment?
          segment-vector
@@ -39,6 +45,13 @@
        (write x port))
      (write-string ">" port))])
 
+
+;; Argument checking is explicit here, because this module is compiled in
+;; unsafe mode: a struct accessor no longer raises on the wrong kind of
+;; value, it reads whatever happens to be at that offset.
+(define-syntax-rule (check-segment who v)
+  (unless (seg? v) (raise-argument-error who "segment?" v)))
+
 (define segment? seg?)
 (define segment-vector seg-vector)
 (define segment-start seg-start)
@@ -51,6 +64,7 @@
        (<= (+ (seg-start s) (seg-length s)) (vector-length (seg-vector s)))))
 
 (define (segment-empty? s)
+  (check-segment 'segment-empty? s)
   (eqv? 0 (seg-length s)))
 
 (define (segment-ref s i)
@@ -66,6 +80,7 @@
   (vector-set! (seg-vector s) (+ (seg-start s) i) x))
 
 (define (segment-for-each s proc [dir 'forward])
+  (check-segment 'segment-for-each s)
   (define v (seg-vector s))
   (define i (seg-start s))
   (define n (seg-length s))
@@ -76,6 +91,8 @@
         (proc (vector-ref v j)))))
 
 (define (segment-for-each2 s1 s2 proc [dir 'forward])
+  (check-segment 'segment-for-each2 s1)
+  (check-segment 'segment-for-each2 s2)
   (define n (min (seg-length s1) (seg-length s2)))
   (define v1 (seg-vector s1))
   (define v2 (seg-vector s2))
@@ -88,11 +105,14 @@
         (proc (vector-ref v1 (+ o1 j)) (vector-ref v2 (+ o2 j))))))
 
 (define (in-segment s)
+  (check-segment 'in-segment s)
   (in-vector (seg-vector s) (seg-start s) (+ (seg-start s) (seg-length s))))
 
 (define (segment->list s)
+  (check-segment 'segment->list s)
   (for/list ([x (in-segment s)])
     x))
 
 (define (segment->vector s)
+  (check-segment 'segment->vector s)
   (vector-copy (seg-vector s) (seg-start s) (+ (seg-start s) (seg-length s))))

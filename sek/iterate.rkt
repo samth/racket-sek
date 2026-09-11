@@ -14,6 +14,12 @@
 (require "chunk.rkt"
          "ptree.rkt")
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide done
          make-reader
          reader->sequence)

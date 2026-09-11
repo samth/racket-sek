@@ -23,6 +23,12 @@
          "persistent.rkt"
          "iterate.rkt")
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide (rename-out [esq? eseq?]
                      [esq-id eseq-id]
                      [esq-front eseq-front]
@@ -100,6 +106,15 @@
 ;; sequence is then O(1) rather than O(K), which matters when a program makes
 ;; many short-lived ones; nothing downstream gets slower, because the first
 ;; push allocates exactly the chunk it needs.
+
+;; Argument checking is explicit here, because this module is compiled in
+;; unsafe mode: a struct accessor no longer raises on the wrong kind of
+;; value, it reads whatever happens to be at that offset.
+(define-syntax-rule (check-eseq who v)
+  (unless (esq? v) (raise-argument-error who "eseq?" v)))
+(define-syntax-rule (check-pseq who v)
+  (unless (pseq? v) (raise-argument-error who "pseq?" v)))
+
 (define (make-eseq [n 0] [v #f])
   (define id (fresh-id!))
   (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 0))
@@ -156,6 +171,7 @@
 ;; Every component weight is bounded by the length of the sequence, so these
 ;; sums are fixnum arithmetic.
 (define (eseq-length e)
+  (check-eseq 'eseq-length e)
   (unsafe-fx+
    (unsafe-fx+ (chunk-weight (esq-front e)) (chunk-weight (esq-ifront e)))
    (unsafe-fx+ (pt-weight (esq-middle e))
@@ -166,6 +182,7 @@
   (eqv? 0 (eseq-length e)))
 
 (define (eseq-clear! e)
+  (check-eseq 'eseq-clear! e)
   (eseq-invalidate-iterators! e)
   (set-esq-id! e (fresh-id!))
   (set-esq-front! e empty-chunk)
@@ -177,6 +194,7 @@
 ;; --------------------------------------------------------------------- push
 
 (define (eseq-push-front! e x)
+  (check-eseq 'eseq-push-front! e)
   (eseq-invalidate-iterators! e)
   (define id (esq-id e))
   (define f (esq-front e))
@@ -195,6 +213,7 @@
      (set-esq-front! e (chunk-singleton x 1 (capacity-at 0) id))]))
 
 (define (eseq-push-back! e x)
+  (check-eseq 'eseq-push-back! e)
   (eseq-invalidate-iterators! e)
   (define id (esq-id e))
   (define b (esq-back e))
@@ -212,6 +231,7 @@
 ;; ---------------------------------------------------------------------- pop
 
 (define (eseq-pop-front! e)
+  (check-eseq 'eseq-pop-front! e)
   (eseq-invalidate-iterators! e)
   (define id (esq-id e))
   (define f (esq-front e))
@@ -241,6 +261,7 @@
     [else (raise-arguments-error 'eseq-pop-front! "sequence is empty")]))
 
 (define (eseq-pop-back! e)
+  (check-eseq 'eseq-pop-back! e)
   (eseq-invalidate-iterators! e)
   (define id (esq-id e))
   (define b (esq-back e))
@@ -352,6 +373,7 @@
 ;; ownership of the chunks is something an iterator tolerates; it only means
 ;; that a subsequent write through it takes the copy-on-write path.
 (define (eseq-snapshot e)
+  (check-eseq 'eseq-snapshot e)
   ;; Flush first, while the sequence still owns its chunks, so that the push
   ;; can update them in place; only then hand out a fresh id, which is what
   ;; makes every chunk immutable and safe to share with the snapshot.
@@ -365,12 +387,14 @@
 ;; copy-on-write; it is the cheaper operation when the old contents are not
 ;; needed.
 (define (eseq-snapshot-and-clear! e)
+  (check-eseq 'eseq-snapshot-and-clear! e)
   (define s (eseq-snapshot e))
   (eseq-clear! e)
   s)
 
 ;; edit (§2.1): a fresh ephemeral sequence over the same immutable structure.
 (define (pseq-edit s)
+  (check-pseq 'pseq-edit s)
   (define id (fresh-id!))
   (define k (capacity-at 0))
   (define r (pseq-rep s))
@@ -387,6 +411,7 @@
 ;; walks the elements, which costs O(n) but leaves both structures with their
 ;; own chunks.
 (define (eseq-copy e #:mode [mode 'share])
+  (check-eseq 'eseq-copy e)
   (case mode
     [(share)
      ;; Hand both sequences a fresh identity and let them share everything.
@@ -439,12 +464,14 @@
 
 ;; Split e at index i into two new sequences; e is emptied.
 (define (eseq-split! e i)
+  (check-eseq 'eseq-split! e)
   (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
   (values (pseq-edit s1) (pseq-edit s2)))
 
 ;; Split e at index i, keeping one part in e and returning the other:
 ;; 'back keeps the front part, 'front keeps the back part.
 (define (eseq-carve! e i [side 'back])
+  (check-eseq 'eseq-carve! e)
   (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
   (cond
     [(eq? side 'back) (eseq-become! e s1) (pseq-edit s2)]
@@ -459,9 +486,11 @@
   (eseq-become! e (if (eq? side 'front) (pseq-take s i) (pseq-drop s i))))
 
 (define (eseq-drop! e i [side 'front])
+  (check-eseq 'eseq-drop! e)
   (eseq-take! e i (if (eq? side 'front) 'back 'front)))
 
 (define (eseq-for-each e proc)
+  (check-eseq 'eseq-for-each e)
   (define (chunk-elems c)
     (for ([j (in-range (chunk-length c))])
       (proc (chunk-ref c j))))
@@ -472,11 +501,13 @@
   (chunk-elems (esq-back e)))
 
 (define (eseq->list e)
+  (check-eseq 'eseq->list e)
   (define acc '())
   (eseq-for-each e (lambda (x) (set! acc (cons x acc))))
   (reverse acc))
 
 (define (eseq->vector e)
+  (check-eseq 'eseq->vector e)
   (define v (make-vector (eseq-length e) #f))
   (define i 0)
   (eseq-for-each e

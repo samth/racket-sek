@@ -36,6 +36,12 @@
          "ephemeral.rkt"
          "segment.rkt")
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide sek-iterator
          sek-iterator-at-sentinel
          sek-iter?
@@ -90,6 +96,13 @@
                ;; which is what lets a short hop skip the descent
                [wbase #:mutable])
   #:authentic #:sealed)
+
+
+;; Argument checking is explicit here, because this module is compiled in
+;; unsafe mode: a struct accessor no longer raises on the wrong kind of
+;; value, it reads whatever happens to be at that offset.
+(define-syntax-rule (check-iter who v)
+  (unless (siter? v) (raise-argument-error who "sek-iterator?" v)))
 
 (define empty-support (vector))
 
@@ -503,6 +516,7 @@
   it)
 
 (define (sek-iter-valid? it)
+  (check-iter 'sek-iter-valid? it)
   (or (eq? (siter-kind it) 'p) (eseq-iterator-valid? (siter-seq it) (siter-birth it))))
 
 (define (check-valid! it who)
@@ -510,6 +524,7 @@
     (raise-arguments-error who "iterator was invalidated by an update to its sequence")))
 
 (define (sek-iter-sequence it)
+  (check-iter 'sek-iter-sequence it)
   (siter-seq it))
 (define (sek-iter-length it)
   (cur-wt (siter-cursor it)))
@@ -555,6 +570,7 @@
   (cur-move! (siter-cursor it) dir))
 
 (define (sek-iter-get-and-move! it [dir 'forward])
+  (check-iter 'sek-iter-get-and-move! it)
   (define x (sek-iter-get it))
   (cur-move! (siter-cursor it) dir)
   x)
@@ -611,6 +627,7 @@
   (cur-segment c dir))
 
 (define (sek-iter-segment-and-jump! it [dir 'forward])
+  (check-iter 'sek-iter-segment-and-jump! it)
   (define s (sek-iter-segment it dir))
   (cur-jump! (siter-cursor it) dir (segment-length s))
   s)
@@ -623,6 +640,7 @@
   (and (not (cur-finished? c)) (cur-segment c dir)))
 
 (define (sek-iter-segment-and-jump*! it [dir 'forward])
+  (check-iter 'sek-iter-segment-and-jump*! it)
   (define s (sek-iter-segment* it dir))
   (when s (cur-jump! (siter-cursor it) dir (segment-length s)))
   s)
@@ -661,6 +679,7 @@
   (unsafe-vector*-set! (cur-support c) (cur-icur c) x))
 
 (define (sek-iter-set-and-move! it x [dir 'forward])
+  (check-iter 'sek-iter-set-and-move! it)
   (sek-iter-set! it x)
   (cur-move! (siter-cursor it) dir))
 
@@ -675,11 +694,13 @@
        (sek-iter-writable-segment it dir)))
 
 (define (sek-iter-writable-segment-and-jump! it [dir 'forward])
+  (check-iter 'sek-iter-writable-segment-and-jump! it)
   (define s (sek-iter-writable-segment it dir))
   (cur-jump! (siter-cursor it) dir (segment-length s))
   s)
 
 (define (sek-iter-writable-segment-and-jump*! it [dir 'forward])
+  (check-iter 'sek-iter-writable-segment-and-jump*! it)
   (define s (sek-iter-writable-segment* it dir))
   (when s (cur-jump! (siter-cursor it) dir (segment-length s)))
   s)

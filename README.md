@@ -161,6 +161,16 @@ raco test sek/
 The suite runs at chunk capacities from 2 upwards, so the trees get deep and
 the cascading cases in `push`, `pop`, `split` and `merge` are actually reached.
 
+Every module of the library is compiled with `(#%declare #:unsafe)`, so nothing
+here raises by accident: a struct accessor handed the wrong kind of value reads
+whatever is at that offset rather than complaining. Every function a caller
+outside the library can reach therefore checks its arguments with an explicit
+`unless`, and `sek/tests/error-tests.rkt` is what holds that line — it calls the
+public surface with wrong types and out-of-range indices across about 150 cases
+and insists on an exception. It is worth running whenever an entry point is
+added, because a missing check there is not a bad error message, it is a read of
+arbitrary memory.
+
 Separately, `conformance/` checks this library against the OCaml one directly:
 a generated script of several hundred operations is run by both, and the two
 traces — the result of every command plus the full contents of a dozen

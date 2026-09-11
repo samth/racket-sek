@@ -21,6 +21,12 @@
          "iterator.rkt"
          "segment.rkt")
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide sek?
          sek-length
          sek-empty?
@@ -96,6 +102,7 @@
       (eseq-length s)))
 
 (define (sek-empty? s)
+  (check-sek 'sek-empty? s)
   (eqv? 0 (sek-length s)))
 
 (define (sek-ref s i)
@@ -104,6 +111,7 @@
       (eseq-ref s i)))
 
 (define (sek-first s)
+  (check-sek 'sek-first s)
   (if (pseq? s)
       (pseq-first s)
       (eseq-first s)))
@@ -348,8 +356,10 @@
        (loop)])))
 
 (define (sek-member? x s [same? equal?])
+  (check-sek 'sek-member? s)
   (sek-exists? s (lambda (y) (same? x y))))
 (define (sek-memq? x s)
+  (check-sek 'sek-memq? s)
   (sek-exists? s (lambda (y) (eq? x y))))
 
 ;; --------------------------------------------------------- binary traversal
@@ -391,6 +401,8 @@
       (loop))))
 
 (define (sek-fold-left2 s1 s2 proc init)
+  (check-sek 'sek-fold-left2 s1)
+  (check-sek 'sek-fold-left2 s2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ([acc init])
@@ -402,6 +414,8 @@
           (loop acc)))))
 
 (define (sek-fold-right2 s1 s2 proc init)
+  (check-sek 'sek-fold-right2 s1)
+  (check-sek 'sek-fold-right2 s2)
   (define n (min (sek-length s1) (sek-length s2)))
   (define it1 (sek-iterator s1 'backward))
   (define it2 (sek-iterator s2 'backward))
@@ -418,6 +432,8 @@
           (loop acc (sub1 k))))))
 
 (define (sek-for-all2? s1 s2 pred)
+  (check-sek 'sek-for-all2? s1)
+  (check-sek 'sek-for-all2? s2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -430,6 +446,8 @@
       [else #f])))
 
 (define (sek-exists2? s1 s2 pred)
+  (check-sek 'sek-exists2? s1)
+  (check-sek 'sek-exists2? s2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -442,12 +460,16 @@
        (loop)])))
 
 (define (sek-equal? s1 s2 [same? equal?])
+  (check-sek 'sek-equal? s1)
+  (check-sek 'sek-equal? s2)
   (and (= (sek-length s1) (sek-length s2)) (sek-for-all2? s1 s2 same?)))
 
 ;; -1, 0 or 1, comparing element by element and then by length.
 ;; cmp compares two elements and returns a negative number, zero, or a
 ;; positive number.
 (define (sek-compare s1 s2 cmp)
+  (check-sek 'sek-compare s1)
+  (check-sek 'sek-compare s2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -571,6 +593,8 @@
 
 ;; Merge two sequences that are already sorted.
 (define (sek-merge s1 s2 less?)
+  (check-sek 'sek-merge s1)
+  (check-sek 'sek-merge s2)
   (define b (open-builder))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
@@ -644,6 +668,7 @@
       (pseq-edit (pseq-drop (eseq-snapshot s) n))))
 
 (define (sek-copy s #:mode [mode 'share])
+  (check-sek 'sek-copy s)
   (if (pseq? s)
       s
       (eseq-copy s #:mode mode)))

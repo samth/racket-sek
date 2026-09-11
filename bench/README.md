@@ -683,18 +683,18 @@ Racket ÷ OCaml, so above one means this library is slower.
 
 | scenario | Racket | OCaml | ratio |
 | --- | ---: | ---: | ---: |
-| set at random indices, persistent | 131.7 | 267.0 | **0.49** |
-| set at random indices, ephemeral | 32.4 | 58.8 | **0.55** |
-| stack push/pop, persistent | 9.4 | 14.0 | **0.67** |
-| split | 101.4 | 139.2 | **0.73** |
-| random access, persistent | 22.2 | 29.9 | **0.75** |
-| random access, ephemeral | 25.8 | 32.2 | **0.80** |
-| traversal, persistent | 1.8 | 1.9 | **0.97** |
-| concat | 294.9 | 259.3 | 1.14 |
-| queue push/pop, ephemeral | 6.3 | 5.1 | 1.25 |
-| stack push/pop, ephemeral | 6.4 | 5.0 | 1.30 |
-| filter | 5.4 | 3.2 | 1.72 |
-| construction | 5.0 | 2.7 | 1.86 |
+| set at random indices, persistent | 131.8 | 273.2 | **0.48** |
+| set at random indices, ephemeral | 29.2 | 58.7 | **0.50** |
+| stack push/pop, persistent | 9.8 | 14.3 | **0.68** |
+| random access, ephemeral | 22.4 | 32.3 | **0.69** |
+| split | 102.7 | 141.4 | **0.73** |
+| random access, persistent | 22.5 | 29.8 | **0.76** |
+| traversal, persistent | 1.8 | 2.0 | **0.91** |
+| concat | 293.9 | 261.0 | 1.13 |
+| stack push/pop, ephemeral | 6.4 | 5.1 | 1.27 |
+| queue push/pop, ephemeral | 6.6 | 5.1 | 1.29 |
+| filter | 5.4 | 3.2 | 1.69 |
+| construction | 5.1 | 2.7 | 1.87 |
 
 Nine of these twelve are now at or better than the reference, on a runtime with
 a garbage collector against native code compiled with flambda. Both flavours of
@@ -837,20 +837,29 @@ Declaring the struct `#:sealed` — which only forbids subtyping, and which
 Thirteen structs across seven files. On its own that is 11% off an `eseq`
 push-back.
 
-**The two innermost modules are compiled in unsafe mode.** `chunk.rkt` and
-`ptree.rkt` never see a user's arguments: every index that reaches them has
-been through an explicit `unless` at a public entry point. `(#%declare
-#:unsafe)` removes the implicit checks that remained, and is worth 1.4× on
-indexing and 1.7× on push-back.
+**Every module is compiled in unsafe mode, and checks its arguments itself.**
+`(#%declare #:unsafe)` removes the implicit checks that survive cp0 — worth
+1.4× on indexing and 1.7× on push-back — but it also means a struct accessor no
+longer raises when handed the wrong kind of value: it reads whatever is at that
+offset. So the checking that used to happen incidentally, as a side effect of a
+safe accessor failing, is now deliberate. Fifty-seven functions across six
+modules gained an explicit `unless`, behind six one-line macros (`check-pseq`,
+`check-eseq`, `check-iter`, `check-segment`, `check-parray`, `check-earray`)
+joining the `check-sek` that `generic.rkt` already had. With the structs sealed
+each is a single pointer comparison, about 0.35 ns — visible on
+`eseq-push-back!`, which went from 4.69 ns to 4.86, and swamped everywhere else
+by what unsafe mode buys: `eseq-ref` went from 26.8 to 22.9 in the same change.
 
-This stops at the module boundary on purpose. Adding the same declaration to
-`ephemeral.rkt` measures a further 9-13% — push-back 5.30 to 4.83 ns,
-`eseq-ref` 27.0 to 23.5 — but that module holds public entry points whose
-argument checking is implicit, and the suite has only eight tests that assert
-an error is raised. Calling `eseq-push-back!` on a non-sequence would stop
-raising a contract error and start corrupting the heap. Taking that 10% safely
-means auditing the entry points and giving each an explicit predicate test
-first; the check itself costs about 0.35 ns, so it should pay for itself.
+`sek/tests/error-tests.rkt` is what holds that line. It calls the public surface
+with wrong types and out-of-range indices across about 150 cases and insists on
+an exception, because without the checks those are not failures but reads of
+arbitrary memory. It found a hole the moment it was written: `earray-length`
+had no check, and quietly read a field off whatever it was handed. The library
+now has more error coverage than it did when it was compiled safely, because
+the checks are deliberate rather than incidental.
+
+Two modules stay safe: `check.rkt`, the Appendix A validator, whose whole job is
+to be suspicious of the structures it walks, and `config.rkt`.
 
 **And one thing the generated code made look worse than it is.** `chunk-item-at`
 returns two values, which cp0 renders as a `call-with-values` around an

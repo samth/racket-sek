@@ -16,6 +16,12 @@
          "ptree.rkt"
          "iterate.rkt")
 
+;; Compiled in unsafe mode.  Every function here that a caller outside the
+;; library can reach checks its arguments explicitly, with `unless` rather
+;; than by relying on a struct accessor or a vector reference to raise --
+;; in unsafe mode those do not raise, they read whatever is at the offset.
+(#%declare #:unsafe)
+
 (provide (rename-out [psq? pseq?] [psq-rep pseq-rep])
          pseq-length
          pseq-empty?
@@ -46,6 +52,13 @@
          rep->tree)
 
 ;; ------------------------------------------------------------- the datatype
+
+
+;; Argument checking is explicit here, because this module is compiled in
+;; unsafe mode: a struct accessor no longer raises on the wrong kind of
+;; value, it reads whatever happens to be at that offset.
+(define-syntax-rule (check-pseq who v)
+  (unless (psq? v) (raise-argument-error who "pseq?" v)))
 
 (define (rep->list rep)
   (cond
@@ -90,9 +103,11 @@
   (wrap-rep (normalize t)))
 
 (define (pseq-empty? s)
+  (check-pseq 'pseq-empty? s)
   (not (psq-rep s)))
 
 (define (pseq-length s)
+  (check-pseq 'pseq-length s)
   (define r (psq-rep s))
   (cond
     [(not r) 0]
@@ -138,6 +153,7 @@
 ;; ------------------------------------------------------------------ push/pop
 
 (define (pseq-push-front s x)
+  (check-pseq 'pseq-push-front s)
   (define r (psq-rep s))
   (define T (short-threshold))
   (wrap-rep (cond
@@ -154,6 +170,7 @@
           [else (pt-push-front r x 1 0 no-owner)])))
 
 (define (pseq-push-back s x)
+  (check-pseq 'pseq-push-back s)
   (define r (psq-rep s))
   (define T (short-threshold))
   (wrap-rep (cond
@@ -221,6 +238,7 @@
 ;; so do it once: `check-index` would go back through `pseq-length`, which
 ;; re-tests whether the rep is a vector or a tree.
 (define (pseq-ref s i)
+  (check-pseq 'pseq-ref s)
   (define r (psq-rep s))
   (cond
     [(and (lvl? r) (exact-nonnegative-integer? i) (< i (lvl-weight r)))
@@ -297,9 +315,11 @@
 ;; -------------------------------------------------------------- conversions
 
 (define (pseq->list s)
+  (check-pseq 'pseq->list s)
   (rep->list (psq-rep s)))
 
 (define (pseq->vector s)
+  (check-pseq 'pseq->vector s)
   (define r (psq-rep s))
   (cond
     [(not r) (vector)]
@@ -307,6 +327,7 @@
     [else (tree->vector r)]))
 
 (define (pseq-for-each s proc)
+  (check-pseq 'pseq-for-each s)
   (define r (psq-rep s))
   (cond
     [(not r) (void)]
@@ -316,6 +337,7 @@
     [else (pt-for-each r 0 proc)]))
 
 (define (pseq-map s proc)
+  (check-pseq 'pseq-map s)
   (list->pseq (map proc (pseq->list s))))
 
 ;; Streaming traversal: `for` over a sequence walks the tree directly instead
