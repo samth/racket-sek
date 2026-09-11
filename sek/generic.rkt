@@ -13,7 +13,7 @@
 
 (require (for-syntax racket/base)
          (only-in racket/unsafe/ops
-                  unsafe-vector*-ref unsafe-fx+ unsafe-fx< unsafe-fx>)
+                  unsafe-vector*-ref unsafe-fx+ unsafe-fx< unsafe-fx> unsafe-fx=)
          racket/vector
          "config.rkt"
          "persistent.rkt"
@@ -132,9 +132,39 @@
       (eseq-snapshot-and-clear! b)
       b))
 
-;; Collect into chunk-sized buffers and emit whole chunks, rather than pushing
-;; each element into a sequence; the same saving as `pseq-build`, for the
-;; operations that do not know the length in advance.
+;; Build a sequence shaped like `like` by walking `s` one segment at a time,
+;; running `body` for each element with `x` bound to it and `add!` bound to a
+;; procedure that appends to the result.
+;;
+;; The point is what it does not do.  Written with `sek-for-each` and
+;; `build-from`, a per-element operation costs three closure calls: the
+;; segment loop calls the traversal's procedure, that one calls the caller's,
+;; and the caller calls `emit`.  Here the segment loop is the caller's loop,
+;; `add!` is a let-bound lambda in operator position, and the hot half of
+;; `pseq-builder-add!` is small enough to inline across the module boundary --
+;; so an element that the body drops costs the test and nothing else.
+(define-syntax-rule (build-by-segments like s x add! body ...)
+  (let* ([lk like]
+         [sq s]
+         [b (make-pseq-builder)]
+         [add! (lambda (y) (pseq-builder-add! b y))])
+    (sek-segments-for-each
+     sq
+     (lambda (sg)
+       (define v (segment-vector sg))
+       (define i (segment-start sg))
+       (define e (unsafe-fx+ i (segment-length sg)))
+       (let loop ([j i])
+         (unless (unsafe-fx= j e)
+           (let ([x (unsafe-vector*-ref v j)])
+             body ...)
+           (loop (unsafe-fx+ j 1))))))
+    (let ([r (pseq-builder-close b)])
+      (if (pseq? lk) r (pseq-edit r)))))
+
+;; The same accumulation, for the operations whose traversal is not a plain
+;; forward walk of one sequence -- `map/index`, `map2`, `reverse`, `append*`,
+;; `append-map`.  They pass a thunk that calls `emit`, and pay for the call.
 (define (build-from like xs-thunk)
   (define b (make-pseq-builder))
   (xs-thunk (lambda (x) (pseq-builder-add! b x)))
@@ -496,7 +526,7 @@
 
 (define (sek-map s proc)
   (check-sek 'sek-map s)
-  (build-from s (lambda (emit) (sek-for-each s (lambda (x) (emit (proc x)))))))
+  (build-by-segments s s x add! (add! (proc x))))
 
 (define (sek-map/index s proc)
   (check-sek 'sek-map/index s)
@@ -507,22 +537,11 @@
 
 (define (sek-filter s pred)
   (check-sek 'sek-filter s)
-  (build-from s
-              (lambda (emit)
-                (sek-for-each s
-                              (lambda (x)
-                                (when (pred x)
-                                  (emit x)))))))
+  (build-by-segments s s x add! (when (pred x) (add! x))))
 
 (define (sek-filter-map s proc)
   (check-sek 'sek-filter-map s)
-  (build-from s
-              (lambda (emit)
-                (sek-for-each s
-                              (lambda (x)
-                                (let ([y (proc x)])
-                                  (when y
-                                    (emit y))))))))
+  (build-by-segments s s x add! (let ([y (proc x)]) (when y (add! y)))))
 
 (define (sek-partition s pred)
   (check-sek 'sek-partition s)

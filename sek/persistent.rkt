@@ -11,6 +11,9 @@
 ;; top of the structure; middle sequences are always trees.
 
 (require racket/vector
+         racket/fixnum
+         racket/performance-hint
+         (only-in racket/unsafe/ops unsafe-vector*-ref)
          "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
@@ -124,8 +127,7 @@
 (define (pseq-build n proc)
   (define k (capacity-at 0))
   (define (chunk-at i len)
-    (chunk-of-vector (build-vector len (lambda (j) (proc (+ i j))))
-                     k unit-measure no-owner))
+    (chunk-build k len (lambda (j) (proc (+ i j))) no-owner))
   (cond
     [(eqv? n 0) empty-pseq]
     [(<= n (short-threshold)) (wrap-rep (build-vector n proc))]
@@ -144,12 +146,15 @@
 ;; when it fills, rather than pushing each element into a sequence.  One chunk
 ;; is held back so that the last full one can become the back of the level when
 ;; the buffer is empty at the end.
-(struct bld ([buf #:mutable] [n #:mutable] [front #:mutable]
+;; `cap` is the leaf capacity, which never changes over a builder's life, so
+;; the hot path reads it from the builder rather than re-deriving it.
+(struct bld ([buf #:mutable] [n #:mutable] cap [front #:mutable]
              [held #:mutable] [middle #:mutable])
   #:authentic #:sealed)
 
 (define (make-pseq-builder)
-  (bld (make-vector (capacity-at 0) #f) 0 #f #f #f))
+  (define k (capacity-at 0))
+  (bld (make-vector k #f) 0 k #f #f #f))
 
 (define (pseq-builder-emit! b c)
   (cond
@@ -160,23 +165,33 @@
      (set-bld-middle! b (pt-push-back (bld-middle b) h (chunk-weight h) 1 no-owner))
      (set-bld-held! b c)]))
 
-(define (pseq-builder-add! b x)
-  (define n (bld-n b))
-  (define buf (bld-buf b))
-  (vector-set! buf n x)
-  (define n* (add1 n))
-  (cond
-    [(< n* (vector-length buf)) (set-bld-n! b n*)]
-    [else
-     (pseq-builder-emit! b (chunk-of-vector buf (vector-length buf) unit-measure no-owner))
-     (set-bld-buf! b (make-vector (vector-length buf) #f))
-     (set-bld-n! b 0)]))
+;; Adding one element is a store and a bounds test.  It is split so that the
+;; part that runs per element is small enough for the inliner to copy into
+;; callers in other modules, which is what lets `sek-map` and `sek-filter` run
+;; their loops without a call per element; the chunk-full case is a call.
+(begin-encourage-inline
+  (define (pseq-builder-add! b x)
+    (define n (bld-n b))
+    (vector-set! (bld-buf b) n x)
+    (define n* (fx+ n 1))
+    (if (fx< n* (bld-cap b))
+        (set-bld-n! b n*)
+        (pseq-builder-cut! b))))
+
+;; The buffer is full: hand it over as a chunk and start a new one.  It is
+;; replaced here and never read again, so the chunk can adopt it rather than
+;; copy it.
+(define (pseq-builder-cut! b)
+  (pseq-builder-emit! b (chunk-of-fresh-vector (bld-buf b) no-owner))
+  (set-bld-buf! b (make-vector (bld-cap b) #f))
+  (set-bld-n! b 0))
 
 (define (pseq-builder-close b)
-  (define k (capacity-at 0))
+  (define k (bld-cap b))
   (define n (bld-n b))
+  (define buf (bld-buf b))
   (define partial
-    (and (> n 0) (chunk-of-vector (vector-copy (bld-buf b) 0 n) k unit-measure no-owner)))
+    (and (> n 0) (chunk-build k n (lambda (i) (unsafe-vector*-ref buf i)) no-owner)))
   (define front (bld-front b))
   (define held (bld-held b))
   (cond

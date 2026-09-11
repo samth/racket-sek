@@ -212,14 +212,14 @@ A Racket list is unbeatable as a front stack — and is only a front stack.
 ```
 traversal: for-each over the whole sequence, ns per element
                  100     10000   1000000
-eseq            2.19      1.89      1.95
-pseq            2.04      1.88      1.94
-treelist        1.81      1.74      1.79
-gvector         1.41      1.32      1.34
-list            1.26      1.10      1.27
-  pseq via fold 1.87      1.72      1.77
-  pseq via iter 11.21     11.03     11.06
-  vector        0.59      0.50      0.51
+eseq            1.87      1.71      1.78
+pseq            1.81      1.72      1.75
+treelist        1.79      1.73      1.77
+gvector         1.43      1.30      1.31
+list            1.28      1.11      1.29
+  pseq via fold 1.64      1.58      1.63
+  pseq via iter  3.77      3.63      3.67
+  vector        0.58      0.50      0.51
 ```
 
 Sweeping a sek sequence costs about what sweeping a treelist costs. That is
@@ -278,17 +278,19 @@ mutable treelist or a gvector.
 ```
 construction: n elements from scratch      concat / split at n = 10^6, ns per operation
                  100     10000   1000000                concat     split
-eseq            8.94      8.68      9.75    pseq         827.9     705.4
-pseq            9.58      8.71      9.62    treelist     788.8     129.3
-treelist       13.57     31.85     46.83    list       5590487   4377206
-mutable-tl     16.78     34.61     51.67
-gvector         5.89      4.60     20.38
-list            1.88      2.00     41.16
+eseq            2.56      1.67      2.42    pseq         303.5     114.5
+pseq            2.61      1.66      2.39    treelist      1032     131.3
+treelist       13.77     32.04     46.77    list       5669883   4683688
+mutable-tl     16.64     34.61     51.71
+gvector         5.86      4.59     18.09
+list            1.89      1.98     41.05
 ```
 
-Construction is flat for sek and gets 5× worse for a treelist as the sequence
-grows — the same effect as the push benchmark. Concatenation is a wash with
-treelist; splitting is treelist's win by 5×.
+Construction is flat for sek at about 2 ns an element and gets 3.4× worse for a
+treelist as the sequence grows — the same effect as the push benchmark — so at
+a million elements sek builds 19× faster than a treelist and 17× faster than
+consing a list. Concatenation is 3.4× a treelist's; splitting is now within 13%
+of it, where it used to be 5× behind.
 
 ### Filtering, the paper's motivating example
 
@@ -299,14 +301,17 @@ the whole thing is O(n + K). That is what `sek-filter` does.
 ```
 filter: keep one element in three, ns per input element
                  100     10000   1000000
-pseq            7.42      6.48      6.68
-eseq            7.03      6.53      6.75
-treelist        5.90     12.33     17.29
-  list          3.99      3.61      4.97
-  vector        4.55      4.49      7.53
+pseq            5.31      4.02      4.16
+eseq            5.36      4.04      4.18
+treelist        6.00     12.35     17.31
+  list          4.17      3.83      5.23
+  vector        4.63      4.58      7.60
 ```
 
-Flat in n, and 2.6× faster than `treelist-filter` at a million elements.
+Flat in n, and 4.2× faster than `treelist-filter` at a million elements --
+where filtering a plain Racket list costs 5.23 ns an element and a vector
+7.60, because both of those have to grow a result the size of the input while
+this one appends chunk by chunk.
 
 ## Transience
 
@@ -678,53 +683,60 @@ O(n + K). That is a 3× improvement on the `eseq` row above.
 
 ## Against the OCaml reference
 
-Both implementations running the same scenarios, at n = 10^5. The ratio is
-Racket ÷ OCaml, so above one means this library is slower.
+Both implementations running the same scenarios at the same sizes, at
+n = 10^6. The ratio is Racket ÷ OCaml, so above one means this library is
+slower.
 
 | scenario | Racket | OCaml | ratio |
 | --- | ---: | ---: | ---: |
-| set at random indices, persistent | 131.8 | 273.2 | **0.48** |
-| set at random indices, ephemeral | 29.2 | 58.7 | **0.50** |
-| stack push/pop, persistent | 9.8 | 14.3 | **0.68** |
-| random access, ephemeral | 22.4 | 32.3 | **0.69** |
-| split | 102.7 | 141.4 | **0.73** |
-| random access, persistent | 22.5 | 29.8 | **0.76** |
-| traversal, persistent | 1.8 | 2.0 | **0.91** |
-| concat | 293.9 | 261.0 | 1.13 |
-| stack push/pop, ephemeral | 6.4 | 5.1 | 1.27 |
-| queue push/pop, ephemeral | 6.6 | 5.1 | 1.29 |
-| filter | 5.4 | 3.2 | 1.69 |
-| construction | 5.1 | 2.7 | 1.87 |
+| `set` at a random index, ephemeral | 44.3 | 98.3 | **0.45** |
+| `set` at a random index, persistent | 412.4 | 811.5 | **0.51** |
+| push/pop at the back, persistent | 10.0 | 14.8 | **0.67** |
+| split | 114.5 | 152.2 | **0.75** |
+| construction, persistent, per element | 2.4 | 3.2 | **0.75** |
+| `ref` at a random index, ephemeral | 42.5 | 56.3 | **0.76** |
+| construction, ephemeral, per element | 2.4 | 3.2 | **0.77** |
+| `ref` at a random index, persistent | 42.4 | 55.1 | **0.77** |
+| traversal through an iterator, per element | 3.7 | 4.8 | **0.77** |
+| traversal by fold, per element | 1.6 | 2.0 | **0.82** |
+| concat | 303.5 | 324.6 | **0.93** |
+| queue push/pop, ephemeral | 6.1 | 5.9 | 1.03 |
+| push/pop at the back, ephemeral | 6.2 | 5.8 | 1.06 |
+| push/pop at the front, ephemeral | 6.3 | 5.9 | 1.06 |
+| `filter`, per input element | 4.2 | 3.8 | 1.09 |
 
-Nine of these twelve are now at or better than the reference, on a runtime with
-a garbage collector against native code compiled with flambda. Both flavours of
-`set` cost about half what they cost there, splitting a quarter less, indexing a
-quarter less. What is still slower is what allocation dominates: construction
-1.9×, `filter` 1.7×, ephemeral push/pop 1.3×.
+Eleven of these fifteen are faster than the reference, on a runtime with a
+garbage collector against native code compiled with flambda, and nothing is
+more than 9% slower. Both flavours of `set` cost about half what they cost
+there, splitting and indexing about a quarter less, construction a quarter
+less.
 
-Two of these rows used to be the embarrassing ones. `split` read 4.6× and
-`construction` 3.3×. Neither turned out to be about Racket: the first was
-seven places where this port copied where the reference shares, and the second
-was two lines of declaration. "Closing the split and concat gaps" and "What the
-generated code said" below are the accounts.
+Every row of this table has moved, and none of the movement was about Racket
+being Racket. `split` once read 4.6× and `construction` 3.3× and `concat`
+2.5×; the sections below are the accounts, and the pattern in all of them is
+the same. The port did something the reference does not — copied a chunk where
+the reference shares a view of it, rescanned a weight it already knew, built
+half of a split it then threw away, pushed one element at a time where the
+reference fills a chunk, called a contract-checked list function on a
+three-element list — and the fix was to stop doing it, not to write different
+Racket.
 
 Two entries stand out.
 
-**Snapshotting after every push is nine times faster here** (128 versus
-1141 ns). The OCaml `snapshot` performs a shallow copy, duplicating the front
+**Snapshotting after every push is ten times faster here** (117 versus
+1188 ns). The OCaml `snapshot` performs a shallow copy, duplicating the front
 and back chunks each time; this implementation shares them and lets the next
 write pay for a copy if there is one. In a snapshot-heavy loop, where the next
 write usually extends a chunk monotonically and so copies nothing, sharing wins
-outright. It is the worse tradeoff for a single snapshot in isolation (2.8×
-slower), and the better one whenever snapshots come in a stream.
+outright — and it is no longer the worse tradeoff for a snapshot in isolation
+either: one change plus one snapshot of a million-element sequence is 25.5 ns
+here against 75.5 there.
 
-**`split` is 4.6× slower**, and the gap grows with n where the reference's is
-flat. Both are within the O(K log_K n + log²_K n) bound; the constant is worse
-here.
-
-Finally, the OCaml comparison is what settles the random-access question above:
-at 55.97 ns for the reference against 60.15 here, indexing is slow because of
-how the structure is shaped, not because of how it was ported.
+**Indexing is the operation this design gives up**, and the reference agrees:
+42.4 ns here against 55.1 there, both of them an order of magnitude behind a
+treelist's 11.0. It is slow because of how the structure is shaped, not because
+of how it was ported. The answer to sequential access is the iterator, which
+costs 3.7 ns a step.
 
 ## Closing the split and concat gaps
 
@@ -733,6 +745,9 @@ explanation on offer — that a chunked sequence gives up slicing — turned out
 be wrong. Reading `ShareableSequence.ml` and `ShareableChunk.cppo.ml` next to
 this code found seven differences, none of them about Racket. Measured at
 n = 10^5, persistent:
+
+The columns are before and after *that* change; `concat` moved again later,
+in "The list plumbing in merge" below.
 
 | | before | after | treelist | OCaml |
 | --- | ---: | ---: | ---: | ---: |
@@ -946,6 +961,93 @@ full chunk can become the level's back.
 | `build-eseq` | 5.30 | **3.18** | 2.7 |
 | `filter` | 4.32 | **3.62** | 3.2 |
 
+That left construction still going through `chunk-of-vector`, which is two
+allocations and three passes over the data: build the elements into one vector,
+allocate a capacity-sized support, copy between them. `chunk-build` fills the
+support directly, in one allocation and one pass, and `chunk-of-fresh-vector`
+lets the builder hand its buffer over instead of copying it — the buffer is
+replaced on the next line and never read again. On a capacity-128 chunk that is
+104 ns against 254.
+
+| ns per element | before | after | OCaml |
+| --- | ---: | ---: | ---: |
+| `build-eseq` | 3.18 | **1.96** | 2.7 |
+
+`perf` agrees on why: 126.0 instructions and 17.0 cycles per element before,
+63.4 and 8.8 after.
+
+### What the vector primitives are worth
+
+Racket has fused vector operations that match these shapes exactly, and
+`gvector`'s own `grow-vec` already uses one. Three were worth testing; the
+results split two ways.
+
+| capacity 128 | ns |
+| --- | ---: |
+| `make-vector` then `vector-copy!` (grow) | 157.7 |
+| **`vector*-extend`** (grow) | **69.1** |
+| `vector-copy` then `vector-set!` (copy-on-write of one slot) | 38.1 |
+| **`unsafe-vector*-set/copy`** (copy-on-write of one slot) | **36.4** |
+| **`make-vector` then a fill loop** (a full chunk from a closure) | **108.0** |
+| `build-vector` (a full chunk from a closure) | 182.4 |
+
+`vector*-extend` is worth 2.3×, and the growable array the benchmark uses as a
+contender now grows with it. `unsafe-vector*-set/copy` is a smaller win, 4%,
+but copy-on-write of one slot is *precisely* what it is for and it is now what
+`chunk-set` does when the chunk is aligned.
+
+`build-vector` went the other way, and overturned a design: it looks like the
+obvious way to write the fill in `chunk-build` and it is 1.75× *slower* than a
+hand-written loop, because it is a generic library function where the loop
+compiles to a store per iteration.
+
+One idea tested on its own and rejected: a chunk's support has to start out
+filled with the empty marker, which `make-vector` does with a fill loop, so
+keeping one pre-filled template around and copying it should write the same
+words through a copy rather than a fill. It measures 104.3 against 108.0 at
+capacity 128 and 16.6 against 16.4 at capacity 16 — a wash, and not worth a
+piece of global mutable state. The fill is not where the time goes.
+
+### Where `filter` was really spending its time
+
+`filter` was the last scenario meaningfully slower than the reference, and both
+implementations have the same shape — iterate, test, push — so the difference
+had to be in one of the three parts. Measuring them separately, on 100000
+elements:
+
+| ns per input element | |
+| --- | ---: |
+| traversal alone | 1.73 |
+| traversal + the benchmark's `(zero? (modulo x 3))` | 3.60 |
+| traversal + the same test in fixnum arithmetic | 2.57 |
+| the whole of `filter` | 4.70 |
+
+Two things fall out of that. The first is that **the predicate cost 1.7 ns of
+the 4.7** — more than the traversal — and about 1.0 ns of that is generic
+arithmetic dispatch that the reference does not pay, since OCaml's `x mod 3`
+on an `int` is a machine instruction. That is a property of the benchmark's
+predicate, not of either sequence; the scenario keeps `modulo`, because that is
+what a Racket program actually writes, but a reader comparing the two columns
+should know that a fifth of the Racket number is arithmetic.
+
+The second is that the remaining 1.1 ns went on **closure calls, not on
+building**. Written with `sek-for-each` and `build-from`, a per-element
+operation costs three of them: the segment loop calls the traversal's
+procedure, that calls the caller's, and the caller calls `emit`. The
+`build-by-segments` macro collapses all three — the segment loop *is* the
+caller's loop, and `pseq-builder-add!` was split so that its hot half (a store
+and a bounds test) is small enough for the inliner to copy across the module
+boundary, with the chunk-full case left behind a call. An element the predicate
+drops now costs the test and nothing else.
+
+| ns per input element | before | after | OCaml |
+| --- | ---: | ---: | ---: |
+| `filter`, `modulo` predicate | 4.70 | **3.97** | 3.1 |
+| `filter`, fixnum predicate | 3.24 | **2.72** | 3.1 |
+
+`filter` is now 0.37 ns above bare traversal-plus-predicate, so the building
+half is very nearly free. `map` and `filter-map` are built the same way.
+
 The builder had one bug, and the Appendix A validator caught it rather than any
 test of the result: the case where nothing has been emitted yet returned the
 buffer as a compact vector without testing the short threshold, which may be
@@ -953,6 +1055,36 @@ buffer as a compact vector without testing the short threshold, which may be
 came back compact when it had to be a tree — `compact sequence of length 7
 exceeds the threshold 6`. It only appears at capacities the conformance sweep
 runs and the defaults do not.
+
+### The list plumbing in merge
+
+`concat` was the last scenario meaningfully above the reference, and the shape
+of the gap said it was not a constant factor: the cost was not monotonic in n.
+It measured 326 ns at n = 10^4 and 373 ns at n = 10^6 -- *cheaper* on a
+sequence a hundred times longer. Walking n across the range found a step:
+
+| n | 4000 | 8000 | **10000** | 16000 | 32000 | 64000 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| before | 143 | 167 | **326** | 290 | 279 | 247 |
+| after | 102 | 134 | **184** | 196 | 188 | 224 |
+
+The step sits where the middle sequence gains a level. A level holds a front
+chunk and a back chunk of node capacity 16, so a middle of up to 32 chunks --
+32 x 128 = 4096 elements a side, n = 8192 -- needs no middle of its own, and
+one more chunk than that adds a whole level of recursion to `merge`.
+
+Profiling a concatenation at that size said where the extra level went, and it
+was not the chunk copying. `last` and `drop-right` together were **36% of
+`pt-merge`**. `merge` threads a list of leftover chunks down the spine, never
+more than a handful of them, and the code split that list with the obvious
+library functions -- which are contract-checked, and walk the list once to
+validate and again to do the work, and then a third time for the other half of
+the same split. `split-last` returns both halves in one pass, and `snoc`
+replaces `(append L (list x))`. Nothing about the algorithm changed.
+
+Re-profiling afterwards puts 87% of a concatenation in `fuse-chunks`, which is
+the density invariant being repaired -- real work, already down to a
+`vector-copy!` per chunk, and what the operation is for.
 
 ### Would stencil vectors help?
 

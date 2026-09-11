@@ -471,6 +471,26 @@
             (scan (chunk-fuse acc (car cs) owner) (cdr cs))]
            [else (cons acc (scan (car cs) (cdr cs)))]))])))
 
+;; The lists that merge threads between levels hold at most a handful of
+;; chunks, and `last`, `drop-right` and `append` are the wrong tools for them:
+;; they are contract-checked library functions that each walk the list again,
+;; and profiling a concatenation at 10^4 found `last` and `drop-right` alone
+;; accounting for 36% of `pt-merge`.  These do the same work in one pass and
+;; without the checks.
+
+;; Everything but the last element, and the last element.  `xs` is non-empty.
+(define (split-last xs)
+  (if (null? (cdr xs))
+      (values '() (car xs))
+      (let-values ([(front lst) (split-last (cdr xs))])
+        (values (cons (car xs) front) lst))))
+
+;; `xs` with `x` appended.
+(define (snoc xs x)
+  (if (null? xs)
+      (list x)
+      (cons (car xs) (snoc (cdr xs) x))))
+
 (define (group-into-chunks xs k owner)
   (let loop ([xs xs]
              [acc '()])
@@ -515,16 +535,17 @@
        (pt-push-back t c (chunk-weight c) d owner))]
     ;; only m2 survives: fuse L with its first chunk and re-attach
     [(not m1)
-     (define rs (fuse-chunks (append L (list (pt-first-item m2))) kf owner))
-     (for/fold ([t (pt-update-front m2 (last rs) d owner)])
-               ([c (in-list (reverse (drop-right rs 1)))])
+     (define rs (fuse-chunks (snoc L (pt-first-item m2)) kf owner))
+     (define-values (front lst) (split-last rs))
+     (for/fold ([t (pt-update-front m2 lst d owner)])
+               ([c (in-list (reverse front))])
        (pt-push-front t c (chunk-weight c) d owner))]
     [(not m2)
      (define rs (fuse-chunks (cons (pt-last-item m1) L) kf owner))
      (for/fold ([t (pt-update-back m1 (car rs) d owner)]) ([c (in-list (cdr rs))])
        (pt-push-back t c (chunk-weight c) d owner))]
     [else
-     (define rs (fuse-chunks (append (list (pt-last-item m1)) L (list (pt-first-item m2))) kf owner))
+     (define rs (fuse-chunks (cons (pt-last-item m1) (snoc L (pt-first-item m2))) kf owner))
      (cond
        [(null? (cdr rs))
         ;; everything fused into one chunk: keep it at the end of m1 and drop
@@ -535,9 +556,10 @@
             (merge-levels m1* '() m2* d owner)
             m1*)]
        [else
+        (define-values (mid lst) (split-last (cdr rs)))
         (merge-levels (pt-update-back m1 (car rs) d owner)
-                      (drop-right (cdr rs) 1)
-                      (pt-update-front m2 (last rs) d owner)
+                      mid
+                      (pt-update-front m2 lst d owner)
                       d
                       owner)])]))
 
@@ -571,7 +593,9 @@
   ;; testing, and the list can be built directly
   (define L*
     (let* ([tail (if (chunk-empty? F2*) '() (list F2*))]
-           [tail (append (group-into-chunks rest* k owner) tail)])
+           [tail (if (null? rest*)
+                     tail
+                     (append (group-into-chunks rest* k owner) tail))])
       (if (chunk-empty? B1*) tail (cons B1* tail))))
   (make-level F1 (pt-merge (lvl-middle m1) L* (lvl-middle m2) (add1 d) owner) B2))
 

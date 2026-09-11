@@ -19,6 +19,7 @@
 (require racket/vector
          (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-set! unsafe-vector*-length
+                  unsafe-vector*-set/copy
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>= unsafe-fx=)
          "config.rkt")
 
@@ -57,6 +58,8 @@
          make-chunk
          chunk-of-list
          chunk-of-vector
+         chunk-build
+         chunk-of-fresh-vector
          chunk-singleton
          chunk-sub
          chunk-fuse
@@ -232,6 +235,35 @@
         n
         (for/fold ([w 0]) ([i (in-range n)]) (+ w (mw (vector-ref v i))))))
   (chunk (support data 0 n) 0 n w owner))
+
+;; A chunk of `len` items, item i being (proc i), in a support of capacity
+;; `cap`.  Every item weighs one, so this is depth 0 only.
+;;
+;; Going through `chunk-of-vector` costs two allocations and three passes over
+;; the data: build the elements into one vector, allocate a capacity-sized
+;; support, copy between them.  Filling the support directly is one allocation
+;; and one pass.  Measured on a capacity-128 chunk, 104 ns against 254.
+;;
+;; `build-vector` looks like the obvious way to write the fill and is not: it
+;; measures 183 ns where this loop measures 104, because it is a generic
+;; library function and this compiles to a store per iteration.  Nor is there
+;; anything to gain by copying a pre-filled template instead of letting
+;; `make-vector` fill -- that measured 101 against 104 at this capacity and
+;; worse at capacity 16.  The fill is not where the time goes.
+(define (chunk-build cap len proc owner)
+  (define data (make-vector cap none))
+  (let loop ([i 0])
+    (unless (unsafe-fx= i len)
+      (unsafe-vector*-set! data i (proc i))
+      (loop (unsafe-fx+ i 1))))
+  (chunk (support data 0 len) 0 len len owner))
+
+;; Like `chunk-of-vector`, but adopts the vector instead of copying it: the
+;; caller must not keep a reference.  `v` is the whole support, so its length
+;; is the capacity and the chunk is full.
+(define (chunk-of-fresh-vector v owner)
+  (define n (unsafe-vector*-length v))
+  (chunk (support v 0 n) 0 n n owner))
 
 (define (chunk-of-list xs cap mw owner)
   (chunk-of-vector (list->vector xs) cap mw owner))
@@ -445,9 +477,18 @@
     [else
      (define k (chunk-capacity c))
      (define n (chunk-size c))
-     (define-values (data head) (chunk-copy-store c))
-     (vector-set! data (wrap+ (+ head i) k) x)
-     (chunk (support data head n) head n (+ (chunk-weight c) (- wnew wold)) owner)]))
+     ;; `unsafe-vector*-set/copy` is the copy and the store in one primitive,
+     ;; which is exactly this operation
+     (cond
+       [(chunk-aligned? c)
+        (define head (chunk-head c))
+        (define data (unsafe-vector*-set/copy (support-data (chunk-support c))
+                                              (wrap+ (+ head i) k) x))
+        (chunk (support data head n) head n (+ (chunk-weight c) (- wnew wold)) owner)]
+       [else
+        (define-values (data head) (chunk-copy-store c))
+        (vector-set! data (wrap+ (+ head i) k) x)
+        (chunk (support data head n) head n (+ (chunk-weight c) (- wnew wold)) owner)])]))
 
 ;; -------------------------------------------------------------- get-from-chunk
 

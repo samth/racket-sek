@@ -226,45 +226,45 @@ million elements, nanoseconds per operation:
 
 | | eseq | treelist | mutable-treelist | gvector | list |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| push/pop at the back | **10.9** | 45.5 | 51.5 | 27.4 | — |
-| push/pop at the front | **10.5** | 204.2 | 206.4 | — | 2.5 |
-| queue (back, front) | **10.9** | 70.3 | 75.1 | — | — |
-| traversal, per element | 2.0 | 1.8 | 1.8 | 1.3 | 1.3 |
-| `ref` at a random index | 59.8 | **10.7** | 16.3 | 10.8 | — |
-| `set` at a random index | 68.1 | 188.5 | **16.2** | 9.7 | — |
-| construction, per element | **9.8** | 46.8 | 51.7 | 20.4 | 41.2 |
-| filter, per element | **6.7** | 17.3 | — | — | 5.0 |
-| one snapshot | **209** | — | 1714328 | — | — |
+| push/pop at the back | **6.2** | 45.6 | 52.0 | 28.1 | — |
+| push/pop at the front | **6.3** | 204.3 | 208.2 | — | 2.5 |
+| queue (back, front) | **6.1** | 68.1 | 74.8 | — | — |
+| traversal, per element | 1.8 | 1.8 | 1.8 | 1.3 | 1.3 |
+| `ref` at a random index | 42.5 | **10.7** | 16.2 | 11.0 | — |
+| `set` at a random index | 44.3 | 199.7 | **17.0** | 9.9 | — |
+| construction, per element | **2.4** | 46.8 | 51.7 | 18.1 | 41.1 |
+| filter, per element | **4.2** | 17.3 | — | — | 5.2 |
+| one snapshot | **25.5** | — | 1516416 | — | — |
 
 The ends are flat in the length of the sequence and indifferent to which end
-you use, which is the whole point; indexing and scattered persistent writes are
-what the design gives up, and they cost about 6× a treelist. Snapshots are the
-headline: `eseq-snapshot` does not depend on the length of the sequence, while
-`mutable-treelist-snapshot` copies — 1.7 ms at a million elements against
-209 ns. In a round trip that changes one element between snapshots, sek is four
-orders of magnitude ahead; a treelist catches up only once tens of thousands of
-writes amortize its copy.
+you use, which is the whole point; indexing is what the design gives up, and it
+costs about 4× a treelist. Snapshots are the headline: `eseq-snapshot` does not
+depend on the length of the sequence, while `mutable-treelist-snapshot`
+copies — 1.5 ms at a million elements against 25.5 ns. In a round trip that
+changes one element between snapshots, sek is four orders of magnitude ahead; a
+treelist catches up only once tens of thousands of writes amortize its copy.
 
 The borrowed suites agree, and sharpen two points. Scala's `vApprepend` —
-alternate a push at each end — is the clearest win in the whole set: 10.3 ns
-against a treelist's 151.1 at 10^5, and flat where the treelist's grows with
+alternate a push at each end — is the clearest win in the whole set: 5.8 ns
+against a treelist's 146.5 at 10^5, and flat where the treelist's grows with
 depth. And Scala's `vApplySequential` shows what indexing costs and what it
-need not cost: an ascending walk through `pseq-ref` takes 27.5 ns against the
-treelist's cached 6.1, but the same walk through `in-pseq` takes 2.7 — 2.3×
+need not cost: an ascending walk through `pseq-ref` takes 16.4 ns against the
+treelist's cached 5.9, but the same walk through `in-pseq` takes 1.57 — 3.7×
 faster than the treelist, faster than an indexed read on a growable array, and
-within 1.7× of a raw vector. The answer to sequential access in this library is
-a first-class iterator, and it is a better answer than a display; it is just
-not spelled `ref`. Bulk element-wise work (`map`, `filter`) is 4× ahead of a
-treelist for the same reason, and immer's `push_move` reproduces its headline
-(8.7 ns per element against 40.2 for repeated persistent `treelist-add`).
+level with a raw vector. The answer to sequential access in this library is a
+first-class iterator, and it is a better answer than a display; it is just not
+spelled `ref`. Bulk element-wise work is 13× ahead of a treelist for the same
+reason (`map` 3.5 ns an element against 46.9), and immer's `push_move`
+reproduces its headline (5.4 ns per element against 47.5 for repeated
+persistent `treelist-add`).
 
 Slicing used to be the thing this design gives up — `slice`, `take` and `split`
 all read several times a treelist, and `split` 4.6× the OCaml reference. That
 turned out to be wrong, and reading the reference next to this code found seven
 places where the port copied a chunk where the reference shares a view of it,
 rescanned a weight it already knew, or built a half of a split it then threw
-away. Closing them took `split` to 1.07× the reference, `take` from 600 ns to
-86, `slice` from 1073 to 257, and made persistent `set` 1.8× *faster* than the
+away. Closing them took `split` to 0.75× the reference, `take` from 600 ns to
+86, `slice` from 1073 to 257, and made persistent `set` twice as fast as the
 reference. What remains is 1.3× a treelist on a two-sided slice: the density
 invariant is real work an RRB tree does not do, and that is the honest residue.
 `bench/README.md` has the full account.
@@ -278,23 +278,29 @@ fastest at 3.4 s against `treelist`'s 4.2 s, and the mutable ones pay 2–4×
 more because every `cons` and `append` has to copy where a persistent
 structure shares.
 
-Against the OCaml implementation, nine of twelve scenarios are now at or better
-than the reference, on a runtime with a garbage collector against native code
-compiled with flambda: `set` at a random index costs about half what it costs
-there (0.49× persistent, 0.55× ephemeral), splitting 0.73×, indexing 0.75×,
-persistent push/pop 0.67×, traversal 0.97×. What is still slower is what
-allocation dominates — construction 1.9×, `filter` 1.7×, ephemeral push/pop
-1.3×. Snapshotting after every push is 9× *faster* here, because this
-implementation shares the end chunks where the reference copies them.
+Against the OCaml implementation, eleven of fifteen scenarios are faster than
+the reference, on a runtime with a garbage collector against native code
+compiled with flambda, and nothing is more than 9% slower: `set` at a random
+index costs about half what it costs there (0.51× persistent, 0.45×
+ephemeral), splitting 0.75×, indexing 0.77×, construction 0.75×, persistent
+push/pop 0.67×, traversal by fold 0.82×, concatenation 0.93×. The four that
+remain slower are ephemeral push/pop at 1.06× and `filter` at 1.09×.
+Snapshotting after every push is 10× *faster* here, because this implementation
+shares the end chunks where the reference copies them.
 
-Two of those numbers used to be embarrassing: `split` read 4.6× and
-`construction` 3.3×. Neither was about Racket. The first was seven places where
-this port copied a chunk where the reference shares a view of it; the second
-was two lines of declaration, found by reading what the compiler generated —
-every struct was paying a walk of its type's ancestry vector on each field
-access, which `#:sealed` collapses to one comparison, and the two innermost
-modules had implicit checks that `(#%declare #:unsafe)` removes. `pseq-ref`
-went from 35.6 ns to 22.2 and `eseq` push-back from 8.8 to 4.7.
+None of that came from writing different Racket. Four of those numbers used to
+be embarrassing — `split` read 4.6×, `construction` 3.3×, `concat` 2.5×,
+`filter` 1.7× — and in every case the port was doing something the reference
+does not. It copied a chunk where the reference shares a view of it; it pushed
+one element at a time where the reference fills a chunk; it called
+contract-checked list functions on three-element lists; it paid three closure
+calls an element where the loop could be the caller's own. The exception that
+proves the rule is the one that *was* about Racket: every struct was paying a
+walk of its type's ancestry vector on each field access, which `#:sealed`
+collapses to one comparison, and the innermost modules had implicit checks that
+`(#%declare #:unsafe)` removes — two lines of declaration, found by reading the
+generated code, worth `pseq-ref` 35.6 ns to 22.2 and `eseq` push-back 8.8 to
+4.7.
 
 Measuring `mutable-treelist` on the operations it had previously been left out
 of turned up a bug in `racket/mutable-treelist`, since fixed: shortening one at
