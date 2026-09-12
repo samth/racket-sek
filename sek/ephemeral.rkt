@@ -16,7 +16,9 @@
 ;; may be updated in place.  Taking a snapshot installs a fresh id, at which
 ;; point every chunk in the structure silently becomes immutable.
 
-(require (only-in racket/unsafe/ops unsafe-fx+ unsafe-fx- unsafe-fx<)
+(require (only-in racket/unsafe/ops
+                  unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx<=
+                  unsafe-fx> unsafe-fx>= unsafe-fx=)
          "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
@@ -141,9 +143,13 @@
 ;; set, and reading a module-level variable from another module is two
 ;; dependent loads however it is stored -- an assigned variable, a box, a
 ;; vector and a mutable struct field all compile to the same pair.
+;; This runs on every push, pop and write, so it reads the field once and does
+;; its arithmetic in fixnums: with generic `>` and `-` it reloaded the version
+;; after testing it and carried an overflow check on the negation.
 (define (eseq-invalidate-iterators! e)
-  (when (> (esq-version e) 0)
-    (set-esq-version! e (- (esq-version e)))))
+  (define v (esq-version e))
+  (when (unsafe-fx> v 0)
+    (set-esq-version! e (unsafe-fx- 0 v))))
 
 ;; Invalidate every iterator, and return a birth date for the one iterator
 ;; that is allowed to survive.
@@ -151,7 +157,9 @@
   (cond
     [(check-iterator-validity?)
      (define v (esq-version e))
-     (set-esq-version! e (if (> v 0) (add1 v) (add1 (- v))))
+     (set-esq-version! e (if (unsafe-fx> v 0)
+                             (unsafe-fx+ v 1)
+                             (unsafe-fx+ (unsafe-fx- 0 v) 1)))
      (esq-version e)]
     ;; with checking off the version stays non-positive, so no iterator is ever
     ;; considered live and the birth date is not consulted
@@ -162,13 +170,15 @@
 ;; of a level.
 (define (eseq-iterator-born! e)
   (eseq-flush-inner! e)
-  (when (and (check-iterator-validity?) (<= (esq-version e) 0))
-    (set-esq-version! e (add1 (- (esq-version e)))))
+  (define v (esq-version e))
+  (when (and (check-iterator-validity?) (unsafe-fx<= v 0))
+    (set-esq-version! e (unsafe-fx+ (unsafe-fx- 0 v) 1)))
   (esq-version e))
 
 (define (eseq-iterator-valid? e birth)
   (or (not (check-iterator-validity?))
-      (and (> (esq-version e) 0) (eqv? birth (esq-version e)))))
+      (let ([v (esq-version e)])
+        (and (unsafe-fx> v 0) (unsafe-fx= birth v)))))
 
 ;; Push both inner chunks into the middle sequence, so that the sequence is
 ;; exactly a front chunk, a middle sequence and a back chunk.
@@ -325,9 +335,22 @@
     [else (raise-arguments-error who "index out of range"
                                  "index" i "length" (eseq-length e))]))
 
-(define (eseq-ref e i)
+;; The index guard on the operations below is `fixnum?` and not the wider
+;; `exact-nonnegative-integer?`, because `eseq-locate` indexes with `unsafe-fx`
+;; operations and those are undefined on a bignum.  Nothing is given up: a
+;; length is a fixnum, so a bignum index is out of range by definition.
+;;
+;; Reaching here means `i` is not a nonnegative fixnum: either it is not an
+;; index at all, or it is a bignum, which such a sequence cannot hold.
+(define (bad-index who e i)
   (unless (exact-nonnegative-integer? i)
-    (raise-argument-error 'eseq-ref "exact-nonnegative-integer?" i))
+    (raise-argument-error who "exact-nonnegative-integer?" i))
+  (raise-arguments-error who "index out of range"
+                         "index" i "length" (eseq-length e)))
+
+(define (eseq-ref e i)
+  (unless (and (fixnum? i) (unsafe-fx>= i 0))
+    (bad-index 'eseq-ref e i))
   (define-values (where j) (eseq-locate e i 'eseq-ref))
   (case where
     [(front) (chunk-ref (esq-front e) j)]
@@ -337,8 +360,8 @@
     [else (chunk-ref (esq-back e) j)]))
 
 (define (eseq-set! e i x)
-  (unless (exact-nonnegative-integer? i)
-    (raise-argument-error 'eseq-set! "exact-nonnegative-integer?" i))
+  (unless (and (fixnum? i) (unsafe-fx>= i 0))
+    (bad-index 'eseq-set! e i))
   ;; a set may replace a shared chunk with a private copy, so any iterator
   ;; holding on to the old chunk has to go
   (eseq-invalidate-iterators! e)

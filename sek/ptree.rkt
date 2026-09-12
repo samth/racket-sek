@@ -16,6 +16,7 @@
 ;; The empty tree is represented by #f.
 
 (require racket/list
+         racket/fixnum
          racket/performance-hint
          "config.rkt"
          "chunk.rkt")
@@ -176,15 +177,21 @@
 
 ;; ----------------------------------------------------------------- get / set
 
+;; Weights, indices and depths are all fixnums -- an index is checked to be one
+;; at the entry points, and a weight is a count of elements in a sequence whose
+;; length is a fixnum.  Saying so matters here: with generic `<`, `+` and `-`
+;; this compiled to five fixnum-tag guards and three overflow checks around
+;; three comparisons and two subtractions, because nothing tells the compiler
+;; what comes out of a struct field.
 (define (pt-ref t i d)
   (define f (lvl-front t))
   (define m (lvl-middle t))
   (define wf (chunk-weight f))
-  (define wm (pt-weight m))
+  (define wfm (fx+ wf (pt-weight m)))
   (cond
-    [(< i wf) (chunk-ref-atomic f i d)]
-    [(< i (+ wf wm)) (pt-ref m (- i wf) (add1 d))]
-    [else (chunk-ref-atomic (lvl-back t) (- i wf wm) d)]))
+    [(fx< i wf) (chunk-ref-atomic f i d)]
+    [(fx< i wfm) (pt-ref m (fx- i wf) (fx+ d 1))]
+    [else (chunk-ref-atomic (lvl-back t) (fx- i wfm) d)]))
 
 (define (pt-set t i x d owner)
   (define f (lvl-front t))
@@ -196,14 +203,14 @@
   ;; If the chunk comes back unchanged, because the element was already there,
   ;; then so is the level and the spine above it need not be rebuilt either.
   (cond
-    [(< i wf)
+    [(fx< i wf)
      (define f* (chunk-set-atomic f i x d owner))
      (if (eq? f f*) t (lvl w f* m b))]
-    [(< i (+ wf wm))
-     (define m* (pt-set m (- i wf) x (add1 d) owner))
+    [(fx< i (fx+ wf wm))
+     (define m* (pt-set m (fx- i wf) x (fx+ d 1) owner))
      (if (eq? m m*) t (lvl w f m* b))]
     [else
-     (define b* (chunk-set-atomic b (- i wf wm) x d owner))
+     (define b* (chunk-set-atomic b (fx- (fx- i wf) wm) x d owner))
      (if (eq? b b*) t (lvl w f m b*))]))
 
 ;; ---------------------------------------------------- first / last / update

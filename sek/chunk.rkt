@@ -17,6 +17,8 @@
 ;; support.
 
 (require racket/vector
+         racket/fixnum
+         racket/performance-hint
          (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-set! unsafe-vector*-length
                   unsafe-vector*-set/copy
@@ -90,9 +92,21 @@
 (define no-owner #f)
 
 (define id-counter 0)
+;; An ownership identifier is compared against a chunk's on every push, pop
+;; and write, and the only thing ever asked of it is whether two of them are
+;; the same one.  It used to be a counter, which made that comparison `eqv?`
+;; -- and `eqv?` on two values the compiler cannot prove are fixnums is a
+;; pointer test, three tag tests and a call to the generic `eqv?`, because a
+;; counter may in principle reach a bignum.  A freshly allocated record can
+;; only be compared with `eq?`, which is one instruction.  The counter is kept
+;; inside it so an id still prints as something a person can follow.
+(struct owner-id (n) #:authentic #:sealed
+  #:property prop:custom-write
+  (lambda (o port mode) (fprintf port "#<owner ~a>" (owner-id-n o))))
+
 (define (fresh-id!)
   (set! id-counter (add1 id-counter))
-  id-counter)
+  (owner-id id-counter))
 
 ;; ------------------------------------------------------------------- layout
 
@@ -104,42 +118,81 @@
 ;; head : index of the first occupied slot
 ;; size : number of occupied slots, 0 <= size <= K; the occupied region is
 ;;        [head, head+size) taken modulo K
-(struct support ([data #:mutable] [head #:mutable] [size #:mutable]) #:authentic #:sealed)
+;; `cap` is the length of `data`, which never changes -- a support's data is
+;; allocated with it and never replaced.  Keeping it here rather than asking
+;; the vector saves a dependent load and two ALU operations on every read of
+;; `chunk-capacity`, which is every push, every pop and every wrap: off the
+;; vector it is chunk -> support -> data -> header, then a shift and a mask to
+;; get the length out of the header word.
+;;
+;; `data` and `cap` are immutable so that the compiler may treat those loads as
+;; pure and share them across the stores to `head` and `size`.  The constructor
+;; is wrapped rather than the call sites changed, so `cap` cannot be passed
+;; wrong.
+(struct support ([data] [head #:mutable] [size #:mutable] [cap])
+  #:authentic #:sealed)
+
+;; Every support is built through this, so `cap` cannot disagree with `data`.
+(begin-encourage-inline
+  (define (support* data head size)
+    (support data head size (unsafe-vector*-length data))))
 
 ;; support : the underlying circular buffer
 ;; head, size : the view, which must be a sub-range of the support's range
 ;; weight : total number of atomic elements transitively held by the view
 ;; id : ownership id, or #f
+;; `support` and `id` are never assigned -- a chunk that needs a different one
+;; of either is a new chunk -- so they are immutable, for the same reason.
 (struct chunk
-        ([support #:mutable] [head #:mutable] [size #:mutable] [weight #:mutable] [id #:mutable])
+        ([support] [head #:mutable] [size #:mutable] [weight #:mutable] [id])
   #:authentic #:sealed)
 
-(define (wrap+ i k)
-  (if (unsafe-fx< i k)
-      i
-      (unsafe-fx- i k)))
-(define (wrap- i k)
-  (if (unsafe-fx< i 0)
-      (unsafe-fx+ i k)
-      i))
+;; These are two or three instructions each, and every one of them is read on
+;; a hot path in another module.  Left as ordinary definitions they compile to
+;; calls: disassembling `eseq-push-back!` showed it pushing a six-word frame
+;; and jumping, twice, once to ask `chunk-full?` whether two fields are equal
+;; and once to push.  Encouraging the inliner removes both calls, and with
+;; nothing left to call the procedure becomes a leaf, so Chez also drops the
+;; frame and the stack-overflow check.
+(begin-encourage-inline
+  (define (wrap+ i k)
+    (if (unsafe-fx< i k)
+        i
+        (unsafe-fx- i k)))
+  (define (wrap- i k)
+    (if (unsafe-fx< i 0)
+        (unsafe-fx+ i k)
+        i))
 
-(define (chunk-capacity c)
-  (unsafe-vector*-length (support-data (chunk-support c))))
-(define (chunk-length c)
-  (chunk-size c))
-(define (chunk-empty? c)
-  (unsafe-fx= 0 (chunk-size c)))
-(define (chunk-full? c)
-  (unsafe-fx= (chunk-size c) (chunk-capacity c)))
+  (define (chunk-capacity c)
+    (support-cap (chunk-support c)))
+  (define (chunk-length c)
+    (chunk-size c))
+  (define (chunk-empty? c)
+    (unsafe-fx= 0 (chunk-size c)))
+  (define (chunk-full? c)
+    (unsafe-fx= (chunk-size c) (chunk-capacity c)))
 
-(define (chunk-owned? c owner)
-  (and owner (eqv? (chunk-id c) owner)))
+  (define (chunk-owned? c owner)
+    (and owner (eq? (chunk-id c) owner)))
+
+  (define (chunk-data c) (support-data (chunk-support c)))
+
+  (define (chunk-aligned? c)
+    (define s (chunk-support c))
+    (and (fx= (chunk-head c) (support-head s))
+         (fx= (chunk-size c) (support-size s))))
+
+  (define (chunk-ref c i)
+    (define data (support-data (chunk-support c)))
+    (unsafe-vector*-ref data
+                        (wrap+ (unsafe-fx+ (chunk-head c) i)
+                               (unsafe-vector*-length data)))))
 
 ;; ------------------------------------------------------------------ measure
 
 ;; The weight of an item of depth d: elements weigh 1, deeper items are chunks
 ;; that carry their own weight.
-(define (chunk-data c) (support-data (chunk-support c)))
 
 (define (chunk-index->support-index c i)
   (define k (chunk-capacity c))
@@ -174,11 +227,8 @@
                   (support-size s))))]))
 
 ;; A chunk is aligned with its support when their ranges coincide; the
-;; ownership invariant requires this of every uniquely-owned chunk.
-(define (chunk-aligned? c)
-  (define s (chunk-support c))
-  (and (eqv? (chunk-head c) (support-head s))
-       (eqv? (chunk-size c) (support-size s))))
+;; ownership invariant requires this of every uniquely-owned chunk --
+;; `chunk-aligned?` is above, with the rest of the inlined accessors.
 
 (define (unit-measure x)
   1)
@@ -189,17 +239,11 @@
 ;; --------------------------------------------------------------- allocation
 
 (define (make-chunk cap owner)
-  (chunk (support (make-vector cap none) 0 0) 0 0 0 owner))
+  (chunk (support* (make-vector cap none) 0 0) 0 0 0 owner))
 
 ;; The shared stand-in for an empty inner chunk (§3.6).  Its capacity is zero,
 ;; so it is never pushed into; code replaces it wholesale.
-(define empty-chunk (chunk (support (vector) 0 0) 0 0 0 #f))
-
-(define (chunk-ref c i)
-  (define data (support-data (chunk-support c)))
-  (unsafe-vector*-ref data
-                      (wrap+ (unsafe-fx+ (chunk-head c) i)
-                             (unsafe-vector*-length data))))
+(define empty-chunk (chunk (support* (vector) 0 0) 0 0 0 #f))
 
 (define (chunk-first c)
   (chunk-ref c 0))
@@ -211,12 +255,12 @@
 ;; vector-copy!s rather than a loop that redoes the wrap arithmetic per item.
 (define (chunk-blit! c start len dst at)
   (define data (support-data (chunk-support c)))
-  (define k (vector-length data))
-  (define from (if (eqv? k 0) 0 (wrap+ (+ (chunk-head c) start) k)))
-  (define run (min len (- k from)))
-  (vector-copy! dst at data from (+ from run))
-  (when (< run len)
-    (vector-copy! dst (+ at run) data 0 (- len run))))
+  (define k (unsafe-vector*-length data))
+  (define from (if (fx= k 0) 0 (wrap+ (fx+ (chunk-head c) start) k)))
+  (define run (fxmin len (fx- k from)))
+  (vector-copy! dst at data from (fx+ from run))
+  (when (fx< run len)
+    (vector-copy! dst (fx+ at run) data 0 (fx- len run))))
 
 ;; The total weight of those same items.  At depth 0 every item weighs one, so
 ;; the scan is skipped entirely.
@@ -234,7 +278,7 @@
     (if (eq? mw unit-measure)
         n
         (for/fold ([w 0]) ([i (in-range n)]) (+ w (mw (vector-ref v i))))))
-  (chunk (support data 0 n) 0 n w owner))
+  (chunk (support* data 0 n) 0 n w owner))
 
 ;; A chunk of `len` items, item i being (proc i), in a support of capacity
 ;; `cap`.  Every item weighs one, so this is depth 0 only.
@@ -256,14 +300,14 @@
     (unless (unsafe-fx= i len)
       (unsafe-vector*-set! data i (proc i))
       (loop (unsafe-fx+ i 1))))
-  (chunk (support data 0 len) 0 len len owner))
+  (chunk (support* data 0 len) 0 len len owner))
 
 ;; Like `chunk-of-vector`, but adopts the vector instead of copying it: the
 ;; caller must not keep a reference.  `v` is the whole support, so its length
 ;; is the capacity and the chunk is full.
 (define (chunk-of-fresh-vector v owner)
   (define n (unsafe-vector*-length v))
-  (chunk (support v 0 n) 0 n n owner))
+  (chunk (support* v 0 n) 0 n n owner))
 
 (define (chunk-of-list xs cap mw owner)
   (chunk-of-vector (list->vector xs) cap mw owner))
@@ -271,7 +315,7 @@
 (define (chunk-singleton x w cap owner)
   (define data (make-vector cap none))
   (vector-set! data 0 x)
-  (chunk (support data 0 1) 0 1 w owner))
+  (chunk (support* data 0 1) 0 1 w owner))
 
 ;; The sub-chunk holding items [start, start+len) of c, whose total weight the
 ;; caller already knows.
@@ -291,7 +335,7 @@
     [(chunk-owned? c owner)
      (define data (make-vector (chunk-capacity c) none))
      (chunk-blit! c start len data 0)
-     (chunk (support data 0 len) 0 len w owner)]
+     (chunk (support* data 0 len) 0 len w owner)]
     [else
      (chunk (chunk-support c) (chunk-index->support-index c start) len w no-owner)]))
 
@@ -303,13 +347,14 @@
   (define data (make-vector cap none))
   (chunk-blit! a 0 na data 0)
   (chunk-blit! b 0 nb data na)
-  (chunk (support data 0 (+ na nb)) 0 (+ na nb) (+ (chunk-weight a) (chunk-weight b)) owner))
+  (chunk (support* data 0 (+ na nb)) 0 (+ na nb) (+ (chunk-weight a) (chunk-weight b)) owner))
 
 ;; --------------------------------------------------------------------- push
 
 ;; In-place push into a uniquely-owned chunk: the view and the support's range
 ;; coincide, so extending both keeps them aligned.
-(define (owned-push-back! c x w)
+(begin-encourage-inline
+ (define (owned-push-back! c x w)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (unsafe-vector*-set! (support-data s)
@@ -320,7 +365,7 @@
   (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) w))
   c)
 
-(define (owned-push-front! c x w)
+ (define (owned-push-front! c x w)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (define i (wrap- (unsafe-fx- (chunk-head c) 1) k))
@@ -330,7 +375,7 @@
   (set-chunk-head! c i)
   (set-chunk-size! c (unsafe-fx+ (chunk-size c) 1))
   (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) w))
-  c)
+  c))
 
 ;; Persistent push: either a monotonic in-place update of a slot that no view
 ;; covers, or a copy of the view into a fresh support.
@@ -338,45 +383,52 @@
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (define n (chunk-size c))
-  (define view-back (wrap+ (+ (chunk-head c) n) k))
-  (define support-back (wrap+ (+ (support-head s) (support-size s)) k))
+  (define view-back (wrap+ (fx+ (chunk-head c) n) k))
+  (define support-back (wrap+ (fx+ (support-head s) (support-size s)) k))
   (cond
-    [(and (< (support-size s) k) (= view-back support-back))
+    [(and (fx< (support-size s) k) (fx= view-back support-back))
      (vector-set! (support-data s) support-back x)
-     (set-support-size! s (add1 (support-size s)))
-     (chunk s (chunk-head c) (add1 n) (+ (chunk-weight c) w) (chunk-id c))]
+     (set-support-size! s (fx+ (support-size s) 1))
+     (chunk s (chunk-head c) (fx+ n 1) (fx+ (chunk-weight c) w) (chunk-id c))]
     [else
      (define data (make-vector k none))
      (chunk-blit! c 0 n data 0)
      (vector-set! data n x)
-     (chunk (support data 0 (add1 n)) 0 (add1 n) (+ (chunk-weight c) w) owner)]))
+     (chunk (support* data 0 (fx+ n 1)) 0 (fx+ n 1)
+            (fx+ (chunk-weight c) w) owner)]))
 
 (define (persistent-push-front c x w owner)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (define n (chunk-size c))
   (cond
-    [(and (< (support-size s) k) (= (chunk-head c) (support-head s)))
-     (define i (wrap- (sub1 (support-head s)) k))
+    [(and (fx< (support-size s) k) (fx= (chunk-head c) (support-head s)))
+     (define i (wrap- (fx- (support-head s) 1) k))
      (vector-set! (support-data s) i x)
      (set-support-head! s i)
-     (set-support-size! s (add1 (support-size s)))
-     (chunk s i (add1 n) (+ (chunk-weight c) w) (chunk-id c))]
+     (set-support-size! s (fx+ (support-size s) 1))
+     (chunk s i (fx+ n 1) (fx+ (chunk-weight c) w) (chunk-id c))]
     [else
      (define data (make-vector k none))
      (vector-set! data 0 x)
      (chunk-blit! c 0 n data 1)
-     (chunk (support data 0 (add1 n)) 0 (add1 n) (+ (chunk-weight c) w) owner)]))
+     (chunk (support* data 0 (fx+ n 1)) 0 (fx+ n 1)
+            (fx+ (chunk-weight c) w) owner)]))
 
-(define (chunk-push-back c x w owner)
-  (if (chunk-owned? c owner)
-      (owned-push-back! c x w)
-      (persistent-push-back c x w owner)))
+;; The owned branch is the one a transient takes on every push, and it is a
+;; store and four field updates -- worth inlining into the caller.  The
+;; persistent branch is too big for the inliner to copy, so it stays a call on
+;; the branch that needs it.
+(begin-encourage-inline
+  (define (chunk-push-back c x w owner)
+    (if (chunk-owned? c owner)
+        (owned-push-back! c x w)
+        (persistent-push-back c x w owner)))
 
-(define (chunk-push-front c x w owner)
-  (if (chunk-owned? c owner)
-      (owned-push-front! c x w)
-      (persistent-push-front c x w owner)))
+  (define (chunk-push-front c x w owner)
+    (if (chunk-owned? c owner)
+        (owned-push-front! c x w)
+        (persistent-push-front c x w owner))))
 
 ;; ---------------------------------------------------------------------- pop
 
@@ -457,7 +509,7 @@
     [else
      (define n (chunk-size c))
      (define-values (data head) (chunk-copy-store c))
-     (chunk (support data head n) head n (chunk-weight c) owner)]))
+     (chunk (support* data head n) head n (chunk-weight c) owner)]))
 
 (define (chunk-set c i x wold wnew owner)
   (cond
@@ -473,7 +525,7 @@
     ;; recursive `chunk-set-atomic` below already relies on the same identity
     ;; test one level up, and a set that does not change anything should not
     ;; cost a chunk copy.
-    [(and (eqv? wold wnew) (eq? x (chunk-ref c i))) c]
+    [(and (fx= wold wnew) (eq? x (chunk-ref c i))) c]
     [else
      (define k (chunk-capacity c))
      (define n (chunk-size c))
@@ -483,12 +535,14 @@
        [(chunk-aligned? c)
         (define head (chunk-head c))
         (define data (unsafe-vector*-set/copy (support-data (chunk-support c))
-                                              (wrap+ (+ head i) k) x))
-        (chunk (support data head n) head n (+ (chunk-weight c) (- wnew wold)) owner)]
+                                              (wrap+ (fx+ head i) k) x))
+        (chunk (support* data head n) head n
+               (fx+ (chunk-weight c) (fx- wnew wold)) owner)]
        [else
         (define-values (data head) (chunk-copy-store c))
-        (vector-set! data (wrap+ (+ head i) k) x)
-        (chunk (support data head n) head n (+ (chunk-weight c) (- wnew wold)) owner)])]))
+        (vector-set! data (wrap+ (fx+ head i) k) x)
+        (chunk (support* data head n) head n
+               (fx+ (chunk-weight c) (fx- wnew wold)) owner)])]))
 
 ;; -------------------------------------------------------------- get-from-chunk
 
@@ -501,28 +555,32 @@
 ;; q0 is an item index whose weight offset within the chunk is acc0; the scan
 ;; starts there when the target lies at or after it.  A cursor knows where it
 ;; already is, which is what makes a short hop inside an unpacked chunk cheap.
+;; Indices, weights and depths are fixnums here for the same reason as in
+;; `pt-ref`, and saying so is worth as much: this is the inner half of every
+;; descent, and with generic arithmetic each of these comparisons carries a
+;; tag guard and each addition an overflow check.
 (define (chunk-item-at/from c i d q0 acc0)
   (define n (chunk-size c))
   (define mw (max-item-weight d))
   (define (scan q acc)
     (let loop ([q q] [acc acc])
       (define w (chunk-weight (chunk-ref c q)))
-      (if (< i (+ acc w))
-          (values q (- i acc))
-          (loop (add1 q) (+ acc w)))))
+      (if (fx< i (fx+ acc w))
+          (values q (fx- i acc))
+          (loop (fx+ q 1) (fx+ acc w)))))
   (cond
-    [(eqv? mw 1) (values i 0)]
+    [(fx= mw 1) (values i 0)]
     [else
      (define sh (max-item-weight-shift d))
      (cond
        ;; a packed chunk is indexed by a shift, or a division when the
        ;; capacities are not powers of two
        [sh
-        (if (eqv? (chunk-weight c) (arithmetic-shift n sh))
-            (values (arithmetic-shift i (- sh)) (bitwise-and i (sub1 mw)))
+        (if (fx= (chunk-weight c) (fxlshift n sh))
+            (values (fxrshift i sh) (fxand i (fx- mw 1)))
             (scan q0 acc0))]
-       [(eqv? (chunk-weight c) (* n mw))
-        (let-values ([(q r) (quotient/remainder i mw)]) (values q r))]
+       [(fx= (chunk-weight c) (fx* n mw))
+        (values (fxquotient i mw) (fxremainder i mw))]
        [else (scan q0 acc0)])]))
 
 (define (chunk-item-at c i d)
@@ -532,20 +590,20 @@
 ;; This lives here, beside chunk-item-at and chunk-ref, so that the compiler
 ;; can see through the calls; it is the inner loop of every indexed access.
 (define (chunk-ref-atomic c i d)
-  (if (eqv? d 0)
+  (if (fx= d 0)
       (chunk-ref c i)
       (let-values ([(q j) (chunk-item-at c i d)])
-        (chunk-ref-atomic (chunk-ref c q) j (sub1 d)))))
+        (chunk-ref-atomic (chunk-ref c q) j (fx- d 1)))))
 
 ;; The same descent, rebuilding the chunks along the way.
 ;; chunk-own, descending to the depth-0 chunk that holds atomic index i.
 (define (chunk-own-atomic c i d owner)
   (cond
-    [(eqv? d 0) (chunk-own c owner)]
+    [(fx= d 0) (chunk-own c owner)]
     [else
      (define-values (q j) (chunk-item-at c i d))
      (define inner (chunk-ref c q))
-     (define inner* (chunk-own-atomic inner j (sub1 d) owner))
+     (define inner* (chunk-own-atomic inner j (fx- d 1) owner))
      (define c* (chunk-own c owner))
      (if (eq? inner inner*)
          c*
@@ -553,11 +611,11 @@
 
 (define (chunk-set-atomic c i x d owner)
   (cond
-    [(eqv? d 0) (chunk-set c i x 1 1 owner)]
+    [(fx= d 0) (chunk-set c i x 1 1 owner)]
     [else
      (define-values (q j) (chunk-item-at c i d))
      (define inner (chunk-ref c q))
-     (define inner* (chunk-set-atomic inner j x (sub1 d) owner))
+     (define inner* (chunk-set-atomic inner j x (fx- d 1) owner))
      (if (eq? inner inner*)
          c
          (chunk-set c q inner* (chunk-weight inner) (chunk-weight inner*) owner))]))

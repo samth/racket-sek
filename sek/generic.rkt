@@ -13,7 +13,7 @@
 
 (require (for-syntax racket/base)
          (only-in racket/unsafe/ops
-                  unsafe-vector*-ref unsafe-fx+ unsafe-fx< unsafe-fx> unsafe-fx=)
+                  unsafe-vector*-ref unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx> unsafe-fx=)
          racket/vector
          "config.rkt"
          "persistent.rkt"
@@ -206,8 +206,11 @@
        (define sg (sek-iter-segment-and-jump! it 'forward))
        (define v (segment-vector sg))
        (define o (segment-start sg))
-       (loop (for/fold ([acc acc]) ([j (in-range (segment-length sg))])
-               (proc acc (vector-ref v (+ o j)))))])))
+       ;; walk the support indices directly rather than an offset plus a
+       ;; counter, which costs a generic addition per element
+       (loop (for/fold ([acc acc])
+                       ([j (in-range o (unsafe-fx+ o (segment-length sg)))])
+               (proc acc (unsafe-vector*-ref v j))))])))
 
 (define (sek-fold-right s proc init)
   (check-sek 'sek-fold-right s)
@@ -219,8 +222,11 @@
        (define sg (sek-iter-segment-and-jump! it 'backward))
        (define v (segment-vector sg))
        (define o (segment-start sg))
-       (loop (for/fold ([acc acc]) ([j (in-range (sub1 (segment-length sg)) -1 -1)])
-               (proc (vector-ref v (+ o j)) acc)))])))
+       (loop (for/fold ([acc acc])
+                       ([j (in-range (unsafe-fx+ o (unsafe-fx- (segment-length sg) 1))
+                                     (unsafe-fx- o 1)
+                                     -1)])
+               (proc (unsafe-vector*-ref v j) acc)))])))
 
 ;; The generic-dispatch version, used when a sequence value is passed around
 ;; rather than written directly in a for clause.

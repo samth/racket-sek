@@ -13,7 +13,9 @@
 (require racket/vector
          racket/fixnum
          racket/performance-hint
-         (only-in racket/unsafe/ops unsafe-vector*-ref)
+         (only-in racket/unsafe/ops
+                  unsafe-vector*-ref unsafe-vector*-length
+                  unsafe-fx>= unsafe-fx<)
          "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
@@ -346,13 +348,22 @@
 ;; The bounds check and the dispatch both have to look at the representation,
 ;; so do it once: `check-index` would go back through `pseq-length`, which
 ;; re-tests whether the rep is a vector or a tree.
+;; The guard is `fixnum?` rather than `exact-nonnegative-integer?` for two
+;; reasons.  It is faster -- disassembling this procedure with the wider test
+;; showed the tag of `i` being examined three times, because nothing downstream
+;; can carry "is an exact nonnegative integer" as "is a fixnum", so the
+;; comparison re-tests it.  And it is what the rest of the code already
+;; assumes: everything below here indexes with `unsafe-fx` operations, which on
+;; a bignum are undefined.  A length is a fixnum, so a bignum index is out of
+;; range by definition and belongs on the slow path anyway.
 (define (pseq-ref s i)
   (check-pseq 'pseq-ref s)
   (define r (psq-rep s))
   (cond
-    [(and (lvl? r) (exact-nonnegative-integer? i) (< i (lvl-weight r)))
+    [(and (lvl? r) (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i (lvl-weight r)))
      (pt-ref r i 0)]
-    [(and (vector? r) (exact-nonnegative-integer? i) (< i (vector-length r)))
+    [(and (vector? r) (fixnum? i) (unsafe-fx>= i 0)
+          (unsafe-fx< i (unsafe-vector*-length r)))
      (vector-ref r i)]
     [else
      (check-index 'pseq-ref s i)
