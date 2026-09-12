@@ -55,7 +55,7 @@
       0))
 
 (define (make-level f m b)
-  (lvl (+ (chunk-weight f) (pt-weight m) (chunk-weight b)) f m b))
+  (lvl (fx+ (chunk-weight f) (pt-weight m) (chunk-weight b)) f m b))
 
 ;; ---------------------------------------------------------------- push / pop
 
@@ -68,14 +68,14 @@
      (define f (lvl-front t))
      (define m (lvl-middle t))
      (define b (lvl-back t))
-     (define w* (+ (lvl-weight t) w))
+     (define w* (fx+ (lvl-weight t) w))
      (cond
        [(not (chunk-full? f)) (lvl w* (chunk-push-front f x w owner) m b)]
        ;; f is full; if b is empty then so is m (invariant 1), and f can simply
        ;; become the new back chunk
        [(chunk-empty? b) (lvl w* (chunk-singleton x w k owner) m f)]
        [else
-        (define m* (pt-push-front m f (chunk-weight f) (add1 d) owner))
+        (define m* (pt-push-front m f (chunk-weight f) (fx+ d 1) owner))
         (lvl w* (chunk-singleton x w k owner) m* b)])]))
 
 (define (pt-push-back t x w d owner)
@@ -86,12 +86,12 @@
      (define f (lvl-front t))
      (define m (lvl-middle t))
      (define b (lvl-back t))
-     (define w* (+ (lvl-weight t) w))
+     (define w* (fx+ (lvl-weight t) w))
      (cond
        [(not (chunk-full? b)) (lvl w* f m (chunk-push-back b x w owner))]
        [(chunk-empty? f) (lvl w* b m (chunk-singleton x w k owner))]
        [else
-        (define m* (pt-push-back m b (chunk-weight b) (add1 d) owner))
+        (define m* (pt-push-back m b (chunk-weight b) (fx+ d 1) owner))
         (lvl w* f m* (chunk-singleton x w k owner))])]))
 
 ;; pop-front (§3.2) -- returns the item that was removed and the new tree.
@@ -107,16 +107,16 @@
      (values x
              (if (chunk-empty? b*)
                  #f
-                 (lvl (- (lvl-weight t) (mw x)) f m b*)))]
+                 (lvl (fx- (lvl-weight t) (mw x)) f m b*)))]
     [else
      (define-values (x f*) (chunk-pop-front f mw owner))
-     (define w* (- (lvl-weight t) (mw x)))
+     (define w* (fx- (lvl-weight t) (mw x)))
      (cond
        [(not (chunk-empty? f*)) (values x (lvl w* f* m b))]
        ;; the front chunk is now empty: refill it from the middle sequence,
        ;; which by invariant 2 yields a nonempty chunk
        [m
-        (define-values (c m*) (pt-pop-front m (add1 d) owner))
+        (define-values (c m*) (pt-pop-front m (fx+ d 1) owner))
         (values x (lvl w* c m* b))]
        [(chunk-empty? b) (values x #f)]
        [else (values x (lvl w* f* m b))])]))
@@ -132,14 +132,14 @@
      (values x
              (if (chunk-empty? f*)
                  #f
-                 (lvl (- (lvl-weight t) (mw x)) f* m b)))]
+                 (lvl (fx- (lvl-weight t) (mw x)) f* m b)))]
     [else
      (define-values (x b*) (chunk-pop-back b mw owner))
-     (define w* (- (lvl-weight t) (mw x)))
+     (define w* (fx- (lvl-weight t) (mw x)))
      (cond
        [(not (chunk-empty? b*)) (values x (lvl w* f m b*))]
        [m
-        (define-values (c m*) (pt-pop-back m (add1 d) owner))
+        (define-values (c m*) (pt-pop-back m (fx+ d 1) owner))
         (values x (lvl w* f m* c))]
        [(chunk-empty? f) (values x #f)]
        [else (values x (lvl w* f m b*))])]))
@@ -165,11 +165,11 @@
     [else
      (define-values (f* m*)
        (if (chunk-empty? f)
-           (pt-pop-front m (add1 d) owner)
+           (pt-pop-front m (fx+ d 1) owner)
            (values f m)))
      (define-values (b* m**)
        (if (and (chunk-empty? b) m*)
-           (pt-pop-back m* (add1 d) owner)
+           (pt-pop-back m* (fx+ d 1) owner)
            (values b m*)))
      (if (and (chunk-empty? f*) (chunk-empty? b*) (not m**))
          #f
@@ -226,9 +226,9 @@
   (define wf (chunk-weight f))
   (define wm (pt-weight m))
   (cond
-    [(< i wf) (lvl w (chunk-own-atomic f i d owner) m b)]
-    [(< i (+ wf wm)) (lvl w f (pt-own m (- i wf) (add1 d) owner) b)]
-    [else (lvl w f m (chunk-own-atomic b (- i wf wm) d owner))]))
+    [(fx< i wf) (lvl w (chunk-own-atomic f i d owner) m b)]
+    [(fx< i (fx+ wf wm)) (lvl w f (pt-own m (fx- i wf) (fx+ d 1) owner) b)]
+    [else (lvl w f m (chunk-own-atomic b (fx- i wf wm) d owner))]))
 
 (define (pt-first-item t)
   (define f (lvl-front t))
@@ -253,10 +253,10 @@
   (cond
     [(not (chunk-empty? f))
      (define old (chunk-first f))
-     (lvl (+ (lvl-weight t) (- we (mw old))) (chunk-set f 0 e (mw old) we owner) m b)]
+     (lvl (fx+ (lvl-weight t) (fx- we (mw old))) (chunk-set f 0 e (mw old) we owner) m b)]
     [else
      (define old (chunk-first b))
-     (lvl (+ (lvl-weight t) (- we (mw old))) f m (chunk-set b 0 e (mw old) we owner))]))
+     (lvl (fx+ (lvl-weight t) (fx- we (mw old))) f m (chunk-set b 0 e (mw old) we owner))]))
 
 (define (pt-update-back t e d owner)
   (define mw (measure-at d))
@@ -267,14 +267,14 @@
   (cond
     [(not (chunk-empty? b))
      (define old (chunk-last b))
-     (lvl (+ (lvl-weight t) (- we (mw old)))
+     (lvl (fx+ (lvl-weight t) (fx- we (mw old)))
           f
           m
-          (chunk-set b (sub1 (chunk-length b)) e (mw old) we owner))]
+          (chunk-set b (fx- (chunk-length b) 1) e (mw old) we owner))]
     [else
      (define old (chunk-last f))
-     (lvl (+ (lvl-weight t) (- we (mw old)))
-          (chunk-set f (sub1 (chunk-length f)) e (mw old) we owner)
+     (lvl (fx+ (lvl-weight t) (fx- we (mw old)))
+          (chunk-set f (fx- (chunk-length f) 1) e (mw old) we owner)
           m
           b)]))
 
@@ -291,9 +291,9 @@
 (define-syntax-rule (define-split-point (q j w1 wq w2) c i d mw)
   (begin
     (define-values (q j) (chunk-item-at c i d))
-    (define w1 (- i j))
+    (define w1 (fx- i j))
     (define wq (if (eqv? d 0) 1 (chunk-weight (chunk-ref c q))))
-    (define w2 (- (chunk-weight c) w1 wq))))
+    (define w2 (fx- (chunk-weight c) w1 wq))))
 
 ;; The item at the split point, which the caller needs only when it is going to
 ;; push it back on.  At depth 0 nobody does: `pt-split`, `pt-take` and
@@ -317,8 +317,8 @@
 ;; `pt-populate-sides` a pop from the middle sequence.
 (define-syntax-rule (right-part keep? c q len w wq owner)
   (if keep?
-      (chunk-sub c q (add1 len) (+ w wq) owner)
-      (chunk-sub c (add1 q) len w owner)))
+      (chunk-sub c q (fx+ len 1) (fx+ w wq) owner)
+      (chunk-sub c (fx+ q 1) len w owner)))
 
 ;; 3-way split (§3.2): returns the sequence before the item that holds atomic
 ;; index i, that item, the index of i within it, and the sequence after it.
@@ -336,28 +336,28 @@
         #f
         (make-level c #f (make-chunk k owner))))
   (cond
-    [(< i wf)
+    [(fx< i wf)
      (define-split-point (q j w1 wq w2) f i d mw)
      (values (solo (chunk-sub f 0 q w1 owner))
              (split-item f q d)
              j
              (pt-populate-sides
-              (right-part keep? f q (- (chunk-length f) q 1) w2 wq owner)
+              (right-part keep? f q (fx- (chunk-length f) q 1) w2 wq owner)
               m b d owner))]
-    [(>= i (+ wf wm))
-     (define-split-point (q j w1 wq w2) b (- i wf wm) d mw)
+    [(fx>= i (fx+ wf wm))
+     (define-split-point (q j w1 wq w2) b (fx- i wf wm) d mw)
      (values (pt-populate-sides f m (chunk-sub b 0 q w1 owner) d owner)
              (split-item b q d)
              j
-             (solo (right-part keep? b q (- (chunk-length b) q 1) w2 wq owner)))]
+             (solo (right-part keep? b q (fx- (chunk-length b) q 1) w2 wq owner)))]
     [else
-     (define-values (m1 c j0 m2) (pt-split3 m (- i wf) (add1 d) owner #f))
+     (define-values (m1 c j0 m2) (pt-split3 m (fx- i wf) (fx+ d 1) owner #f))
      (define-split-point (q j w1 wq w2) c j0 d mw)
      (values (pt-populate-sides f m1 (chunk-sub c 0 q w1 owner) d owner)
              (split-item c q d)
              j
              (pt-populate-sides
-              (right-part keep? c q (- (chunk-length c) q 1) w2 wq owner)
+              (right-part keep? c q (fx- (chunk-length c) q 1) w2 wq owner)
               m2 b d owner))]))
 
 ;; Specialised versions of pt-split3 that build only the side that is wanted,
@@ -375,18 +375,18 @@
   (define k (capacity-at d))
   (define mw (measure-at d))
   (cond
-    [(< i wf)
+    [(fx< i wf)
      (define-split-point (q j w1 wq w2) f i d mw)
      (values (if (eqv? q 0) #f (make-level (chunk-sub f 0 q w1 owner) #f (make-chunk k owner)))
              (split-item f q d)
              j)]
-    [(>= i (+ wf wm))
-     (define-split-point (q j w1 wq w2) b (- i wf wm) d mw)
+    [(fx>= i (fx+ wf wm))
+     (define-split-point (q j w1 wq w2) b (fx- i wf wm) d mw)
      (values (pt-populate-sides f m (chunk-sub b 0 q w1 owner) d owner)
              (split-item b q d)
              j)]
     [else
-     (define-values (m1 c j0) (pt-take3 m (- i wf) (add1 d) owner))
+     (define-values (m1 c j0) (pt-take3 m (fx- i wf) (fx+ d 1) owner))
      (define-split-point (q j w1 wq w2) c j0 d mw)
      (values (pt-populate-sides f m1 (chunk-sub c 0 q w1 owner) d owner)
              (split-item c q d)
@@ -401,28 +401,28 @@
   (define k (capacity-at d))
   (define mw (measure-at d))
   (cond
-    [(< i wf)
+    [(fx< i wf)
      (define-split-point (q j w1 wq w2) f i d mw)
      (values (split-item f q d)
              j
              (pt-populate-sides
-              (right-part keep? f q (- (chunk-length f) q 1) w2 wq owner)
+              (right-part keep? f q (fx- (chunk-length f) q 1) w2 wq owner)
               m b d owner))]
-    [(>= i (+ wf wm))
-     (define-split-point (q j w1 wq w2) b (- i wf wm) d mw)
-     (define c* (right-part keep? b q (- (chunk-length b) q 1) w2 wq owner))
+    [(fx>= i (fx+ wf wm))
+     (define-split-point (q j w1 wq w2) b (fx- i wf wm) d mw)
+     (define c* (right-part keep? b q (fx- (chunk-length b) q 1) w2 wq owner))
      (values (split-item b q d)
              j
              (if (chunk-empty? c*)
                  #f
                  (make-level c* #f (make-chunk k owner))))]
     [else
-     (define-values (c j0 m2) (pt-drop3 m (- i wf) (add1 d) owner #f))
+     (define-values (c j0 m2) (pt-drop3 m (fx- i wf) (fx+ d 1) owner #f))
      (define-split-point (q j w1 wq w2) c j0 d mw)
      (values (split-item c q d)
              j
              (pt-populate-sides
-              (right-part keep? c q (- (chunk-length c) q 1) w2 wq owner)
+              (right-part keep? c q (fx- (chunk-length c) q 1) w2 wq owner)
               m2 b d owner))]))
 
 ;; 2-way split at the top level, where every item weighs one.
@@ -474,7 +474,7 @@
          (cond
            [(null? cs) (list acc)]
            [(chunk-empty? (car cs)) (scan acc (cdr cs))]
-           [(<= (+ (chunk-length acc) (chunk-length (car cs))) k)
+           [(fx<= (fx+ (chunk-length acc) (chunk-length (car cs))) k)
             (scan (chunk-fuse acc (car cs) owner) (cdr cs))]
            [else (cons acc (scan (car cs) (cdr cs)))]))])))
 
@@ -504,7 +504,7 @@
     (cond
       [(null? xs) (reverse acc)]
       [else
-       (define n (min k (length xs)))
+       (define n (fxmin k (length xs)))
        (loop (list-tail xs n) (cons (chunk-of-list (take xs n) k weight-measure owner) acc))])))
 
 ;; concat (§3.2)
@@ -528,13 +528,13 @@
        (if (chunk-empty? (lvl-back t2))
            (values (lvl-back t2) (lvl-front t2))
            (values (lvl-front t2) (lvl-back t2))))
-     (make-level f1 (pt-merge (lvl-middle t1) (list b1 f2) (lvl-middle t2) (add1 d) owner) b2)]))
+     (make-level f1 (pt-merge (lvl-middle t1) (list b1 f2) (lvl-middle t2) (fx+ d 1) owner) b2)]))
 
 ;; merge (§3.2): build a middle sequence representing m1 ; L ; m2 that obeys
 ;; the density invariant.  m1 and m2 are trees at depth d, so their items are
 ;; chunks whose capacity is that of depth d-1 items.
 (define (pt-merge m1 L m2 d owner)
-  (define kf (capacity-at (sub1 d)))
+  (define kf (capacity-at (fx- d 1)))
   (cond
     ;; both middles empty: the fused list is the whole sequence
     [(and (not m1) (not m2))
@@ -604,7 +604,7 @@
                      tail
                      (append (group-into-chunks rest* k owner) tail))])
       (if (chunk-empty? B1*) tail (cons B1* tail))))
-  (make-level F1 (pt-merge (lvl-middle m1) L* (lvl-middle m2) (add1 d) owner) B2))
+  (make-level F1 (pt-merge (lvl-middle m1) L* (lvl-middle m2) (fx+ d 1) owner) B2))
 
 ;; ---------------------------------------------------------------- traversal
 
@@ -612,7 +612,7 @@
 (define (item-for-each x d proc)
   (if (eqv? d 0)
       (proc x)
-      (chunk-for-each x (sub1 d) proc)))
+      (chunk-for-each x (fx- d 1) proc)))
 
 ;; c holds items of depth d.
 (define (chunk-for-each c d proc)
@@ -622,7 +622,7 @@
 (define (pt-for-each t d proc)
   (when t
     (chunk-for-each (lvl-front t) d proc)
-    (pt-for-each (lvl-middle t) (add1 d) proc)
+    (pt-for-each (lvl-middle t) (fx+ d 1) proc)
     (chunk-for-each (lvl-back t) d proc)))
 
 ;; Visit the items (not the elements) of a tree, in order.
@@ -632,7 +632,7 @@
     (for ([i (in-range (chunk-length f))])
       (proc (chunk-ref f i)))
     (pt-items-for-each (lvl-middle t)
-                       (add1 d)
+                       (fx+ d 1)
                        (lambda (c)
                          (for ([i (in-range (chunk-length c))])
                            (proc (chunk-ref c i)))))

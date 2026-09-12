@@ -15,7 +15,7 @@
          racket/performance-hint
          (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-length
-                  unsafe-fx>= unsafe-fx<)
+                  unsafe-fx>= unsafe-fx<= unsafe-fx<)
          "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
@@ -340,10 +340,13 @@
 
 ;; ------------------------------------------------------------------ get/set
 
+;; `fixnum?` rather than `exact-nonnegative-integer?` for the same reason as
+;; in `pseq-ref`: the operations below index with `unsafe-fx`, and a length is
+;; a fixnum, so a bignum index is out of range by definition.
 (define (check-index who s i)
-  (unless (and (exact-nonnegative-integer? i) (< i (pseq-length s)))
-    (raise-arguments-error who "index out of range"
-                           "index" i "length" (pseq-length s))))
+  (define n (pseq-length s))
+  (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i n))
+    (raise-arguments-error who "index out of range" "index" i "length" n)))
 
 ;; The bounds check and the dispatch both have to look at the representation,
 ;; so do it once: `check-index` would go back through `pseq-length`, which
@@ -393,7 +396,7 @@
 ;; Split into the first i elements and the rest.
 (define (pseq-split s i)
   (define n (pseq-length s))
-  (unless (and (exact-nonnegative-integer? i) (<= i n))
+  (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
     (raise-arguments-error 'pseq-split "index out of range"
                            "index" i "length" n))
   (define r (psq-rep s))
@@ -410,7 +413,7 @@
 ;; (ShareableSequence.ml); `get` is `pseq-ref` here and was already separate.
 (define (pseq-take s i)
   (define n (pseq-length s))
-  (unless (and (exact-nonnegative-integer? i) (<= i n))
+  (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
     (raise-arguments-error 'pseq-take "index out of range"
                            "index" i "length" n))
   (define r (psq-rep s))
@@ -422,7 +425,7 @@
 
 (define (pseq-drop s i)
   (define n (pseq-length s))
-  (unless (and (exact-nonnegative-integer? i) (<= i n))
+  (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
     (raise-arguments-error 'pseq-drop "index out of range"
                            "index" i "length" n))
   (define r (psq-rep s))
