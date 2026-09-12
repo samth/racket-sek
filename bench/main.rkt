@@ -480,6 +480,9 @@
 ;; Microbenchmarks on a shared machine are noisy in one direction only, so
 ;; report the best of a few trials rather than a single timing.
 (define trials (make-parameter 3))
+;; a ceiling on the adaptive loop in `measure`, so a pathologically noisy
+;; scenario cannot run forever
+(define max-trials (make-parameter 12))
 
 (define (measure ops thunk #:target [target 150.0] #:max-reps [max-reps +inf.0])
   (define (once reps)
@@ -494,9 +497,22 @@
       (if (and (< elapsed target) (< reps 10000000) (< reps max-reps))
           (loop (* reps (max 2 (inexact->exact (ceiling (/ target (max elapsed 0.05)))))))
           reps)))
+  ;; Take the best of several trials, and keep going while the best is still
+  ;; improving.  A fixed count is wrong for an operation that allocates: a
+  ;; collection lands inside some trials and not others, so the distribution is
+  ;; bimodal and three trials often miss the clean mode entirely.  `concat` read
+  ;; anywhere from 278 to 503 ns that way, depending on which trials got hit.
+  ;; A steady operation converges immediately and still costs three.
   (define best
-    (for/fold ([best +inf.0]) ([_ (in-range (trials))])
-      (min best (once reps))))
+    (let loop ([best +inf.0] [n 0] [flat 0])
+      (cond
+        [(and (>= n (trials)) (>= flat 2)) best]
+        [(>= n (max-trials)) best]
+        [else
+         (define t (once reps))
+         (if (< t (* best 0.98))
+             (loop (min best t) (add1 n) 0)
+             (loop (min best t) (add1 n) (add1 flat)))])))
   (/ (* best 1e6) (* reps ops)))
 
 (define (fmt x)
@@ -1216,7 +1232,7 @@
 ;;   [--quick] [--careful] [--json FILE] [scenario ...]
 (define (run-scenarios! banner args scenarios scenario-order)
   (when (member "--quick" args) (quick? #t))
-  (when (member "--careful" args) (trials 7))
+  (when (member "--careful" args) (trials 7) (max-trials 25))
   (define json-file
     (let loop ([as args])
       (cond [(null? as) #f]

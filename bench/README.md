@@ -3,7 +3,8 @@
 ```sh
 ./run.sh                     # this library, one scenario per process
 ./run.sh --external          # the scenarios borrowed from other libraries
-./run.sh --all               # both
+./run.sh --workloads         # whole programs rather than single operations
+./run.sh --all               # all three
 ./run.sh --quick             # smaller sizes
 racket -y main.rkt stack     # a single scenario
 
@@ -64,6 +65,82 @@ Five things worth knowing if you re-run this:
 
 Numbers below are from one machine: Racket CS 9.3, OCaml 5.4.0 (flambda `-O3`),
 default settings (leaf capacity 128, node capacity 16, threshold 32).
+
+## Workloads
+
+Everything else in this file measures one operation at a time, which is what
+you want in order to understand a structure and not what you want in order to
+choose one. An operation that is twice as fast may run a hundredth as often,
+and a structure that wins every row can still lose a program, because the rows
+are not weighted by anything real.
+
+`workloads.rkt` runs whole programs instead. Each is a script of mixed
+operations over a sequence whose size *changes as it runs* -- growing, being
+split, being rejoined -- so no single n characterises it, and each consumes
+what it reads so nothing can be optimised away. Every implementation executes
+the identical script, generated once from a fixed seed, and the answer each
+produces is compared against the others: a structure that is fast because it
+did something different is not fast. The tables print milliseconds for the
+whole program, comparable across a row and meaningless down a column.
+
+```
+editor: edit a document of lines: jump, insert, delete, redraw a window
+                                    1k lines   20k lines  400k lines
+eseq                                    1.24        1.86        3.76
+pseq                                    1.01        1.71        3.45
+treelist                                2.20        3.76       23.23
+mutable-treelist                        4.44       36.93         n/a
+gvector                                 3.91       68.76         n/a
+array                                   3.01       49.16         n/a
+list                                   14.54       352.7         n/a
+
+queue: feed a work queue in bursts, drain it, snapshot the backlog
+                                 2000 rounds
+eseq                                    5.49
+pseq                                    7.86
+treelist                               34.68
+mutable-treelist                       37.81
+array                                  806.8
+gvector                                814.5
+list                                   4328.
+
+log: append a log, compact it by dropping, filtering and re-joining
+                                  1k batches 50k batches
+pseq                                    0.12        5.17
+eseq                                    0.13        5.24
+mutable-treelist                        0.34       14.95
+treelist                                0.44       26.51
+gvector                                 0.42       49.95
+
+scan: build, then walk at a stride, then fold
+                                         10k          1M
+gvector                                 0.33       21.16
+array                                   0.35       10.81
+treelist                                0.77       53.76
+pseq                                    0.84       18.30
+eseq                                    0.87       18.62
+list                                   365.6         n/a
+```
+
+An `n/a` is an implementation whose Theta(n) operations the workload leans on,
+at a size where the script would be quadratic -- `mutable-treelist` and
+`gvector` both copy on a split, a list is linear in `ref`. They are not
+excluded at the smaller sizes, so the cost is visible before it is dropped.
+
+These say something the operation tables do not. On the editor, which is the
+shape this structure is *for* -- a cursor that moves, an edit where it is, a
+window redrawn around it -- `pseq` is 6.7x a treelist at four hundred thousand
+lines and nothing else finishes at all. On the queue it is 6.3x a treelist and
+a hundred and forty times a `gvector`. But on `scan`, which is indexed access
+and nothing else, a `gvector` and a raw growable array win, and on the strided
+walk at a million elements they win by less than the microbenchmark suggests
+(21.2 and 10.8 against 18.3) because a stride defeats a flat array's locality
+too.
+
+The editor workload also found a bug that none of the operation benchmarks did:
+`treelist-copy-for-mutable` raised on a tree that is not leftwise dense, which
+a sequence built by splitting and rejoining is and one built by pushing is not.
+That fix is described at the end of this file.
 
 ## Filling in every cell
 
@@ -747,19 +824,29 @@ slower.
 | construction, persistent, per element | 2.3 | 3.2 | **0.72** |
 | traversal through an iterator, per element | 3.7 | 4.8 | **0.77** |
 | `filter`, per input element | 3.1 | 3.8 | **0.81** |
+| concat | 284 | 323 | **0.88** |
 | queue push/pop, ephemeral | 5.4 | 5.9 | **0.91** |
 | push/pop at the back, ephemeral | 5.3 | 5.8 | **0.92** |
 | push/pop at the front, ephemeral | 5.5 | 5.9 | **0.93** |
-| concat | 360.5 | 324.6 | 1.11 |
 
-Fourteen of the fifteen are faster than the reference, on a runtime with a
-garbage collector against native code compiled with flambda; concatenation at
-1.11x is the exception, and it moves between 0.87x and 1.11x across runs, so
-treat the two as level. Ephemeral `set` costs a
+All fifteen are faster than the reference, on a runtime with a garbage
+collector against native code compiled with flambda. Ephemeral `set` costs a
 third of what it costs there, persistent `set` half, splitting and indexing and
 construction about a third less, and the closest rows are the ones where the
 operation is a handful of instructions either way -- pushing and popping at an
 end, within 7%.
+
+`concat` was the last row to settle, and most of what kept it unsettled was the
+measurement rather than the code. It read anywhere from 278 to 503 ns run to
+run, which is how the row came to be quoted at 1.11x; the cause was that a
+concatenation allocates, so a collection lands inside some trials and not
+others and the distribution is bimodal. Three trials often miss the clean mode
+entirely. `measure` now keeps taking trials while the best is still improving
+and stops after two that are not, which costs a steady operation nothing --
+it converges immediately -- and costs this one a few more runs. Five
+interleaved pairs afterwards read 279, 282, 284, 286, 292 against 320, 323,
+323, 326, 328. That is the 0.88x in the table, and it no longer moves. At
+smaller sizes it is 1.00x at a hundred elements and 1.04x at ten thousand.
 
 `filter` was the last row above one, at 1.07x, and it turned out not to be
 about either sequence: the scenario's predicate was written

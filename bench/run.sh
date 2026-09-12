@@ -3,7 +3,8 @@
 #
 #   ./run.sh                  the Racket implementation
 #   ./run.sh --external       the benchmarks borrowed from other libraries
-#   ./run.sh --all            both of the above
+#   ./run.sh --workloads      whole programs rather than single operations
+#   ./run.sh --all            all three
 #   ./run.sh --ocaml          the OCaml reference (needs ./build-ocaml.sh first)
 #   ./run.sh --quick          smaller sizes
 #   ./run.sh --json FILE      also record every table in FILE, one per line
@@ -29,6 +30,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --ocaml) ocaml=yes ;;
     --external) which=external ;;
+    --workloads) which=workloads ;;
     --all) which=all ;;
     --json) json=$2; shift ;;
     *) args+=("$1") ;;
@@ -69,4 +71,9 @@ if [ "$which" = main ] || [ "$which" = all ]; then
 fi
 if [ "$which" = external ] || [ "$which" = all ]; then
   for s in $external_scenarios; do run_one external.rkt "$s"; done
+fi
+if [ "$which" = workloads ] || [ "$which" = all ]; then
+  # one process for the lot: a workload is already a whole program, and the
+  # sizes it runs at are its own
+  "$RACKET" -y workloads.rkt ${args[@]+"${args[@]}"} | tail -n +2
 fi
