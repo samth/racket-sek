@@ -1175,10 +1175,19 @@
                        (for/fold ([t tl]) ([k (in-range m)])
                          (treelist-set t (vector-ref ix (modulo k 100000)) 0)))))))))
 
+;; The predicate is a third of this scenario, so which way it is written
+;; decides what the scenario measures.  The reference writes `x mod 3 = 0` on
+;; an unboxed `int`; `(fx= 0 (fxremainder x 3))` is the same operation and
+;; `(zero? (modulo x 3))` is not -- the generic one costs 0.8 ns an element
+;; more, which is arithmetic dispatch rather than anything either sequence
+;; does.  The comparable one is the main row and the idiomatic one is reported
+;; beside it, because both are worth knowing and neither alone is honest.
+(define (keep? x) (fx= 0 (fxremainder x 3)))
+(define (keep-generic? x) (zero? (modulo x 3)))
+
 (define-scenario filter
   "the paper's motivating example: filter a persistent sequence"
   (define sizes (sizes-m))
-  (define (keep? x) (zero? (modulo x 3)))
   (table
    "filter: keep one element in three, ns per input element"
    sizes
@@ -1193,7 +1202,15 @@
      (cons "  vector"
            (for/list ([n (in-list sizes)])
              (define v (build-vector n values))
-             (measure n (lambda () (vector-filter keep? v)))))))))
+             (measure n (lambda () (vector-filter keep? v)))))
+     (cons "  pseq via modulo"
+           (for/list ([n (in-list sizes)])
+             (define s (build-pseq n values))
+             (measure n (lambda () (sek-filter s keep-generic?)))))
+     (cons "  eseq via modulo"
+           (for/list ([n (in-list sizes)])
+             (define s (build-eseq n values))
+             (measure n (lambda () (sek-filter s keep-generic?)))))))))
 
 ;; The command line shared by main.rkt and external.rkt:
 ;;   [--quick] [--careful] [--json FILE] [scenario ...]
