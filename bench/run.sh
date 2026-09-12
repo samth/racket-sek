@@ -8,10 +8,16 @@
 #   ./run.sh --quick          smaller sizes
 #   ./run.sh --json FILE      also record every table in FILE, one per line
 #
+# Set RACKET to choose the executable; it defaults to whatever `racket` is on
+# PATH.  Worth having because a shell rc can put a different Racket in front of
+# the one you meant -- PATH set on the command line does not survive into this
+# script if the rc rewrites it.
+#
 # A fresh process per scenario keeps one scenario's garbage from being charged
 # to the next, and keeps the heap from growing across a long run.
 
 set -u
+RACKET="${RACKET:-racket}"
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 
@@ -42,7 +48,7 @@ ocaml_scenarios="stack front-stack queue traversal random-access hops update
 [ -n "$json" ] && : > "$json"
 
 run_one() { # <file> <scenario>
-  racket -y "$1" ${args[@]+"${args[@]}"} ${json:+--json "$json"} "$2" | tail -n +2
+  "$RACKET" -y "$1" ${args[@]+"${args[@]}"} ${json:+--json "$json"} "$2" | tail -n +2
 }
 
 if [ "$ocaml" = yes ]; then
@@ -57,7 +63,7 @@ if [ "$ocaml" = yes ]; then
   exit 0
 fi
 
-echo "sek benchmarks -- Racket $(racket -e '(display (version))')"
+echo "sek benchmarks -- Racket $("$RACKET" -e '(display (version))')"
 if [ "$which" = main ] || [ "$which" = all ]; then
   for s in $main_scenarios; do run_one main.rkt "$s"; done
 fi

@@ -218,14 +218,14 @@ A Racket list is unbeatable as a front stack — and is only a front stack.
 ```
 traversal: for-each over the whole sequence, ns per element
                  100     10000   1000000
-eseq            1.61      1.51      1.57
-pseq            1.57      1.46      1.52
-treelist        1.81      1.75      1.77
-gvector         1.44      1.37      1.30
-list            1.30      1.16      1.33
-  pseq via fold 1.27      1.20      1.26
-  pseq via iter  3.93      3.80      3.84
-  vector        0.60      0.49      0.50
+eseq            1.59      1.54      1.56
+pseq            1.56      1.52      1.55
+treelist        1.80      1.74      1.78
+gvector         1.42      1.35      1.40
+list            1.30      1.17      1.36
+  pseq via fold 1.27      1.20      1.24
+  pseq via iter  3.88      3.72      3.68
+  vector        0.62      0.54      0.54
 ```
 
 Sweeping a sek sequence costs about what sweeping a treelist costs. That is
@@ -284,12 +284,12 @@ mutable treelist or a gvector.
 ```
 construction: n elements from scratch      concat / split at n = 10^6, ns per operation
                  100     10000   1000000                concat     split
-eseq            2.68      1.67      2.29    pseq         283.8     100.6
-pseq            2.57      1.66      2.28    treelist     768.5     135.4
-treelist       13.99     31.84     47.47    list       5593683   3118319
-mutable-tl     17.04     34.61     51.62
-gvector         5.84      4.62     17.70
-list            1.84      2.01     40.70
+eseq            2.59      1.66      2.25    pseq         360.5     80.39
+pseq            2.66      1.66      2.29    treelist     781.9     130.8
+treelist       13.67     32.21     47.62    list       5745314   4895478
+mutable-tl     15.29     34.15     51.09
+gvector         5.44      4.21     17.63
+list            1.90      2.01     41.40
 ```
 
 Construction is flat for sek at about 2 ns an element and gets 3.4× worse for a
@@ -307,11 +307,11 @@ the whole thing is O(n + K). That is what `sek-filter` does.
 ```
 filter: keep one element in three, ns per input element
                  100     10000   1000000
-pseq            4.20      2.97      3.14
-eseq            4.31      2.99      3.16
-treelist        4.87     11.53     16.31
-  list          3.37      3.07      4.68
-  vector        3.73      3.77      7.12
+pseq            4.15      2.88      3.10
+eseq            4.30      2.91      3.10
+treelist        4.81     11.43     16.34
+  list          3.36      3.06      4.56
+  vector        3.71      3.75      6.89
 ```
 
 Flat in n, and 5.2× faster than `treelist-filter` at a million elements --
@@ -694,6 +694,40 @@ fresh identity and shares everything, leaving the copying to whichever one
 writes first — the same reasoning as `snapshot`, and O(1) rather than
 O(n + K). That is a 3× improvement on the `eseq` row above.
 
+### What the other structures gained
+
+The numbers above are against `treelist` and `gvector` as improved by the work
+in this file, not as shipped -- and improving them moved the comparison more
+than anything done to this library. `gvector` had its struct defined a hundred
+and fifty lines below every operation on it, so its predicate and both its
+accessors were module variables reached through `variable-ref` and an indirect
+call; defining it first and sealing it is worth:
+
+| ns at n = 10^6 | shipped | improved |
+| --- | ---: | ---: |
+| `gvector` `ref` at a random index | 10.91 | **4.20** |
+| `gvector` `set` at a random index | 10.44 | **4.69** |
+| `gvector` push/pop at the back | 28.46 | **17.50** |
+| `mutable-treelist` `ref` at a random index | 13.48 | **10.56** |
+| `mutable-treelist` `set` at a random index | 16.23 | **14.62** |
+
+So `gvector` now indexes 9x faster than this library does and writes 7x faster,
+where before it was 3x and 3x. That is the right answer for a growable array
+and it is worth stating plainly: if a program only needs indexed access and a
+back that grows, a `gvector` beats this structure comfortably and always did.
+What it cannot do is a front, a split, a concatenation, or a snapshot, and
+those are where the ratios in the tables above sit.
+
+`treelist` is unchanged here because the run this is compared against already
+had its improvements in it.
+
+One thing that did *not* move: stencil vectors. They back Racket's immutable
+hash tables (`rumble/hamt-stencil.ss`), and neither `treelist.rkt` nor
+`mutable-treelist.rkt` mentions them -- so the Chez `stencil-vector-update`
+change below does nothing for either. Where it does show is `hash-set` and
+`hash-remove`, about 30% and 20% at a thousand entries, washing out by a
+hundred thousand where the cost is memory rather than the copy.
+
 ## Against the OCaml reference
 
 Both implementations running the same scenarios at the same sizes, at
@@ -702,24 +736,26 @@ slower.
 
 | scenario | Racket | OCaml | ratio |
 | --- | ---: | ---: | ---: |
-| `set` at a random index, ephemeral | 35.0 | 98.3 | **0.36** |
-| `set` at a random index, persistent | 438.2 | 811.5 | **0.54** |
-| push/pop at the back, persistent | 9.4 | 14.8 | **0.63** |
-| traversal by fold, per element | 1.3 | 2.0 | **0.64** |
-| split | 100.6 | 152.2 | **0.66** |
-| `ref` at a random index, persistent | 38.3 | 55.1 | **0.69** |
-| `ref` at a random index, ephemeral | 39.1 | 56.3 | **0.69** |
+| `set` at a random index, ephemeral | 34.0 | 98.3 | **0.35** |
+| `set` at a random index, persistent | 424.2 | 811.5 | **0.52** |
+| split | 80.4 | 152.2 | **0.53** |
+| push/pop at the back, persistent | 9.3 | 14.8 | **0.63** |
+| traversal by fold, per element | 1.2 | 2.0 | **0.63** |
+| `ref` at a random index, persistent | 37.4 | 55.1 | **0.68** |
+| `ref` at a random index, ephemeral | 38.9 | 56.3 | **0.69** |
+| construction, ephemeral, per element | 2.2 | 3.2 | **0.71** |
 | construction, persistent, per element | 2.3 | 3.2 | **0.72** |
-| construction, ephemeral, per element | 2.3 | 3.2 | **0.72** |
-| traversal through an iterator, per element | 3.8 | 4.8 | **0.81** |
-| `filter`, per input element | 3.1 | 3.8 | **0.82** |
-| concat | 283.8 | 324.6 | **0.87** |
-| queue push/pop, ephemeral | 5.5 | 5.9 | **0.93** |
-| push/pop at the back, ephemeral | 5.5 | 5.8 | **0.94** |
-| push/pop at the front, ephemeral | 5.6 | 5.9 | **0.95** |
+| traversal through an iterator, per element | 3.7 | 4.8 | **0.77** |
+| `filter`, per input element | 3.1 | 3.8 | **0.81** |
+| queue push/pop, ephemeral | 5.4 | 5.9 | **0.91** |
+| push/pop at the back, ephemeral | 5.3 | 5.8 | **0.92** |
+| push/pop at the front, ephemeral | 5.5 | 5.9 | **0.93** |
+| concat | 360.5 | 324.6 | 1.11 |
 
-All fifteen are faster than the reference, on a runtime with a garbage
-collector against native code compiled with flambda. Ephemeral `set` costs a
+Fourteen of the fifteen are faster than the reference, on a runtime with a
+garbage collector against native code compiled with flambda; concatenation at
+1.11x is the exception, and it moves between 0.87x and 1.11x across runs, so
+treat the two as level. Ephemeral `set` costs a
 third of what it costs there, persistent `set` half, splitting and indexing and
 construction about a third less, and the closest rows are the ones where the
 operation is a handful of instructions either way -- pushing and popping at an

@@ -226,19 +226,20 @@ million elements, nanoseconds per operation:
 
 | | eseq | treelist | mutable-treelist | gvector | list |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| push/pop at the back | **5.5** | 45.2 | 51.8 | 28.5 | — |
-| push/pop at the front | **5.6** | 205.3 | 209.0 | — | 2.5 |
-| queue (back, front) | **5.5** | 69.6 | 75.4 | — | — |
-| traversal, per element | 1.5 | 1.8 | 1.8 | 1.3 | 1.3 |
-| `ref` at a random index | 39.1 | **8.7** | 13.5 | 10.9 | — |
-| `set` at a random index | 35.0 | 203.3 | **16.2** | 10.4 | — |
-| construction, per element | **2.3** | 47.5 | 51.6 | 17.7 | 40.7 |
-| filter, per element | **3.2** | 16.3 | — | — | 4.7 |
-| one snapshot | **24.9** | — | 1484152 | — | — |
+| push/pop at the back | **5.4** | 46.1 | 50.0 | 17.5 | — |
+| push/pop at the front | **5.5** | 203.2 | 206.4 | — | 2.5 |
+| queue (back, front) | **5.4** | 69.7 | 73.7 | — | — |
+| traversal, per element | 1.6 | 1.8 | 1.8 | 1.4 | 1.4 |
+| `ref` at a random index | 38.9 | 8.7 | 10.6 | **4.2** | — |
+| `set` at a random index | 34.1 | 192.0 | 14.6 | **4.7** | — |
+| construction, per element | **2.3** | 47.6 | 51.1 | 17.6 | 41.4 |
+| filter, per element | **3.1** | 16.3 | — | — | 4.6 |
+| one snapshot | **26.0** | — | 1492355 | — | — |
 
 The ends are flat in the length of the sequence and indifferent to which end
 you use, which is the whole point; indexing is what the design gives up, and it
-costs about 4× a treelist. Snapshots are the headline: `eseq-snapshot` does not
+costs about 4× a treelist and 9× a growable array -- which is the honest
+comparison for a structure that gives up nothing else to get it. Snapshots are the headline: `eseq-snapshot` does not
 depend on the length of the sequence, while `mutable-treelist-snapshot`
 copies — 1.5 ms at a million elements against 24.9 ns. In a round trip that
 changes one element between snapshots, sek is four orders of magnitude ahead; a
@@ -278,14 +279,15 @@ fastest at 3.4 s against `treelist`'s 4.2 s, and the mutable ones pay 2–4×
 more because every `cons` and `append` has to copy where a persistent
 structure shares.
 
-Against the OCaml implementation, all fifteen scenarios are faster than the
-reference, on a runtime with a garbage collector against native code compiled
-with flambda: `set` at a random index costs 0.36× what it costs there
-ephemerally and 0.54× persistently, splitting 0.66×, indexing 0.69×,
-construction 0.72×, persistent push/pop 0.63×, traversal by fold 0.64×,
-`filter` 0.82×, concatenation 0.87×, ephemeral push/pop 0.94×. Snapshotting
-after every push is 10× *faster* here, because this implementation shares the
-end chunks where the reference copies them.
+Against the OCaml implementation, fourteen of fifteen scenarios are faster than
+the reference, on a runtime with a garbage collector against native code
+compiled with flambda: `set` at a random index costs 0.35× what it costs there
+ephemerally and 0.52× persistently, splitting 0.53×, indexing 0.68×,
+construction 0.71×, persistent push/pop 0.63×, traversal by fold 0.63×,
+`filter` 0.81×, ephemeral push/pop 0.92×. The one that is slower is
+concatenation at 1.11×. Snapshotting after every push is 9× *faster* here,
+because this implementation shares the end chunks where the reference copies
+them.
 
 The last row to cross over was `filter`, and it did not cross by getting
 faster. The scenario's predicate was written `(zero? (modulo x 3))` where the

@@ -2,353 +2,353 @@ sek benchmarks -- Racket 9.3.0.2
 
 stack: push-back / pop-back, ns per operation
                                   10        1000      100000     1000000
-eseq                            5.24        4.76        4.84        5.47
-pseq                            9.94        7.95        8.11        9.41
-treelist                        7.48       21.91       39.16       45.17
-mutable-treelist               12.66       27.61       44.82       51.75
-gvector                        20.31       19.52       19.68       28.46
-list                           381.2       3258.     631582.   19437845.
-box of list                    382.2       3278.     688462.   16917211.
-array                           5.05        4.11        4.20        7.22
+eseq                            5.09        4.67        4.73        5.35
+pseq                            9.84        7.87        8.08        9.27
+treelist                        7.48       22.20       39.09       46.14
+mutable-treelist               10.66       25.44       42.85       50.03
+gvector                         8.70        8.45        8.77       17.50
+list                           378.2       3243.     623676.   19582041.
+box of list                    379.5       3246.     681172.   16479940.
+array                           4.96        4.09        4.18        7.29
 
 front stack: push-front / pop-front, ns per operation
                                   10        1000      100000     1000000
-eseq                            5.20        4.99        5.00        5.62
-pseq                           10.01        8.04        8.10        9.36
-treelist                        6.42       38.61       162.5       205.3
-mutable-treelist               11.55       44.65       168.1       209.0
-gvector                        102.6       764.8      62262.     624357.
-list                            1.52        1.06        1.20        2.51
-box of list                     2.81        2.11        2.26        3.58
-array                          93.74       734.5      62250.     627569.
+eseq                            5.32        4.87        4.84        5.54
+pseq                           10.01        7.99        8.06        9.59
+treelist                        6.27       37.48       161.5       203.2
+mutable-treelist                9.60       41.96       165.6       206.4
+gvector                        91.07       740.5      62045.     623129.
+list                            1.52        1.06        1.20        2.53
+box of list                     2.54        2.08        2.23        3.62
+array                          92.67       740.3      62057.     624951.
 
 queue: push-back / pop-front, ns per operation
                                   10        1000      100000     1000000
-eseq                            5.87        4.94        4.93        5.54
-pseq                           10.04        7.96        8.13        9.34
-treelist                        6.68       29.54       58.84       69.57
-mutable-treelist               11.59       35.18       65.29       75.42
-gvector                        57.65       391.7      31345.     315125.
-list                           125.8       1165.     362799.    9229360.
-box of list                    126.9       1162.     367240.    8808753.
-array                          48.96       374.4      31367.     315887.
+eseq                            5.71        4.89        4.88        5.43
+pseq                            9.98        7.87        8.04        9.29
+treelist                        6.58       29.12       58.26       69.67
+mutable-treelist                9.77       33.05       62.08       73.71
+gvector                        49.90       375.0      30720.     309981.
+list                           124.0       1156.     363071.    9335674.
+box of list                    125.6       1150.     359831.    8968442.
+array                          48.19       373.4      30754.     310761.
 
 burst-check: push-back / pop-back, ns per operation
                                   10        1000      100000     1000000
-eseq loop                       5.18        4.80        4.88        5.56
-eseq burst                      4.91        5.00        5.06        4.96
-pseq loop                       9.87        7.96        8.13        9.51
-pseq burst                      9.20        7.83        9.04       28.58
-treelist loop                   7.63       21.75       39.02       45.91
-treelist burst                 14.47       19.32       26.71       35.62
-mutable-treelist loop          12.75       27.77       44.81       54.26
-mutable-treelist burst         20.24       25.72       32.98       42.15
-gvector loop                   20.46       19.81       20.05       25.84
-gvector burst                  20.36       18.91       19.44       19.36
-array loop                      5.08        4.20        4.25        6.51
-array burst                     3.86        3.90        4.34        4.94
+eseq loop                       5.07        4.72        4.79        5.34
+eseq burst                      4.78        4.91        4.82        4.84
+pseq loop                      10.00        7.86        8.00        9.15
+pseq burst                      9.06        7.86        8.98       28.24
+treelist loop                   7.49       21.58       39.09       45.61
+treelist burst                 14.24       19.10       26.94       35.54
+mutable-treelist loop          10.69       25.63       43.20       49.86
+mutable-treelist burst         18.24       23.15       31.02       40.28
+gvector loop                    8.77        8.56        8.77       17.29
+gvector burst                   8.86        7.59        7.91        8.18
+array loop                      5.04        4.10        4.18        7.20
+array burst                     3.87        3.87        4.33        5.00
 
 sync-cost: push-back onto a growable array, ns per push
                                   10        1000      100000     1000000
-unsynchronised                  8.60        6.38        6.93       18.62
-memory-safe (array)             8.37        5.71        5.90       17.41
-locked (semaphore)             16.48       15.58       15.48       26.90
-gvector                        10.59        9.71       10.52       26.35
+unsynchronised                  8.50        6.37        6.92       16.97
+memory-safe (array)             8.09        5.66        5.84       15.08
+locked (semaphore)             16.42       15.30       15.77       23.87
+gvector                         4.14        3.68        4.21       17.31
 
 sync-cost: ref on a growable array of 100000, ns per read
                                  ref
-memory-safe (array)             1.60
-locked (semaphore)             14.14
-gvector                         7.14
+memory-safe (array)             1.57
+locked (semaphore)             14.06
+gvector                         1.93
 
 traversal: for-each over the whole sequence, ns per element
                                  100       10000     1000000
-eseq                            1.61        1.51        1.57
-pseq                            1.57        1.46        1.52
-treelist                        1.81        1.75        1.77
-mutable-treelist                1.86        1.73        1.77
-gvector                         1.44        1.37        1.30
-list                            1.30        1.16        1.33
-box of list                     1.31        1.17        1.28
-array                           1.57        1.26        1.25
-  pseq via fold                 1.27        1.20        1.26
-  pseq via iter                 3.93        3.80        3.84
-  vector                        0.60        0.49        0.50
+eseq                            1.59        1.54        1.56
+pseq                            1.56        1.52        1.55
+treelist                        1.80        1.74        1.78
+mutable-treelist                1.84        1.73        1.79
+gvector                         1.42        1.35        1.40
+list                            1.30        1.17        1.36
+box of list                     1.29        1.17        1.26
+array                           1.56        1.27        1.25
+  pseq via fold                 1.27        1.20        1.24
+  pseq via iter                 3.88        3.72        3.68
+  vector                        0.62        0.54        0.54
 
 random access: ref at random indices, ns per read
                                  100       10000     1000000
-eseq                            3.06       11.64       39.09
-pseq                            2.84       11.37       38.26
-treelist                        3.20        3.61        8.73
-mutable-treelist                5.20        5.78       13.48
-gvector                         7.25        7.28       10.91
-list                           32.47       3921.     679230.
-box of list                    32.42       3867.     134823.
-array                           2.51        2.60        4.41
-  vector                        0.77        0.83        2.10
+eseq                            3.06       11.72       38.85
+pseq                            2.85       11.63       37.44
+treelist                        3.21        3.60        8.72
+mutable-treelist                4.23        4.77       10.56
+gvector                         2.31        2.40        4.20
+list                           32.48       4127.     394683.
+box of list                    30.90       3789.     426850.
+array                           2.51        2.62        4.48
+  vector                        0.77        0.83        2.07
 
 hops over 1000000 elements: ref at a fixed stride, ns per read
                                   +1          +8         +64       +4096
-eseq                           13.04       13.29       15.75       34.10
-pseq                           12.84       13.03       15.53       33.30
-treelist                        4.08        4.65        5.11        8.87
-mutable-treelist                6.48        7.01        7.64       12.94
-gvector                         7.53        7.61        7.70       12.05
-list                         582666.     158429.     714076.     766076.
-box of list                  586957.     158864.     713764.     757363.
-array                           2.67        2.86        3.16        5.01
-  vector                        0.78        1.35        2.93        2.22
-pseq iterator                   4.31        6.15       19.20       57.31
+eseq                           13.05       13.07       15.92       33.34
+pseq                           12.72       12.65       15.60       33.80
+treelist                        4.08        4.57        5.33        8.70
+mutable-treelist                5.82        6.15        6.86       10.36
+gvector                         2.44        2.61        3.09        4.84
+list                         562220.     402328.     481050.     370749.
+box of list                  559555.     402813.     481511.     363786.
+array                           2.68        2.83        3.16        5.04
+  vector                        0.78        1.38        2.98        2.21
+pseq iterator                   4.28        6.04       17.50       57.11
 
 update: set at random indices, ns per write
                                  100       10000     1000000
-eseq                            5.10       16.66       34.99
-pseq                           45.74       73.09       438.2
-treelist                       16.02       31.74       203.3
-mutable-treelist                7.28        7.85       16.23
-gvector                        10.42       10.42       10.44
-list                           785.2     129129.   13002958.
-box of list                    782.1     120991.   26277835.
-array                           2.55        3.09        4.59
-  vector                        0.67        0.98        2.71
+eseq                            5.21       16.93       34.05
+pseq                           44.56       72.92       424.2
+treelist                       15.99       31.33       192.0
+mutable-treelist                5.96        6.49       14.62
+gvector                         3.45        3.66        4.69
+list                           792.6     122254.   27616774.
+box of list                    795.7     133007.   34837210.
+array                           2.69        2.98        4.58
+  vector                        0.68        0.99        2.60
 
 construction: n elements from scratch, ns per element
                                  100       10000     1000000
-eseq                            2.68        1.67        2.29
-pseq                            2.57        1.66        2.28
-treelist                       13.99       31.84       47.47
-mutable-treelist               17.04       34.61       51.62
-gvector                         5.84        4.62       17.70
-list                            1.84        2.01       40.70
-box of list                     1.93        1.97       39.63
-array                           4.56        4.81        8.98
-  vector                        1.51        1.32        5.54
+eseq                            2.59        1.66        2.25
+pseq                            2.66        1.66        2.29
+treelist                       13.67       32.21       47.62
+mutable-treelist               15.29       34.15       51.09
+gvector                         5.44        4.21       17.63
+list                            1.90        2.01       41.40
+box of list                     1.90        1.98       40.08
+array                           4.71        4.87        9.08
+  vector                        1.47        1.34        5.92
 
 concat: append two sequences of n/2 elements, ns per concatenation
                                  100       10000     1000000
-eseq                           132.4       106.0       95.32
-pseq                           23.76       237.1       283.8
-treelist                       35.88       405.5       768.5
-mutable-treelist               120.7       4492.    1294013.
-gvector                        233.8      11497.   12486460.
-list                           105.7      13973.    5593683.
-box of list                    110.4      14108.    6428128.
-array                          254.9       9928.   10745653.
-  vector                       45.17       2548.    4669457.
+eseq                           128.8       101.6       98.91
+pseq                           11.53       253.2       360.5
+treelist                       35.30       407.9       781.9
+mutable-treelist               116.3       4469.    1321896.
+gvector                        185.2      11372.    9797440.
+list                           98.60      13961.    5745314.
+box of list                    131.7      14061.    6700589.
+array                          192.0       9815.    8930648.
+  vector                       50.07       2413.    4989822.
 
 split: split at a random index, ns per split
                                  100       10000     1000000
-eseq                           214.7       175.0       184.8
-pseq                           93.54       73.23       100.6
-treelist                       43.38       100.5       135.4
-mutable-treelist               212.2      12623.    6176735.
-gvector                        371.6      25647.   36013865.
-list                           176.3      14502.    3118319.
-box of list                    184.7      14419.    6665803.
-array                          246.7      16952.   10506629.
-  vector                       41.73       2770.    3129921.
+eseq                           212.9       160.9       161.5
+pseq                           86.46       59.32       80.39
+treelist                       42.82       98.18       130.8
+mutable-treelist               206.6      12412.    6063901.
+gvector                        337.1      25121.   29420154.
+list                           175.9      14511.    4895478.
+box of list                    179.8      14422.    4846636.
+array                          243.1      16818.    9523404.
+  vector                       41.23       2715.    3057556.
 
 snapshot: one change plus one snapshot of an n-element sequence, ns
                                  100       10000     1000000
-eseq                           45.52       24.99       24.91
-mutable-treelist               72.18       4092.    1484152.
+eseq                           44.12       24.95       25.98
+mutable-treelist               68.84       4081.    1492355.
 
 snapshot: 100000 pushes, keeping a snapshot every m of them, ns per push
                                  m=1        m=10      m=1000    m=100000
-eseq                           124.4       13.58        4.57        4.29
-mutable-treelist                   -      64240.       278.8       45.42
-pseq (persistent)               7.23        7.27        7.33        7.28
-treelist (persistent)          39.19       39.14       38.93       39.36
+eseq                           120.5       13.26        4.61        4.30
+mutable-treelist                   -      65038.       275.4       43.94
+pseq (persistent)               7.24        7.17        7.18        7.13
+treelist (persistent)          39.58       39.60       39.40       39.19
 
 transient: edit, m in-place updates, snapshot, over 1000000 elements, ns per update
                                  m=1        m=10      m=1000    m=100000
-sek edit/snapshot              181.9       107.0       148.6       69.27
-treelist copy/snapshot      4056678.     415041.       4039.       66.70
-sek persistent set             170.4       122.3       192.0       417.7
-treelist persistent set        80.65       69.00       64.73       202.8
+sek edit/snapshot              179.7       107.9       151.9       71.14
+treelist copy/snapshot      4138898.     420419.       4198.       64.73
+sek persistent set             173.5       122.9       198.6       418.3
+treelist persistent set        76.64       67.55       66.04       204.7
 
 filter: keep one element in three, ns per input element
                                  100       10000     1000000
-eseq                            4.31        2.99        3.16
-pseq                            4.20        2.97        3.14
-treelist                        4.87       11.53       16.31
-mutable-treelist                5.24        4.67       10.25
-gvector                         3.81        3.38        9.70
-list                            3.37        3.07        4.68
-box of list                     3.40        3.07        4.67
-array                           3.55        3.45        7.73
-  vector                        3.73        3.77        7.12
-  pseq via modulo               5.12        3.93        4.11
-  eseq via modulo               5.33        4.03        4.20
+eseq                            4.30        2.91        3.10
+pseq                            4.15        2.88        3.10
+treelist                        4.81       11.43       16.34
+mutable-treelist                5.42        4.69       10.18
+gvector                         3.72        3.30        9.49
+list                            3.36        3.06        4.56
+box of list                     3.37        3.06        4.52
+array                           3.48        3.40        7.52
+  vector                        3.71        3.75        6.89
+  pseq via modulo               5.10        3.87        4.06
+  eseq via modulo               5.24        3.87        4.05
 
 fill: overwrite k consecutive elements of 1000000, ns per element
                                   10        1000      100000
-eseq (sek-fill!)                6.13        1.97        1.97
-eseq (set! loop)               10.11        9.34       16.53
-mutable-treelist                8.42        7.28        7.20
-gvector                        10.16        9.10        9.07
-array                           3.02        2.34        2.79
-vector                          0.88        0.65        0.65
-pseq (persistent)              41.84       55.76       87.48
-treelist (persistent)          45.36       45.96       48.74
-list (persistent)              58.15       9578.    1675997.
+eseq (sek-fill!)                6.23        1.95        1.95
+eseq (set! loop)               10.25        9.53       16.56
+mutable-treelist                6.97        6.69        6.82
+gvector                         2.82        2.39        2.59
+array                           3.00        2.41        2.95
+vector                          0.88        0.65        0.64
+pseq (persistent)              41.48       55.67       86.38
+treelist (persistent)          44.39       46.20       48.60
+list (persistent)              58.38       9524.    1674745.
 
 capacities over 1000000 elements: leaf/node capacity, ns per operation
                               128/16       64/16       32/16       16/16         8/8      256/32
-pseq-ref                       39.08       52.93       71.22       94.37       193.7       29.90
-pseq-set                       421.1       397.6       403.1       455.6       674.7       592.7
-eseq push/pop                   4.83        5.18        5.85        7.21       12.33        4.70
-traversal                       1.28        1.49        1.99        2.59        4.85        1.13
+pseq-ref                       38.23       51.43       68.77       88.31       158.6       28.82
+pseq-set                       401.6       374.8       367.1       405.9       643.5       533.6
+eseq push/pop                   4.66        5.03        5.64        6.92       11.25        4.56
+traversal                       1.25        1.49        1.97        2.56        4.76        1.11
 
 apply-sequential: ref at i for i ascending, ns per lookup
                                  100       10000     1000000
-eseq                            3.34        8.72       12.86
-pseq                            2.83        8.48       12.57
-treelist                        3.10        3.47        4.00
-mutable-treelist                5.28        5.81        6.50
-gvector                         7.31        7.32        7.28
-list                           29.86       3894.     220844.
-box of list                    28.10       3919.     221315.
-array                           2.61        2.49        2.50
-  vector                        1.64        1.57        1.58
-  pseq via iterator             1.59        1.57        1.57
+eseq                            3.31        8.63       13.01
+pseq                            2.81        8.41       12.58
+treelist                        3.08        3.45        3.97
+mutable-treelist                4.25        4.62        6.06
+gvector                         2.32        2.22        2.25
+list                           28.74       3875.     225760.
+box of list                    28.75       3849.     218851.
+array                           2.59        2.45        2.49
+  vector                        1.63        1.56        1.57
+  pseq via iterator             1.58        1.53        1.54
 
 update-sequential: set at i for i ascending, ns per update
                                  100       10000     1000000
-eseq                            5.34       13.43       20.41
-pseq                            5.75       18.67       117.6
-treelist                       15.59       31.19       70.79
-mutable-treelist                7.38        7.61        8.41
-gvector                        10.65       10.55       10.66
-list                           771.7     124229.    4931161.
-box of list                    775.3     129611.   15141600.
-array                           2.70        2.69        3.57
-  vector                        0.94        0.88        0.88
+eseq                            5.27       13.31       20.17
+pseq                            5.66       18.48       120.7
+treelist                       16.10       31.95       71.71
+mutable-treelist                6.24        6.42        7.39
+gvector                         3.28        3.16        4.01
+list                           768.5     123709.    4886215.
+box of list                    769.1     125267.   15293071.
+array                           2.67        2.71        3.61
+  vector                        0.93        0.88        0.88
 
 apprepend: push-back and push-front in turn, ns per push
                                   10        1000      100000     1000000
-eseq                           10.88        4.32        4.39        5.35
-pseq                           13.32        7.86        7.93        9.81
-treelist                        5.92       28.79       147.2       182.0
-mutable-treelist               10.37       33.51       152.6       185.3
-gvector                        93.33       739.2      62409.     631278.
-list                           220.5       3158.     617958.   13845797.
-box of list                    224.2       3160.     667388.   18202593.
-array                          66.44       702.5      62239.     627651.
+eseq                           10.89        4.23        4.24        5.17
+pseq                           13.56        7.64        7.78        9.69
+treelist                        5.98       28.69       144.8       176.4
+mutable-treelist                8.36       30.90       146.8       179.1
+gvector                        68.24       692.9      61313.     617704.
+list                           216.0       3089.     607152.   13461331.
+box of list                    221.4       3104.     653551.   17609751.
+array                          66.37       688.2      61205.     620093.
 
 peek: first and last, ns per pair of reads
                                  100       10000     1000000
-eseq                           10.53       11.08       11.14
-pseq                            6.33        6.68        6.68
-treelist                        7.40        9.02       10.07
-mutable-treelist               14.22       15.20       16.28
-gvector                        21.41       21.39       21.46
-list                           99.36       8232.    1042383.
-box of list                    99.99       8182.    1210509.
-array                           8.05        8.04        8.02
-  vector                        2.83        2.83        2.84
+eseq                           10.54       11.17       11.16
+pseq                            6.33        6.75        6.75
+treelist                        7.43        8.95        9.82
+mutable-treelist               11.06       12.09       12.87
+gvector                         6.04        6.03        6.02
+list                           99.11       8264.    1053385.
+box of list                    98.75       8185.    1061551.
+array                           8.02        7.99        8.00
+  vector                        2.83        2.83        2.83
 
 tail: pop the front until empty, ns per pop
                                  100       10000     1000000
-eseq                            6.05        5.64        5.74
-pseq                            9.65        8.29        8.35
-treelist                       18.34       55.17       91.42
-mutable-treelist               24.76       62.72       103.1
-gvector                        67.39       6351.    8775051.
-list                            1.00        0.92        1.18
-box of list                     2.09        1.98        2.06
-array                          52.05       6340.    3375388.
+eseq                            6.05        5.57        5.63
+pseq                            9.53        8.30        8.45
+treelist                       18.01       55.76       91.59
+mutable-treelist               23.51       61.67       104.0
+gvector                        52.71       6338.    8757962.
+list                            1.02        0.94        1.19
+box of list                     2.15        2.04        2.09
+array                          51.62       6300.    3339413.
 
 slice: sub-ranges on a 10% grid, ns per slice
                                  100       10000     1000000
-eseq                           420.1       267.0       314.6
-pseq                           186.8       120.9       185.8
-treelist                       62.20       116.6       216.7
-mutable-treelist               327.5      18345.    9649317.
-gvector                        522.9      35104.   40757858.
-list                           328.2      26839.    9205871.
-box of list                    329.2      27462.    9320900.
-array                          340.0      23027.   16264778.
+eseq                           404.2       236.4       267.8
+pseq                           180.4       90.88       146.3
+treelist                       62.07       117.0       212.9
+mutable-treelist               295.8      17837.    9192785.
+gvector                        477.5      34400.   38946342.
+list                           319.9      27480.    9191039.
+box of list                    323.3      26700.    9491219.
+array                          336.3      22499.   15657919.
 
 bulk-append: append a sequence of the given size to one of 1000000, ns per append
                                    2        n/10           n        self
-eseq                           100.0       110.4       99.88       59.76
-pseq                           213.6       298.6       328.7       312.7
-treelist                       428.2       914.8       1080.       1230.
-mutable-treelist            1584962.    1719234.    4336343.    3960022.
-gvector                    33922552.   31100481.   33029982.   31363382.
-list                       13892370.   13722983.   13431940.   13844042.
-box of list                13982313.   13533255.   13501032.   13811988.
-array                      23080528.   23228017.   24582297.   24049794.
-  vector                    4754277.    7582415.   15638482.   15436054.
+eseq                           97.79       109.1       101.6       59.70
+pseq                           235.0       306.4       312.4       309.9
+treelist                       425.4       932.3       1088.       1091.
+mutable-treelist            1487319.    1670823.    4012042.    3839601.
+gvector                    31030555.   31398871.   32526598.   31396850.
+list                       13725584.   14097868.   13387196.   13864763.
+box of list                14114628.   13503564.   13613593.   14404946.
+array                      24423747.   22847457.   24164003.   23905193.
+  vector                    5027331.    7849415.   15659980.   15711016.
 
 map: apply a function to every element, ns per element
                                  100       10000     1000000
-eseq                            4.04        2.34        3.43
-pseq                            3.98        2.32        3.45
-treelist                       11.13       31.30       46.92
-mutable-treelist                6.37        6.25       24.02
-gvector                         5.09        4.12       21.61
-list                            2.16        1.82       14.07
-box of list                     2.12        1.86       14.16
-array                           4.87        4.99        9.35
-  vector                        6.87        6.63       14.17
+eseq                            4.03        2.35        3.79
+pseq                            4.07        2.37        4.06
+treelist                       11.93       31.74       48.34
+mutable-treelist                6.52        6.36       25.95
+gvector                         5.19        4.15       23.13
+list                            2.12        1.90       14.00
+box of list                     2.13        1.82       15.49
+array                           4.91        5.12        9.61
+  vector                        7.06        6.88       14.46
 
 filter: keep the given fraction of 1000000 elements, ns per input element
                                 100%         50%          0%
-eseq                            3.61        2.57        1.36
-pseq                            3.60        2.56        1.34
-treelist                       46.88       23.19        1.77
-mutable-treelist               24.34       13.35        2.54
-gvector                        21.18        9.38        1.57
-list                           11.06        5.44        1.24
-box of list                    11.63        5.40        1.25
-array                           9.28        7.63        5.62
-  vector                       28.24       10.91        1.03
+eseq                            4.25        2.92        1.33
+pseq                            4.09        2.78        1.34
+treelist                       47.86       23.68        1.80
+mutable-treelist               21.93       10.89        2.55
+gvector                        21.43        8.48        1.57
+list                           15.36        6.86        1.56
+box of list                    15.10        6.71        1.51
+array                           9.51        7.83        6.13
+  vector                       30.86       12.75        1.03
 
 take-lin: drop a tenth off the back, ten times, ns per step
                                  100       10000     1000000
-eseq                           87.69       62.33       85.26
-pseq                           23.22       30.54       52.44
-treelist                       13.27       24.68       33.35
-mutable-treelist               26.15       445.8     157860.
-gvector                        124.7       7736.    5857958.
-list                           104.1      15450.   18210491.
-box of list                    108.1      15437.   20219256.
-array                          15.68       861.6     556636.
-  vector                       18.46       1210.    1208560.
+eseq                           86.06       60.12       85.43
+pseq                           21.76       27.80       50.68
+treelist                       13.86       26.71       36.54
+mutable-treelist               24.12       463.5     185932.
+gvector                        107.4       7743.    8814330.
+list                           108.6      15684.   20683587.
+box of list                    109.7      15644.   20619478.
+array                          15.83       859.9     592165.
+  vector                       19.57       1211.    2087197.
 
 drop-lin: drop a tenth off the front, ten times, ns per step
                                  100       10000     1000000
-eseq                           93.95       64.30       86.41
-pseq                           24.25       34.82       54.47
-treelist                       17.25       31.72       85.15
-mutable-treelist               27.64       452.3     150283.
-gvector                        118.8       7652.    5067138.
-list                           13.89       727.7      94618.
-box of list                    11.50       732.4      94323.
-array                          69.81       4769.    2577991.
-  vector                       18.26       1210.    1130536.
+eseq                           92.34       58.31       76.29
+pseq                           24.14       28.17       43.74
+treelist                       18.77       33.40       87.48
+mutable-treelist               27.20       472.0     195448.
+gvector                        108.6       7723.    8583363.
+list                           15.29       758.3     104778.
+box of list                     9.84       745.4     105517.
+array                          70.50       4735.    3863861.
+  vector                       19.12       1228.    2079776.
 
 push vs push_move: build n elements, ns per element
                                  100       10000     1000000
-pseq push-back                 11.87        6.61        8.72
-eseq push!, snapshot            3.39        2.93        3.86
-treelist-add                   11.18       30.99       46.39
-mut-treelist, snapshot         14.23       34.60       52.93
-gvector-add!                    4.67        4.27       18.49
-array push-back                 6.54        5.68       14.86
-list cons, reverse              3.09        2.83       11.45
-  vector fill                   1.01        0.91        5.41
+pseq push-back                 12.26        6.81        9.41
+eseq push!, snapshot            3.38        2.84        3.82
+treelist-add                   11.35       32.27       48.59
+mut-treelist, snapshot         14.13       35.10       54.66
+gvector-add!                    4.34        3.84       22.29
+array push-back                 6.85        6.00       18.62
+list cons, reverse              3.14        2.92       12.30
+  vector fill                   1.08        0.95        5.55
 
 split-parts: cut into 8 pieces and traverse all of them, ns per element
                                  100       10000     1000000
-eseq                           18.62        1.65        1.54
-pseq                            8.98        1.59        1.54
-treelist                        5.35        2.00        1.83
-mutable-treelist               12.21        6.04       18.72
-gvector                        14.46        8.71       74.77
-list                            6.41        4.49        6.60
-box of list                     6.22        4.50        6.55
-array                           9.21        6.05       32.37
-  vector                        1.24        0.76        0.76
+eseq                           18.95        1.72        1.61
+pseq                            9.08        1.66        1.63
+treelist                        5.57        2.10        1.89
+mutable-treelist               12.02        6.40       22.35
+gvector                        13.00        8.87       84.29
+list                            6.46        4.56        7.60
+box of list                     6.62        4.53        7.59
+array                           9.38        6.24       35.97
+  vector                        1.23        0.77        0.77
