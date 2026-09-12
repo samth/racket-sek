@@ -23,6 +23,7 @@
 ;; a row and meaningless down a column -- each workload is its own program.
 
 (require racket/list
+         racket/string
          racket/vector
          racket/fixnum
          racket/treelist
@@ -247,6 +248,7 @@
   (for ([sz (in-list sizes)]) (printf "~a" (~w (format "~a" (car sz)) 12)))
   (newline)
   (define answers (make-hash))
+  (define failures '())
   (for ([i (in-list all-impls)])
     (cond
       [(not (supports? i needs))
@@ -260,9 +262,27 @@
            [(and (too-slow? i needs) (> n 20000))
             (printf "~a" (~w "  n/a" 12))]
            [else
-            (define-values (ms answer) (best-of (make i n reps)))
-            (hash-update! answers (car sz) (lambda (l) (cons (cons (impl-name i) answer) l)) '())
-            (printf "~a" (~w (fmt ms) 12))]))
+            ;; An implementation that raises is reported and its cell marked,
+            ;; rather than taking the whole run down with it.  This matters:
+            ;; the editor workload is how `treelist-copy-for-mutable` was found
+            ;; to reject trees that are not leftwise dense, and on a Racket
+            ;; without that fix this is the cell that says so.  It is recorded,
+            ;; not swallowed -- no time is printed and no answer is entered
+            ;; into the cross-check.
+            (define-values (ms answer)
+              (with-handlers ([exn:fail?
+                               (lambda (e)
+                                 (set! failures
+                                       (cons (list (impl-name i) (car sz) (exn-message e))
+                                             failures))
+                                 (values #f #f))])
+                (best-of (make i n reps))))
+            (cond
+              [ms
+               (hash-update! answers (car sz)
+                             (lambda (l) (cons (cons (impl-name i) answer) l)) '())
+               (printf "~a" (~w (fmt ms) 12))]
+              [else (printf "~a" (~w "  err" 12))])]))
        (newline)]))
   ;; every implementation must have computed the same thing
   (for ([(label as) (in-hash answers)])
@@ -271,7 +291,11 @@
       (printf "  (~a: ~a implementations agreed on ~s)\n" label (length as) (car vs)))
     (unless (= 1 (length vs))
       (printf "  !! ~a: implementations disagree: ~s\n" label
-              (for/list ([a (in-list as)]) (cons (car a) (cdr a)))))))
+              (for/list ([a (in-list as)]) (cons (car a) (cdr a))))))
+  (for ([f (in-list (reverse failures))])
+    ;; just the first line; a Racket exception message can carry a long context
+    (printf "  !! ~a at ~a raised: ~a\n" (car f) (cadr f)
+            (car (string-split (caddr f) "\n")))))
 
 (define (~w s w)
   (define t (format "~a" s))

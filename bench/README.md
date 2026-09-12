@@ -125,7 +125,14 @@ list                                   365.6         n/a
 An `n/a` is an implementation whose Theta(n) operations the workload leans on,
 at a size where the script would be quadratic -- `mutable-treelist` and
 `gvector` both copy on a split, a list is linear in `ref`. They are not
-excluded at the smaller sizes, so the cost is visible before it is dropped.
+excluded at the smaller sizes, so the cost is visible before it is dropped. An
+`err` is an implementation that raised; the harness records it, names the
+exception under the table and carries on, rather than taking the run down.
+
+These numbers were taken with the `treelist`, `mutable-treelist` and `gvector`
+improvements described below applied -- that is, against the fastest version of
+each competitor that exists, which is the comparison least favourable to this
+library and so the one worth quoting.
 
 These say something the operation tables do not. On the editor, which is the
 shape this structure is *for* -- a cursor that moves, an edit where it is, a
@@ -137,10 +144,27 @@ walk at a million elements they win by less than the microbenchmark suggests
 (21.2 and 10.8 against 18.3) because a stride defeats a flat array's locality
 too.
 
-The editor workload also found a bug that none of the operation benchmarks did:
-`treelist-copy-for-mutable` raised on a tree that is not leftwise dense, which
-a sequence built by splitting and rejoining is and one built by pushing is not.
-That fix is described at the end of this file.
+The editor workload also found a bug that none of the operation benchmarks did,
+and it is reachable from public API on a released Racket. `mutable-treelist`
+shows `err` in both editor columns without the fix:
+
+```
+mutable-treelist at 20k lines raised: vector-length: contract violation
+  given: '(#(#(978 979 ...) #(992 993 ...)) . #(14 22))
+  context...:
+   racket/treelist.rkt: copy-node
+   racket/treelist.rkt: treelist-copy-for-mutable
+   racket/mutable-treelist.rkt: mutable-treelist-append!
+```
+
+A node that is not leftwise dense is represented as a pair of its children and
+a size table rather than as a bare vector, and `copy-node` took the length of
+it directly. A treelist built by pushing is always leftwise dense, so the
+operation benchmarks never constructed one that was not; a treelist built the
+way an editor buffer is built -- split at a cursor, rejoined the other way
+round -- stops being dense almost immediately. `mutable-treelist-append!` then
+copies it, and raises. The fix is to reach the children through `node-children`
+and put the sizes back, and it is described at the end of this file.
 
 ## Filling in every cell
 
