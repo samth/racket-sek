@@ -17,6 +17,8 @@
 ;; elements and internal nodes hold (capacity-at 1) children.
 
 (require racket/vector
+         racket/fixnum
+         racket/performance-hint
          "config.rkt"
          "chunk.rkt")
 
@@ -61,8 +63,9 @@
 (define-syntax-rule (check-earray who v)
   (unless (earr? v) (raise-argument-error who "earray?" v)))
 
-(define (span d)
-  (max-item-weight d))
+(begin-encourage-inline
+  (define (span d)
+    (max-item-weight d)))
 (define (tree-capacity d)
   (* (span d) (capacity-at d)))
 
@@ -72,11 +75,25 @@
         d
         (loop (add1 d)))))
 
+;; Descending one level splits an index into a child position and an index
+;; within that child.  That is a division and a remainder by the child's span,
+;; and an integer division is tens of cycles -- but the spans are products of
+;; the capacities, and both defaults are powers of two, so the usual case is a
+;; shift and a mask.  `max-item-weight-shift` already tabulates the exponent
+;; for exactly this, and `chunk-item-at` already uses it; this module was
+;; dividing.
+(define-syntax-rule (let-descend ([q j] i d) body ...)
+  (let* ([sh (max-item-weight-shift d)]
+         [s (if sh 0 (span d))]
+         [q (if sh (fxrshift i sh) (fxquotient i s))]
+         [j (if sh (fxand i (fx- (fxlshift 1 sh) 1)) (fxremainder i s))])
+    body ...))
+
 (define (build d x id)
   (define k (capacity-at d))
-  (if (eqv? d 0)
+  (if (fx= d 0)
       (node id (make-vector k x))
-      (node id (build-vector k (lambda (_) (build (sub1 d) x id))))))
+      (node id (build-vector k (lambda (_) (build (fx- d 1) x id))))))
 
 ;; ---------------------------------------------------------------- creation
 
@@ -92,14 +109,23 @@
 ;; ------------------------------------------------------------------ access
 
 (define (tree-ref t d i)
-  (if (eqv? d 0)
+  (if (fx= d 0)
       (vector-ref (node-data t) i)
-      (let ([s (span d)])
-        (tree-ref (vector-ref (node-data t) (quotient i s)) (sub1 d) (remainder i s)))))
+      (let-descend ([q j] i d)
+        (tree-ref (vector-ref (node-data t) q) (fx- d 1) j))))
 
+;; `fixnum?` and not `exact-nonnegative-integer?`, because the descent below
+;; indexes with `fx` operations; a length is a fixnum, so a bignum index is out
+;; of range by definition and this reports it as such.
 (define (check-index who len i)
-  (unless (and (exact-nonnegative-integer? i) (< i len))
-    (raise-arguments-error who "index out of range" "index" i "length" len)))
+  (unless (and (fixnum? i) (fx>= i 0) (fx< i len))
+    (bad-index who len i)))
+
+;; Anything that is not a nonnegative fixnum below the length is out of range,
+;; which is what this module reported before the guard was narrowed and what it
+;; must go on reporting.
+(define (bad-index who len i)
+  (raise-arguments-error who "index out of range" "index" i "length" len))
 
 (define (parray-length a)
   (check-parray 'parray-length a)
@@ -122,11 +148,10 @@
 (define (tree-set-p t d i x)
   (define data (vector-copy (node-data t)))
   (cond
-    [(eqv? d 0) (vector-set! data i x)]
+    [(fx= d 0) (vector-set! data i x)]
     [else
-     (define s (span d))
-     (define q (quotient i s))
-     (vector-set! data q (tree-set-p (vector-ref data q) (sub1 d) (remainder i s) x))])
+     (let-descend ([q j] i d)
+       (vector-set! data q (tree-set-p (vector-ref data q) (fx- d 1) j x)))])
   (node no-owner data))
 
 (define (parray-set a i x)
@@ -136,20 +161,21 @@
 ;; Update in place wherever the node is uniquely owned, and copy (claiming
 ;; ownership of the copy) wherever it is not (§2.4).
 (define (tree-set-e t d i x id)
+  ;; `eq?`, not `eqv?`: an ownership id is a record, and `eqv?` on values the
+  ;; compiler cannot prove are fixnums is three tag tests and a call
   (define t*
-    (if (eqv? (node-id t) id)
+    (if (eq? (node-id t) id)
         t
         (node id (vector-copy (node-data t)))))
   (define data (node-data t*))
   (cond
-    [(eqv? d 0) (vector-set! data i x)]
+    [(fx= d 0) (vector-set! data i x)]
     [else
-     (define s (span d))
-     (define q (quotient i s))
-     (define child (vector-ref data q))
-     (define child* (tree-set-e child (sub1 d) (remainder i s) x id))
-     (unless (eq? child child*)
-       (vector-set! data q child*))])
+     (let-descend ([q j] i d)
+       (define child (vector-ref data q))
+       (define child* (tree-set-e child (fx- d 1) j x id))
+       (unless (eq? child child*)
+         (vector-set! data q child*)))])
   t*)
 
 (define (earray-set! a i x)
