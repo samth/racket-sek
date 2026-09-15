@@ -839,10 +839,12 @@ these.
        the reference can sometimes continue from the middle-sequence cursor.}
 
  @item{@racket[pseq-edit] and @racket[eseq-snapshot] share the front and back
-       chunks instead of copying them.  This is observationally identical and
-       measurably better -- a loop that snapshots after every push runs ten
-       times faster -- because the next push usually extends a chunk
-       monotonically and copies nothing.}
+       chunks instead of copying them, where the OCaml library's copy.  A
+       chunk is copied on the first write to it, if there is one, which makes
+       @racket[pseq-edit] take @math{O(1)} time rather than @math{O(K)}.  This
+       is observationally identical and measurably better: a loop that
+       snapshots after every push runs ten times faster, because the next push
+       usually extends a chunk monotonically and copies nothing.}
 
  @item{A @racket[#:short-threshold] of 0 is supported here; the reference
        rejects it, because it still builds a compact node for a two-element
@@ -851,12 +853,6 @@ these.
  @item{The paper's @tt{One} and @tt{Short} constructors for short persistent
        sequences are unified into a single vector representation, and appear
        only at the top of the structure, as in the authors' implementation.}
-
- @item{@racket[pseq-edit] shares the front and back chunks of the persistent
-       sequence instead of copying them, so it is @math{O(1)} rather than
-       @math{O(K)}; the copy happens on the first write to each, if there is
-       one.  Symmetrically, @racket[eseq-snapshot] does not copy the front and
-       back chunks, where the OCaml library's does.}
 
  @item{@racket[eseq-snapshot] folds the two inner chunks into the middle
        sequence, as the OCaml library does, so it costs @math{O(K log_K N)} in
