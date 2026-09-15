@@ -248,35 +248,94 @@ and this one is modified in place.
 Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
 @racket[#f] otherwise.}
 
-@deftogether[(@defproc[(make-eseq [n exact-nonnegative-integer? 0]
-                                  [v any/c #f]) eseq?]
-              @defproc[(eseq [v any/c] ...) eseq?])]{
- Create an ephemeral sequence: empty, or holding @racket[n] copies of
- @racket[v], or holding the given elements.}
+@defproc[(eseq [v any/c] ...) eseq?]{
 
-@deftogether[(@defproc[(eseq-empty? [e eseq?]) boolean?]
-              @defproc[(eseq-length [e eseq?]) exact-nonnegative-integer?])]{
- A predicate for an @tech{ephemeral sequence} of length 0, and the number of
- elements in one.  Both take @math{O(1)} time.}
+Returns an @tech{ephemeral sequence} with @racket[v]s as its elements in
+order.
+
+@examples[
+#:eval the-eval
+(eseq 1 "a" 'apple)
+]}
+
+@defproc[(make-eseq [n exact-nonnegative-integer? 0] [v any/c #f]) eseq?]{
+
+Returns an @tech{ephemeral sequence} of length @racket[n], where every element
+is @racket[v].
+
+@examples[
+#:eval the-eval
+(make-eseq 0)
+(make-eseq 3 'pear)
+]}
+
+@defproc[(eseq-empty? [e eseq?]) boolean?]{
+
+Returns @racket[#t] if @racket[e] has no elements, @racket[#f] otherwise.
+This operation takes @math{O(1)} time.}
+
+@defproc[(eseq-length [e eseq?]) exact-nonnegative-integer?]{
+
+Returns the number of elements in @racket[e].  This operation takes
+@math{O(1)} time.
+
+@examples[
+#:eval the-eval
+(eseq-length (eseq 1 "a" 'apple))
+]}
 
 @deftogether[(@defproc[(eseq-push-front! [e eseq?] [v any/c]) void?]
               @defproc[(eseq-push-back! [e eseq?] [v any/c]) void?]
               @defproc[(eseq-pop-front! [e eseq?]) any/c]
               @defproc[(eseq-pop-back! [e eseq?]) any/c])]{
- Update @racket[e] in place at either end.  The paper's key result is
- that these have amortized cost @math{O(log_K N)}, even though the middle of the
- structure may contain chunks shared with snapshots.  The bound relies on the two
- @italic{inner chunks} held at the root, which stop an alternating series of
- pushes and pops from cascading down the tree on every operation.}
+ Adds @racket[v] to, or removes and returns the element at, the given end of
+ @racket[e], modifying it in place.
 
-@deftogether[(@defproc[(eseq-first [e eseq?]) any/c]
-              @defproc[(eseq-last [e eseq?]) any/c]
-              @defproc[(eseq-ref [e eseq?] [i exact-nonnegative-integer?]) any/c]
-              @defproc[(eseq-set! [e eseq?] [i exact-nonnegative-integer?]
-                                  [v any/c]) void?])]{
- Random access.  @racket[eseq-set!] takes @math{O(K log_K N)} time, dropping
- to @math{O(log_K N)} once the chunks along the path are uniquely owned --
- which is what makes a run of updates at nearby indices cheap.}
+ These take amortized @math{O(log_K N)} time even though the middle of the
+ structure may contain chunks shared with snapshots, which is the paper's main
+ result.  The bound rests on the two @italic{inner chunks} held at the root,
+ which stop an alternating series of pushes and pops from cascading down the
+ tree on every operation.
+
+ @examples[
+ #:eval the-eval
+ (define items (eseq 1 2 3))
+ (eseq-push-front! items 0)
+ (eseq-push-back! items 4)
+ items
+ (eseq-pop-front! items)
+ (eseq-pop-back! items)
+ items
+ ]}
+
+@deftogether[(
+@defproc[(eseq-ref [e eseq?] [i exact-nonnegative-integer?]) any/c]
+@defproc[(eseq-set! [e eseq?] [i exact-nonnegative-integer?] [v any/c]) void?]
+)]{
+
+Returns the @racket[i]th element of @racket[e], or replaces it with
+@racket[v].  The first element is position @racket[0], and the last position
+is one less than @racket[(eseq-length e)].
+
+@racket[eseq-set!] takes @math{O(K log_K N)} time, dropping to
+@math{O(log_K N)} once the chunks along the path are uniquely owned, which is
+what makes a run of updates at nearby indices cheap.
+
+@examples[
+#:eval the-eval
+(define items (eseq 1 "a" 'apple))
+(eseq-ref items 2)
+(eseq-set! items 2 'pear)
+items
+]}
+
+@deftogether[(
+@defproc[(eseq-first [e eseq?]) any/c]
+@defproc[(eseq-last [e eseq?]) any/c]
+)]{
+
+Shorthands for using @racket[eseq-ref] to access the first or last element of
+an @tech{ephemeral sequence}.}
 
 The five operations that follow rearrange ephemeral sequences in place, and
 they @italic{consume} the sequences they are given: each one is emptied.  That
