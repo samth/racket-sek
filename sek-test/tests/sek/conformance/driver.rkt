@@ -153,7 +153,7 @@
        (printf "-> ~a\n" (if (sek-for-all? (E (a 0)) (lambda (x) (< x (a 1)))) "true" "false"))]
       [("eexists")
        (printf "-> ~a\n" (if (sek-exists? (E (a 0)) (lambda (x) (> x (a 1)))) "true" "false"))]
-      [("emem") (printf "-> ~a\n" (if (sek-member? (a 1) (E (a 0))) "true" "false"))]
+      [("emem") (printf "-> ~a\n" (if (sek-member? (E (a 0)) (a 1)) "true" "false"))]
       [("eequal") (printf "-> ~a\n" (if (sek-equal? (E (a 0)) (E (a 1))) "true" "false"))]
       [("ecompare") (printf "-> ~a\n" (sek-compare (E (a 0)) (E (a 1)) cmp3))]
       ;; ---- persistent core

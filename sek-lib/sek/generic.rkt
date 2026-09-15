@@ -400,12 +400,13 @@
        (sek-iter-move! it 'forward)
        (loop)])))
 
-(define (sek-member? x s [same? equal?])
+(define (sek-member? s v [same? equal?])
   (check-sek 'sek-member? s)
-  (sek-exists? s (lambda (y) (same? x y))))
-(define (sek-memq? x s)
+  (sek-exists? s (lambda (y) (same? v y))))
+
+(define (sek-memq? s v)
   (check-sek 'sek-memq? s)
-  (sek-exists? s (lambda (y) (eq? x y))))
+  (sek-exists? s (lambda (y) (eq? v y))))
 
 ;; --------------------------------------------------------- binary traversal
 

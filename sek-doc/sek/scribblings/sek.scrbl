@@ -679,9 +679,10 @@ names here.
                                      [dir (or/c 'forward 'backward) 'forward]) any/c]
               @defproc[(sek-for-all? [s sek?] [pred (-> any/c any/c)]) boolean?]
               @defproc[(sek-exists? [s sek?] [pred (-> any/c any/c)]) boolean?]
-              @defproc[(sek-member? [v any/c] [s sek?] [same? (-> any/c any/c any/c) equal?])
+              @defproc[(sek-member? [s sek?] [v any/c]
+                                    [same? (-> any/c any/c any/c) equal?])
                        boolean?]
-              @defproc[(sek-memq? [v any/c] [s sek?]) boolean?])]{
+              @defproc[(sek-memq? [s sek?] [v any/c]) boolean?])]{
  Search operations, all of which stop as soon as they can.
  @racket[sek-find] returns @racket[#f] when nothing matches, so use
  @racket[sek-find-index] when an element could itself be @racket[#f].}

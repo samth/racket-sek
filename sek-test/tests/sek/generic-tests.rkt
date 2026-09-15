@@ -77,8 +77,8 @@
   (check-equal? (sek-for-all? s exact-integer?) #t)
   (check-equal? (sek-for-all? s even?) (andmap even? xs))
   (check-equal? (sek-exists? s even?) (and (ormap even? xs) #t))
-  (check-equal? (sek-member? 3 s) (and (member 3 xs) #t))
-  (check-equal? (sek-memq? 3 s) (and (memq 3 xs) #t))
+  (check-equal? (sek-member? s 3) (and (member 3 xs) #t))
+  (check-equal? (sek-memq? s 3) (and (memq 3 xs) #t))
 
   ;; --- producers
   (check-produces s (sek-map s add1) (map add1 xs) 'map)

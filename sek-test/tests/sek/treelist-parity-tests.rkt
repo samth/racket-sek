@@ -52,6 +52,11 @@
                     (treelist->list (treelist-drop-right t k))
                     (format "drop-right ~a of ~a" k n)))
 
+    ;; member?, which takes the sequence first as treelist-member? does
+    (for ([v (in-list (append l (list 'absent)))])
+      (check-equal? (sek-member? p v) (treelist-member? t v)
+                    (format "member? ~s in ~a" v n)))
+
     ;; index-of, hit and miss, and with a supplied comparison
     (for ([v (in-list (append l (list 'absent)))])
       (check-equal? (sek-index-of p v) (treelist-index-of t v)))
