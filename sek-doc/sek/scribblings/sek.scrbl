@@ -30,11 +30,6 @@ random access, pushing and popping at either end, concatenation and splitting,
 in either a persistent or an ephemeral flavour, with constant-time conversion
 between the two.
 
-The paper's §2 develops a simpler structure, a fixed-size transient array, in
-order to introduce ownership identifiers before §3 builds sequences out of
-chunks.  It is a step in the exposition rather than an interface, and the
-authors' OCaml library does not export one either, so neither does this.
-
 @section{Overview}
 
 @examples[
