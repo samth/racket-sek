@@ -16,19 +16,20 @@
 
 @author[@author+email["Sam Tobin-Hochstadt" "samth@racket-lang.org"]]
 
-An implementation of the transient sequence data structure of Charguéraud and
-Pottier @cite["Chargueraud26"].  Section numbers below refer to that paper.
+An implementation of the sequence data structure of Charguéraud and Pottier
+@cite["Chargueraud26"].  Section numbers below refer to that paper.
 
-A @deftech{transient} data structure combines an ephemeral data structure, a
-persistent one, and fast conversions between them.  Programs can take a
-persistent snapshot in constant time whenever they need one, while keeping the
-performance of destructive updates in the stretches of code where persistence
-is not needed.
+This library provides efficient @tech{persistent sequences} and @tech{ephemeral
+sequences}, together with cheap conversions between the two.  Both support
+random access, pushing and popping at either end, concatenation and splitting.
 
-This library provides @tech{transient sequences} (§3): sequences that support
-random access, pushing and popping at either end, concatenation and splitting,
-in either a persistent or an ephemeral flavour, with constant-time conversion
-between the two.
+The conversions are what make the pair worth having together.  Holding a
+persistent sequence, a program can @racket[pseq-edit] it to obtain an ephemeral
+one, update that in place as often as it likes, and @racket[eseq-snapshot] it
+to get a persistent sequence back.  It pays neither for copying the sequence
+nor for persistent update while the sequence is being edited.  That round trip
+is what the paper calls @deftech{transience}: the two are one representation,
+and a conversion changes which of them owns it rather than copying it (§2.4).
 
 @section{Overview}
 
@@ -48,9 +49,9 @@ between the two.
 (pseq->list p)
 ]
 
-@section{Transient sequences}
+@section{Sequences}
 
-A @deftech{transient sequence} is stored as a tree whose nodes hold arrays of
+A sequence is stored as a tree whose nodes hold arrays of
 up to @math{K} items, called @italic{chunks} (§3.1).  Each level of the tree
 consists of a front chunk, a back chunk, and a middle sequence, which is itself
 a tree of the same shape one level down, holding chunks of the current level's
@@ -84,8 +85,8 @@ are as fast.  The structure here differs in what it makes cheap.
        against @math{O(log N)} for the corresponding treelist operation.}
 
  @item{@bold{Conversion between the persistent and ephemeral flavours} is the
-       decisive difference, and the reason the paper calls the structure
-       @tech{transient}.  @racket[treelist-copy] and
+       decisive difference, and the whole point of @tech{transience}.
+       @racket[treelist-copy] and
        @racket[mutable-treelist-snapshot] each take @math{O(N)} time, so a
        program that alternates between the two pays for the whole sequence
        every time it switches.  Here @racket[pseq-edit] takes @math{O(1)} time
@@ -113,9 +114,8 @@ above.
 
 @subsection{Persistent sequences}
 
-A @deftech{persistent sequence} is a @tech{transient sequence} that is never
-modified: an operation on one produces a new sequence and leaves the original
-intact.
+A @deftech{persistent sequence} is immutable: an operation on one produces a
+new sequence and leaves the original intact.
 
 @defproc[(pseq? [v any/c]) boolean?]{
  Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
@@ -231,9 +231,9 @@ intact.
 
 @subsection{Ephemeral sequences}
 
-An @deftech{ephemeral sequence} is a @tech{transient sequence} that is updated
-in place.  Where a @tech{persistent sequence} returns a new sequence, an
-ephemeral one modifies the sequence it is given and returns @racket[void].
+An @deftech{ephemeral sequence} is updated in place.  Where an operation on a
+@tech{persistent sequence} returns a new sequence, the corresponding operation
+here modifies the sequence it is given and returns @racket[void].
 
 @defproc[(eseq? [v any/c]) boolean?]{
  Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
