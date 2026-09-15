@@ -3,6 +3,8 @@
           (for-label racket/base
                      racket/contract
                      racket/vector
+                     racket/treelist
+                     racket/mutable-treelist
                      sek))
 
 @(define the-eval (make-base-eval))
@@ -14,11 +16,8 @@
 
 @author[@author+email["Sam Tobin-Hochstadt" "samth@racket-lang.org"]]
 
-An implementation of the data structure described by Arthur Charguéraud and
-François Pottier in
-@hyperlink["https://doi.org/10.1145/3828706"]{@italic{A Catenable, Splittable,
-Transient Sequence Data Structure}}, Proc. ACM Program. Lang. 10, ICFP,
-Article 308 (August 2026).  Section numbers below refer to that paper.
+An implementation of the transient sequence data structure of Charguéraud and
+Pottier @cite["Chargueraud26"].  Section numbers below refer to that paper.
 
 A @deftech{transient} data structure combines an ephemeral data structure, a
 persistent one, and fast conversions between them.  Programs can take a
@@ -63,7 +62,56 @@ the middle sequences, indexing, splitting and concatenation are logarithmic.
 
 Throughout, @math{N} is the length of the sequence, @math{K} the chunk
 capacity, and @math{T} the threshold below which a persistent sequence is held
-in a plain vector.
+in a plain vector.  Unless otherwise specified, operations on a sequence of
+length @math{N} take @math{O(log_K N)} time.  As for @tech[#:doc '(lib
+"scribblings/reference/reference.scrbl")]{treelists}, the base of the
+@math{log} is large enough that it is effectively constant-time for many
+purposes: with the default @math{K} of 128 at the leaves, a sequence of a
+million elements is three levels deep.
+
+@section{Comparison with treelists}
+
+Racket's @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{treelists}
+solve a closely related problem, and are the right default: they are in the
+core, they are simpler, and for a program that only indexes and appends they
+are as fast.  The structure here differs in what it makes cheap.
+
+@itemlist[
+
+ @item{@bold{Indexed access} is @math{O(log N)} for both, with a base large
+       enough to be effectively constant.}
+
+ @item{@bold{The ends} are where this structure wins.  Pushing or popping at
+       either end of an @tech{ephemeral sequence} is @math{O(1)} amortized,
+       against @math{O(log N)} for the corresponding treelist operation.}
+
+ @item{@bold{Conversion between the persistent and ephemeral flavours} is the
+       decisive difference, and the reason the paper calls the structure
+       @tech{transient}.  @racket[treelist-copy] and
+       @racket[mutable-treelist-snapshot] each take @math{O(N)} time, so a
+       program that alternates between the two pays for the whole sequence
+       every time it switches.  Here @racket[pseq-edit] takes @math{O(1)} time
+       and @racket[eseq-snapshot] takes @math{O(K log_K N)} in the worst case,
+       so switching is affordable in a loop.}
+
+ @item{@bold{Concatenation and splitting} are logarithmic for both:
+       @racket[treelist-append] takes @math{O(log N)} time for two treelists,
+       and @racket[pseq-append] takes @math{O(K log_K N + log_K^2 N)}.  But
+       @racket[mutable-treelist-append!] takes @math{O(N)} time in the length
+       of its second argument, where @racket[eseq-append!] does not.}
+
+ @item{@bold{Traversal} is @math{O(N)} for both.  This structure additionally
+       exposes @tech{segments}, which hand out a run of contiguous storage so
+       that a caller can process @math{K} elements with a vector loop rather
+       than @math{K} cursor steps.}]
+
+Treelists are RRB trees @cite["Stucki15"]; the structure here is a chunked
+sequence with ownership identifiers, and the two make different trades.  A
+treelist stores single elements at its leaves, so it needs no density
+invariant and no notion of ownership; this structure stores chunks of up to
+@math{K} elements, which is what buys the constant-time ends and the cheap
+conversions, at the cost of the @math{K} factor that appears in several bounds
+above.
 
 @subsection{Persistent sequences}
 
@@ -92,13 +140,14 @@ intact.
 
 @deftogether[(@defproc[(pseq-empty? [s pseq?]) boolean?]
               @defproc[(pseq-length [s pseq?]) exact-nonnegative-integer?])]{
- Emptiness test and length, both @math{O(1)}.}
+ Emptiness test and length.  These operations take @math{O(1)} time.}
 
 @deftogether[(@defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
               @defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?])]{
  Return a @tech{persistent sequence} with @racket[v] added at the given end.
- @math{O(K log_K N)} in the worst case, and @math{O(1)} when the affected chunk
- admits a monotonic in-place update (§3.3).
+ This operation takes @math{O(K log_K N)} time in the worst case, and
+ @math{O(1)} time when the affected chunk admits a monotonic in-place update
+ (§3.3).
 
  @examples[
  #:eval the-eval
@@ -111,8 +160,8 @@ intact.
 @deftogether[(@defproc[(pseq-pop-front [s pseq?]) (values any/c pseq?)]
               @defproc[(pseq-pop-back [s pseq?]) (values any/c pseq?)])]{
  Return the element at the given end and the rest of the sequence.
- @math{O(log_K N)}, or @math{O(T)} when the result becomes short enough to
- switch to the compact representation.  Raises @racket[exn:fail:contract] if
+ These operations take @math{O(log_K N)} time, or @math{O(T)} time when the
+ result becomes short enough to switch to the compact representation.  Raises @racket[exn:fail:contract] if
  @racket[s] is empty.}
 
 @deftogether[(@defproc[(pseq-first [s pseq?]) any/c]
@@ -122,9 +171,9 @@ intact.
 @deftogether[(@defproc[(pseq-ref [s pseq?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(pseq-set [s pseq?] [i exact-nonnegative-integer?]
                                  [v any/c]) pseq?])]{
- Random access.  @math{O(K log_K N)} in general and @math{O(log_K N)} when
- every chunk on the path is @italic{packed}, which is the case for any sequence
- built without concatenation (§3.2).
+ Random access.  These operations take @math{O(K log_K N)} time in general,
+ and @math{O(log_K N)} time when every chunk on the path is @italic{packed},
+ which is the case for any sequence built without concatenation (§3.2).
 
  @examples[
  #:eval the-eval
@@ -174,7 +223,8 @@ intact.
               @defproc[(vector->pseq [v vector?]) pseq?]
               @defproc[(pseq-for-each [s pseq?] [proc (-> any/c any)]) void?]
               @defproc[(pseq-map [s pseq?] [proc (-> any/c any/c)]) pseq?])]{
- Conversion and iteration, all @math{O(N)}.  See @racket[in-pseq] below for
+ Conversion and iteration.  Each of these takes @math{O(N)} time.  See
+ @racket[in-pseq] below for
  iterating in a @racket[for] clause.}
 
 @subsection{Ephemeral sequences}
@@ -214,9 +264,9 @@ ephemeral one modifies the sequence it is given and returns @racket[void].
               @defproc[(eseq-ref [e eseq?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(eseq-set! [e eseq?] [i exact-nonnegative-integer?]
                                   [v any/c]) void?])]{
- Random access.  @racket[eseq-set!] costs @math{O(K log_K N)}, dropping to
- @math{O(log_K N)} once the chunks along the path are uniquely owned -- which
- is what makes a run of updates at nearby indices cheap (§2.4).}
+ Random access.  @racket[eseq-set!] takes @math{O(K log_K N)} time, dropping
+ to @math{O(log_K N)} once the chunks along the path are uniquely owned --
+ which is what makes a run of updates at nearby indices cheap (§2.4).}
 
 The five operations that follow rearrange ephemeral sequences in place, and
 they @italic{consume} the sequences they are given: each one is emptied.  That
@@ -265,7 +315,8 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
               @defproc[(list->eseq [xs list?]) eseq?]
               @defproc[(eseq->vector [e eseq?]) vector?]
               @defproc[(eseq-for-each [e eseq?] [proc (-> any/c any)]) void?])]{
- Conversion and iteration, all @math{O(N)}.  See @racket[in-eseq] below for
+ Conversion and iteration.  Each of these takes @math{O(N)} time.  See
+ @racket[in-eseq] below for
  iterating in a @racket[for] clause.}
 
 @subsection{Converting between the two flavours}
@@ -276,11 +327,13 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  @racket[e] remains usable and keeps its contents; later updates to it do not
  affect the snapshot.
 
- Constant time: the conversion installs a fresh ownership identifier on
- @racket[e], and every chunk in the structure thereby stops being recognizable
- as uniquely owned, which silently makes it immutable (§2.4).  The cost of
- re-acquiring ownership is paid later, and only for the chunks that are
- actually written.
+ This operation takes @math{O(K log_K N)} time in the worst case: the two
+ inner chunks are folded into the middle sequence first, and only then does the
+ conversion install a fresh ownership identifier on @racket[e], which makes
+ every chunk in the structure stop being recognizable as uniquely owned and so
+ silently immutable (§2.4).  The cost of re-acquiring ownership is paid later,
+ and only for the chunks that are actually written.  Compare
+ @racket[mutable-treelist-snapshot], which takes @math{O(N)} time.
 
  @examples[
  #:eval the-eval
@@ -295,7 +348,10 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
 @defproc[(pseq-edit [s pseq?]) eseq?]{
  Returns an @tech{ephemeral sequence} with the contents of @racket[s], sharing
  its representation.  @racket[s] is unaffected by later updates to the result.
- @math{O(K)}.
+
+ This operation takes @math{O(1)} time: the front and back chunks are shared
+ rather than copied, and a chunk is copied only on the first write to it.
+ Compare @racket[treelist-copy], which takes @math{O(N)} time.
 
  @examples[
  #:eval the-eval
@@ -521,7 +577,8 @@ names here.
                                       [init any/c]) any/c]
               @defproc[(sek-fold-right [s sek?] [proc (-> any/c any/c any/c)]
                                        [init any/c]) any/c])]{
- Fold from the left or from the right, in @math{O(N)}.}
+ Fold from the left or from the right.  These operations take @math{O(N)}
+ time.}
 
 @deftogether[(@defproc[(sek->list [s sek?] [dir (or/c 'forward 'backward) 'forward]) list?]
               @defproc[(sek->vector [s sek?]) vector?])]{Conversions.}
@@ -577,7 +634,8 @@ names here.
 @deftogether[(@defproc[(sek-sort [s sek?] [less? (-> any/c any/c any/c)]) sek?]
               @defproc[(sek-uniq [s sek?] [same? (-> any/c any/c any/c) equal?]) sek?]
               @defproc[(sek-merge [s1 sek?] [s2 sek?] [less? (-> any/c any/c any/c)]) sek?])]{
- A stable sort in @math{O(N log N)}; removal of adjacent duplicates, which
+ A stable sort, which takes @math{O(N log N)} time; removal of adjacent
+ duplicates, which
  removes all duplicates from a sorted sequence; and a stable merge of two
  sorted sequences.}
 
@@ -654,7 +712,8 @@ otherwise it is copied, and the copy becomes uniquely owned.
                        parray?]
               @defproc[(make-earray [n exact-nonnegative-integer?] [v any/c])
                        earray?])]{
- An array of @racket[n] copies of @racket[v].  @math{O(N)}.}
+ An array of @racket[n] copies of @racket[v].  This operation takes
+ @math{O(N)} time.}
 
 @deftogether[(@defproc[(parray-length [a parray?]) exact-nonnegative-integer?]
               @defproc[(earray-length [a earray?]) exact-nonnegative-integer?]
@@ -662,19 +721,20 @@ otherwise it is copied, and the copy becomes uniquely owned.
                                    [i exact-nonnegative-integer?]) any/c]
               @defproc[(earray-ref [a earray?]
                                    [i exact-nonnegative-integer?]) any/c])]{
- Length is @math{O(1)}; indexing is @math{O(log_K N)}.}
+ Length takes @math{O(1)} time; indexing takes @math{O(log_K N)} time.}
 
 @deftogether[(@defproc[(parray-set [a parray?] [i exact-nonnegative-integer?]
                                    [v any/c]) parray?]
               @defproc[(earray-set! [a earray?] [i exact-nonnegative-integer?]
                                     [v any/c]) void?])]{
- Update.  @math{O(K log_K N)} in the worst case.  For an ephemeral array the
- cost falls to @math{O(log_K N)} once the path is uniquely owned, so repeated
- writes at the same or nearby indices are cheap.}
+ Update.  These operations take @math{O(K log_K N)} time in the worst case.
+ For an ephemeral array the cost falls to @math{O(log_K N)} once the path is
+ uniquely owned, so repeated writes at the same or nearby indices are cheap.}
 
 @deftogether[(@defproc[(earray-snapshot [a earray?]) parray?]
               @defproc[(parray-edit [a parray?]) earray?])]{
- Convert between the flavours in @math{O(1)}.  Both arrays remain usable.}
+ Convert between the flavours.  These operations take @math{O(1)} time, and
+ both arrays remain usable.}
 
 @deftogether[(@defproc[(parray->vector [a parray?]) vector?]
               @defproc[(earray->vector [a earray?]) vector?]
@@ -682,7 +742,7 @@ otherwise it is copied, and the copy becomes uniquely owned.
               @defproc[(earray->list [a earray?]) list?]
               @defproc[(vector->parray [v vector?]) parray?]
               @defproc[(vector->earray [v vector?]) earray?])]{
- Conversions, all @math{O(N)}.}
+ Conversions.  Each of these takes @math{O(N)} time.}
 
 @section{Configuration}
 
@@ -805,5 +865,20 @@ these.
  @item{Like the paper's implementation, monotonic in-place updates make the
        persistent flavour unsafe to share across threads without
        synchronization.}]
+
+@bibliography[
+ (bib-entry #:key "Chargueraud26"
+            #:title "A Catenable, Splittable, Transient Sequence Data Structure"
+            #:author "Arthur Charguéraud and François Pottier"
+            #:location "International Conference on Functional Programming"
+            #:url "https://doi.org/10.1145/3828706"
+            #:date "2026")
+ (bib-entry #:key "Stucki15"
+            #:title "RRB Vector: A Practical General Purpose Immutable Sequence"
+            #:author "Nicolas Stucki, Tiark Rompf, Vlad Ureche, and Phil Bagwell"
+            #:location "International Conference on Functional Programming"
+            #:url "https://dl.acm.org/doi/abs/10.1145/2784731.2784739"
+            #:date "2015")
+]
 
 @close-eval[the-eval]
