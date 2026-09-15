@@ -4,7 +4,7 @@
 
 (require rackunit
          racket/list
-         "../main.rkt")
+         sek)
 
 (module+ test
   ;; ---- the overview example ------------------------------------------------

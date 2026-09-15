@@ -10,7 +10,7 @@
          racket/vector
 	 data/gvector
          racket/mutable-treelist
-         "../sek/main.rkt")
+         "../sek-lib/sek/main.rkt")
 
 (provide measure)
 

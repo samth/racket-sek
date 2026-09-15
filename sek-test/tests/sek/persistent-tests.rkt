@@ -7,9 +7,9 @@
 
 (require rackunit
          racket/list
-         "../config.rkt"
-         "../persistent.rkt"
-         "../check.rkt")
+         sek/config
+         sek/persistent
+         sek/check)
 
 (provide run-persistent-random-tests)
 

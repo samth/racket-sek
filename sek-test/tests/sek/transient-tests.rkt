@@ -10,10 +10,10 @@
 
 (require rackunit
          racket/list
-         "../config.rkt"
-         "../persistent.rkt"
-         "../ephemeral.rkt"
-         "../check.rkt")
+         sek/config
+         sek/persistent
+         sek/ephemeral
+         sek/check)
 
 (provide run-transient-random-tests)
 

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: "test: Racket ${{ matrix.racket-version }} (${{ matrix.racket-variant }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `current` catches breakage from in-development Racket; the pinned
+        # release is the oldest version the packages claim to support, so it
+        # catches accidental use of anything newer.
+        racket-version: ["9.2", "current"]
+        racket-variant: ["CS"]
+        include:
+          - racket-version: "current"
+            racket-variant: "BC"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: Bogdanp/setup-racket@v1.15
+        with:
+          version: ${{ matrix.racket-version }}
+          variant: ${{ matrix.racket-variant }}
+          packages: ""
+
+      - name: Install sek-lib and sek-test
+        run: raco pkg install --auto --batch sek-lib/ sek-test/
+
+      - name: Test
+        run: raco test -x -j 2 sek-test/
+
+  docs:
+    name: "docs build"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: Bogdanp/setup-racket@v1.15
+        with:
+          version: current
+          variant: CS
+          packages: ""
+
+      # Building sek-doc is where a broken @racket[] reference or a stale
+      # defproc shows up.  The docs have to be built before the
+      # docs-completeness test in sek-test can check against them.
+      - name: Install sek-lib and sek-doc
+        run: raco pkg install --auto --batch sek-lib/ sek-doc/ sek-test/
+
+      - name: Check that every export is documented
+        run: raco test -x sek-test/tests/sek/test-docs-complete.rkt
+
+  lint:
+    name: "packages are well-formed"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: Bogdanp/setup-racket@v1.15
+        with:
+          version: current
+          variant: CS
+          packages: ""
+
+      # Catches a dependency declared in the wrong package, which the split
+      # into sek-lib/sek-doc/sek-test exists to keep straight.
+      - name: Install everything
+        run: raco pkg install --auto --batch sek-lib/ sek-doc/ sek-test/ sek/
+
+      - name: Check dependencies
+        run: raco setup --check-pkg-deps --pkgs sek-lib sek-doc sek-test sek

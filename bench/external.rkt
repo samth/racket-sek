@@ -42,7 +42,7 @@
          racket/treelist
          racket/mutable-treelist
          data/gvector
-         "../sek/main.rkt"
+         "../sek-lib/sek/main.rkt"
          "main.rkt")     ; contenders (all-impls) and harness (measure, table)
 
 ;; ================================================================ scenarios

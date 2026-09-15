@@ -9,7 +9,7 @@
 ;; arbitrary memory.
 (require rackunit
          racket/list
-         "../main.rkt")
+         sek)
 
 (define-syntax-rule (raises expr)
   (check-exn exn:fail? (lambda () expr) (format "~s should raise" 'expr)))

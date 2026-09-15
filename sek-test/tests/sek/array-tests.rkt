@@ -3,8 +3,8 @@
 
 (require rackunit
          racket/vector
-         "../config.rkt"
-         "../array.rkt")
+         sek/config
+         sek/array)
 
 (provide run-array-random-tests)
 

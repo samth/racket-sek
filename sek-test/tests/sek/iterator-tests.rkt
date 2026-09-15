@@ -4,11 +4,11 @@
 
 (require rackunit
          racket/list
-         "../config.rkt"
-         "../persistent.rkt"
-         "../ephemeral.rkt"
-         "../iterator.rkt"
-         "../segment.rkt")
+         sek/config
+         sek/persistent
+         sek/ephemeral
+         sek/iterator
+         sek/segment)
 
 (provide run-iterator-random-tests)
 
