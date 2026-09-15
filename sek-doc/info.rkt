@@ -8,7 +8,7 @@
 
 (define pkg-authors '(samth))
 
-(define build-deps '(["sek-lib" #:version "0.1"]
+(define build-deps '(["sek-lib" #:version "1.0"]
                      "racket-doc"
                      "scribble-lib"
                      "data-doc"

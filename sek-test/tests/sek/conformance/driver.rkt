@@ -5,7 +5,7 @@
 (require racket/list
          racket/string
          racket/port
-         "../sek-lib/sek/main.rkt")
+         sek)
 
 (define nslots 6)
 (define es (build-vector nslots (lambda (_) (make-eseq))))

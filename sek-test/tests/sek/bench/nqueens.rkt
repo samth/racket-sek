@@ -23,7 +23,7 @@
          racket/mutable-treelist
          racket/vector
          data/gvector
-         "../sek-lib/sek/main.rkt"
+         sek
          (only-in "main.rkt" record-table! dump-json! current-scenario))
 
 ;; ------------------------------------------------------- the classic program

@@ -1,8 +1,8 @@
 compiled/
 doc/
-conformance/build/
-conformance/sek-ocaml/
-conformance/driver
-bench/build/
-bench/sek-ocaml/
-bench/bench-ocaml
+sek-test/tests/sek/bench/build/
+sek-test/tests/sek/bench/sek-ocaml/
+sek-test/tests/sek/bench/bench-ocaml
+sek-test/tests/sek/conformance/build/
+sek-test/tests/sek/conformance/sek-ocaml/
+sek-test/tests/sek/conformance/driver

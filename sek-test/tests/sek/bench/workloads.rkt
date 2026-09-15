@@ -29,7 +29,7 @@
          racket/treelist
          racket/mutable-treelist
          data/gvector
-         "../sek-lib/sek/main.rkt"
+         sek
          "main.rkt")     ; impl records, all-impls, fmt, quick?
 
 (provide workload-scenarios run-workloads!)

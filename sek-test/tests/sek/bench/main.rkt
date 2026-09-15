@@ -33,7 +33,7 @@
          racket/unsafe/ops
          data/gvector
          json
-         "../sek-lib/sek/main.rkt")
+         sek)
 
 ;; bench/external.rkt reuses the contenders and the harness below.
 (provide (all-defined-out))
