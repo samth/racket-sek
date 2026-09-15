@@ -7,14 +7,16 @@
 ;; internal nodes, with a threshold of 32 for the array representation of short
 ;; persistent sequences (§3.5).
 
-(require racket/performance-hint)
+(require racket/fixnum
+         racket/performance-hint)
 
 ;; Compiled in unsafe mode, and the accessors below are inlined: they are
 ;; consulted on every operation in the library, and a cross-module call to
 ;; read one mutable variable was costing more than the operation.
 (#%declare #:unsafe)
 
-(provide capacity-at
+(provide hash-elements
+         capacity-at
          max-item-weight
          max-item-weight-shift
          leaf-capacity
@@ -122,3 +124,12 @@
   (recompute-max-item-weights!))
 
 (recompute-max-item-weights!)
+
+;; Hashing a sequence walks its elements rather than building a list of them.
+;; The mask keeps the accumulator small enough that `(fx* h 31)` cannot leave
+;; fixnum range even where fixnums are 30 bits wide.
+(define hash-mask #xFFFFFF)
+
+(define (hash-elements seq n rec)
+  (for/fold ([h (fxand n hash-mask)]) ([x seq])
+    (fxand (fx+ (fx* h 31) (fxand (rec x) hash-mask)) hash-mask)))

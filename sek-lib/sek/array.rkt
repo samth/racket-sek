@@ -17,6 +17,7 @@
 ;; elements and internal nodes hold (capacity-at 1) children.
 
 (require racket/vector
+         racket/serialize
          racket/fixnum
          racket/performance-hint
          "config.rkt"
@@ -29,6 +30,8 @@
 (#%declare #:unsafe)
 
 (provide (rename-out [parr? parray?] [earr? earray?])
+         in-parray
+         in-earray
          make-parray
          make-earray
          parray-length
@@ -49,8 +52,44 @@
 ;; A node holds either elements (at depth 0) or subtrees (above).
 (struct node (id data) #:authentic #:sealed)
 
-(struct parr (depth tree length) #:authentic #:sealed)
-(struct earr ([id #:mutable] depth [tree #:mutable] length) #:authentic #:sealed)
+(struct parr (depth tree length)
+  #:authentic #:sealed
+  #:property prop:sequence
+  (lambda (a) (in-parray a))
+  #:property prop:serializable
+  (make-serialize-info serialize-parray
+                       (cons 'deserialize-parray
+                             (module-path-index-join
+                              '(submod "." deserialize)
+                              (variable-reference->module-path-index
+                               (#%variable-reference))))
+                       #f
+                       (or (current-load-relative-directory) (current-directory)))
+  #:methods gen:equal+hash
+  [(define (equal-proc a b rec)
+     (and (fx= (parray-length a) (parray-length b))
+          (for/and ([x (in-parray a)] [y (in-parray b)]) (rec x y))))
+   (define (hash-proc a rec) (hash-elements (in-parray a) (parray-length a) rec))
+   (define (hash2-proc a rec) (hash-elements (in-parray a) (parray-length a) rec))])
+(struct earr ([id #:mutable] depth [tree #:mutable] length)
+  #:authentic #:sealed
+  #:property prop:sequence
+  (lambda (a) (in-earray a))
+  #:property prop:serializable
+  (make-serialize-info serialize-earray
+                       (cons 'deserialize-earray
+                             (module-path-index-join
+                              '(submod "." deserialize)
+                              (variable-reference->module-path-index
+                               (#%variable-reference))))
+                       #f
+                       (or (current-load-relative-directory) (current-directory)))
+  #:methods gen:equal+hash
+  [(define (equal-proc a b rec)
+     (and (fx= (earray-length a) (earray-length b))
+          (for/and ([x (in-earray a)] [y (in-earray b)]) (rec x y))))
+   (define (hash-proc a rec) (hash-elements (in-earray a) (earray-length a) rec))
+   (define (hash2-proc a rec) (hash-elements (in-earray a) (earray-length a) rec))])
 
 ;; The number of elements spanned by one child of a node at depth d, and the
 ;; number of elements a whole tree of depth d can hold.
@@ -198,12 +237,38 @@
   (check-parray 'parray-edit a)
   (earr (fresh-id!) (parr-depth a) (parr-tree a) (parr-length a)))
 
+;; Walk the tree once rather than descending from the root for each index.
+;; Indexing is O(log_K N), so the obvious `build-vector` over `parray-ref` made
+;; a conversion O(N log_K N); this makes it O(N), which is what the reference
+;; has always claimed for it.
+(define (tree-for-each t d n proc)
+  (cond
+    [(fx= d 0)
+     (define v (node-data t))
+     (for ([i (in-range (fxmin n (vector-length v)))])
+       (proc (vector-ref v i)))]
+    [else
+     (define v (node-data t))
+     (define per (tree-capacity (fx- d 1)))
+     (let loop ([k 0] [left n])
+       (when (fx> left 0)
+         (tree-for-each (vector-ref v k) (fx- d 1) (fxmin left per) proc)
+         (loop (fx+ k 1) (fx- left per))))]))
+
+(define (array->vector tree depth len)
+  (define out (make-vector len #f))
+  (define i 0)
+  (unless (eqv? len 0)
+    (tree-for-each tree depth len
+                   (lambda (x) (vector-set! out i x) (set! i (fx+ i 1)))))
+  out)
+
 (define (parray->vector a)
-  (build-vector (parr-length a) (lambda (i) (parray-ref a i))))
+  (array->vector (parr-tree a) (parr-depth a) (parr-length a)))
 
 (define (earray->vector a)
   (check-earray 'earray->vector a)
-  (build-vector (earr-length a) (lambda (i) (earray-ref a i))))
+  (array->vector (earr-tree a) (earr-depth a) (earr-length a)))
 
 (define (parray->list a)
   (check-parray 'parray->list a)
@@ -223,3 +288,45 @@
 
 (define (vector->parray v)
   (earray-snapshot (vector->earray v)))
+
+;; A plain reader, so that `prop:sequence` has something to hand back without
+;; array.rkt depending on generic.rkt.  generic.rkt shadows both names with
+;; `define-sequence-syntax` versions that a `for` clause expands into
+;; directly, the same way it does for in-pseq and in-eseq.
+(define (in-parray a)
+  (unless (parr? a) (raise-argument-error 'in-parray "parray?" a))
+  (make-do-sequence
+   (lambda ()
+     (values (lambda (i) (parray-ref a i))
+             add1
+             0
+             (lambda (i) (fx< i (parray-length a)))
+             #f
+             #f))))
+
+(define (in-earray a)
+  (unless (earr? a) (raise-argument-error 'in-earray "earray?" a))
+  (make-do-sequence
+   (lambda ()
+     (values (lambda (i) (earray-ref a i))
+             add1
+             0
+             (lambda (i) (fx< i (earray-length a)))
+             #f
+             #f))))
+
+;; As for sequences, the elements are reached through a conversion procedure
+;; rather than a struct accessor: the `prop:serializable` value escapes into
+;; `make-serialize-info`, and an accessor named there would be
+;; possibly-undefined for every use of it in this module.
+(define (serialize-parray a) (vector (parray->vector a)))
+(define (serialize-earray a) (vector (earray->vector a)))
+
+(module+ deserialize
+  (provide deserialize-parray deserialize-earray)
+  (define deserialize-parray
+    (make-deserialize-info (lambda (v) (vector->parray v))
+                           (lambda () (error 'deserialize-parray "cycles not supported"))))
+  (define deserialize-earray
+    (make-deserialize-info (lambda (v) (vector->earray v))
+                           (lambda () (error 'deserialize-earray "cycles not supported")))))

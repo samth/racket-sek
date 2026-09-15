@@ -123,8 +123,12 @@ intact.
  Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
  @racket[#f] otherwise.
 
- A @tech{persistent sequence} is also a @racket[sequence], and two of them are
- @racket[equal?] when their elements are.}
+ A @tech{persistent sequence} can be used as a single-valued
+ @racket[sequence], whose elements are the elements of the sequence; see also
+ @racket[in-pseq].  It can also be used as a @tech[#:doc '(lib
+ "scribblings/reference/reference.scrbl")]{stream}, and it is
+ @racket[serializable?].  Two persistent sequences are @racket[equal?] when
+ their elements are.}
 
 @defthing[empty-pseq pseq?]{The empty persistent sequence.}
 
@@ -237,7 +241,12 @@ ephemeral one modifies the sequence it is given and returns @racket[void].
  Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
  @racket[#f] otherwise.
 
- An @tech{ephemeral sequence} is also a @racket[sequence].}
+ An @tech{ephemeral sequence} can be used as a single-valued
+ @racket[sequence]; see also @racket[in-eseq].  It is @racket[serializable?],
+ and two ephemeral sequences are @racket[equal?] when their elements are.  It
+ is not a @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream},
+ for the same reason a @racket[mutable-treelist] is not: a stream's rest is a
+ value, and this one is modified in place.}
 
 @deftogether[(@defproc[(make-eseq [n exact-nonnegative-integer? 0]
                                   [v any/c #f]) eseq?]
@@ -706,7 +715,19 @@ otherwise it is copied, and the copy becomes uniquely owned.
 @deftogether[(@defproc[(parray? [v any/c]) boolean?]
               @defproc[(earray? [v any/c]) boolean?])]{
  Return @racket[#t] if @racket[v] is a persistent or an ephemeral
- @tech{transient array} respectively, @racket[#f] otherwise.}
+ @tech{transient array} respectively, @racket[#f] otherwise.
+
+ Either kind can be used as a single-valued @racket[sequence]; see also
+ @racket[in-parray] and @racket[in-earray].  Both are @racket[serializable?],
+ and two arrays of the same flavour are @racket[equal?] when their elements
+ are.}
+
+@deftogether[(@defproc[(in-parray [a parray?]) sequence?]
+              @defproc[(in-earray [a earray?]) sequence?])]{
+ Sequences over the elements of an array, in order.  Each step is an indexed
+ access, so a full traversal takes @math{O(N log_K N)} time; to visit every
+ element, @racket[parray->vector] and @racket[earray->vector] walk the tree
+ once instead and take @math{O(N)} time.}
 
 @deftogether[(@defproc[(make-parray [n exact-nonnegative-integer?] [v any/c])
                        parray?]

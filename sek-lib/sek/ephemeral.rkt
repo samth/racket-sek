@@ -16,7 +16,9 @@
 ;; may be updated in place.  Taking a snapshot installs a fresh id, at which
 ;; point every chunk in the structure silently becomes immutable.
 
-(require (only-in racket/unsafe/ops
+(require racket/fixnum
+         racket/serialize
+         (only-in racket/unsafe/ops
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx<=
                   unsafe-fx> unsafe-fx>= unsafe-fx=)
          "config.rkt"
@@ -86,6 +88,23 @@
   #:authentic #:sealed
   #:property prop:sequence
   (lambda (e) (in-eseq e))
+  #:property prop:serializable
+  (make-serialize-info serialize-eseq
+                       (cons 'deserialize-eseq
+                             (module-path-index-join
+                              '(submod "." deserialize)
+                              (variable-reference->module-path-index
+                               (#%variable-reference))))
+                       #f
+                       (or (current-load-relative-directory) (current-directory)))
+  #:methods gen:equal+hash
+  [(define (equal-proc a b rec)
+     (and (fx= (eseq-length a) (eseq-length b))
+          (for/and ([x (in-eseq a)] [y (in-eseq b)]) (rec x y))))
+   (define (hash-proc a rec)
+     (hash-elements (in-eseq a) (eseq-length a) rec))
+   (define (hash2-proc a rec)
+     (hash-elements (in-eseq a) (eseq-length a) rec))]
   #:methods gen:custom-write
   [(define (write-proc e port mode)
      (define xs (eseq->list e))
@@ -564,6 +583,18 @@
                         (cons (esq-middle e) 1)
                         (cons (esq-iback e) 0)
                         (cons (esq-back e) 0))))))
+
+;; Reached through a procedure rather than named inside the `prop:serializable`
+;; value: that value escapes into `make-serialize-info`, which the compiler
+;; cannot see through, and a struct accessor mentioned there becomes
+;; possibly-undefined for every use of it in the module.
+(define (serialize-eseq e) (vector (eseq->vector e)))
+
+(module+ deserialize
+  (provide deserialize-eseq)
+  (define deserialize-eseq
+    (make-deserialize-info (lambda (v) (list->eseq (vector->list v)))
+                           (lambda () (error 'deserialize-eseq "cycles not supported")))))
 
 (define (list->eseq xs)
   (define e (make-eseq))

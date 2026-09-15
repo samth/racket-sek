@@ -42,6 +42,8 @@
          earray-length
          parray-ref
          earray-ref
+         in-parray
+         in-earray
          parray-set
          earray-set!
          earray-snapshot

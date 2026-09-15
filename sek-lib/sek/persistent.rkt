@@ -12,6 +12,8 @@
 
 (require racket/vector
          racket/fixnum
+         racket/serialize
+         racket/stream
          racket/performance-hint
          (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-length
@@ -83,13 +85,29 @@
   #:authentic #:sealed
   #:property prop:sequence
   (lambda (s) (in-pseq s))
+  #:property prop:stream
+  (vector (lambda (s) (pseq-empty? s))
+          (lambda (s) (pseq-first s))
+          (lambda (s) (let-values ([(v rest) (pseq-pop-front s)]) rest)))
+  #:property prop:serializable
+  (make-serialize-info serialize-pseq
+                       (cons 'deserialize-pseq
+                             (module-path-index-join
+                              '(submod "." deserialize)
+                              (variable-reference->module-path-index
+                               (#%variable-reference))))
+                       #f
+                       (or (current-load-relative-directory) (current-directory)))
   #:methods gen:equal+hash
   [(define (equal-proc a b rec)
-     (rec (pseq->list a) (pseq->list b)))
+     ;; Length is O(1) and settles most comparisons; the walk after it
+     ;; allocates nothing, where converting to lists allocated both.
+     (and (fx= (pseq-length a) (pseq-length b))
+          (for/and ([x (in-pseq a)] [y (in-pseq b)]) (rec x y))))
    (define (hash-proc a rec)
-     (rec (pseq->list a)))
+     (hash-elements (in-pseq a) (pseq-length a) rec))
    (define (hash2-proc a rec)
-     (rec (pseq->list a)))]
+     (hash-elements (in-pseq a) (pseq-length a) rec))]
   #:methods gen:custom-write
   [(define (write-proc s port mode)
      (define xs (pseq->list s))
@@ -108,6 +126,17 @@
      (write-string ">" port))])
 
 (define empty-pseq (wrap-rep #f))
+
+;; Reached through a procedure rather than named inside the `prop:serializable`
+;; value: that value escapes into `make-serialize-info`, and a struct accessor
+;; mentioned there becomes possibly-undefined for the whole module.
+(define (serialize-pseq s) (vector (pseq->vector s)))
+
+(module+ deserialize
+  (provide deserialize-pseq)
+  (define deserialize-pseq
+    (make-deserialize-info (lambda (v) (vector->pseq v))
+                           (lambda () (error 'deserialize-pseq "cycles not supported")))))
 (define (pseq-of-tree t)
   (wrap-rep (normalize t)))
 
