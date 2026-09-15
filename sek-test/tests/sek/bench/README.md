@@ -77,7 +77,7 @@ are not weighted by anything real.
 `workloads.rkt` runs whole programs instead. Each is a script of mixed
 operations over a sequence whose size *changes as it runs* -- growing, being
 split, being rejoined -- so no single n characterises it, and each consumes
-what it reads so nothing can be optimised away. Every implementation executes
+what it reads so nothing can be optimized away. Every implementation executes
 the identical script, generated once from a fixed seed, and the answer each
 produces is compared against the others: a structure that is fast because it
 did something different is not fast. The tables print milliseconds for the
@@ -757,7 +757,7 @@ keeps three sequences alive across two recursive calls, and `cons` and
 The mutable structures cannot do that. Every `cons` and `append` has to copy,
 and that is what the bottom three rows measure — 2× to 4× the persistent ones.
 It is the honest cost of using a mutable sequence for an algorithm that wants
-sharing, and the reason a library like this one has both flavours: on this
+sharing, and the reason a library like this one has both flavors: on this
 program you would reach for `pseq`, and `eseq` is the wrong tool.
 
 The same problem written the way a mutable structure wants it — one stack of
@@ -944,7 +944,7 @@ from `reach` and `weight2`. The old code re-walked the copied items with a
 `chunk-ref` each, 16% of split.
 
 **`take`, `drop` and `get` are separate functions there.** `ShareableSequence`
-specialises `three_way_split` three ways, each building only what is asked for.
+specializes `three_way_split` three ways, each building only what is asked for.
 `sek-take` here ran a full split and discarded half of it.
 
 **The split element need not be pushed back.** Both implementations put the
@@ -989,7 +989,7 @@ same fast path, so the fix is to say what is meant: `chunk-own` / `pt-own` /
 ## What the generated code said
 
 `PLT_LINKLET_SHOW_CP0=1 raco make` dumps each module after Chez's source
-optimiser, and the `disassemble` package prints the machine code for a
+optimizer, and the `disassemble` package prints the machine code for a
 procedure. Both were worth reading.
 
 **Every struct was paying for a type check it did not need.** In the cp0 output,
@@ -1050,7 +1050,7 @@ returns two values, which cp0 renders as a `call-with-values` around an
 arity-checking `case-lambda` — alarming to read on the hottest path in the
 library. Measured, returning two values costs 1.18 ns where packing the same
 two numbers into one fixnum and unpacking them costs 2.19. Chez handles it;
-the "optimisation" would have been a pessimisation, and the only way to know
+the "optimization" would have been a pessimisation, and the only way to know
 was to measure rather than to read.
 
 | ns | before | after | OCaml | treelist |
@@ -1392,8 +1392,8 @@ line above the tag of `i` is tested, then tested *again* before the comparison,
 because success of the wider predicate carries no information the comparison
 can use. `fixnum?` does refine -- the second line tests once. Since almost
 every index check in Racket's own collections is written with the wider
-predicate, teaching the optimiser that it implies "fixnum or bignum", and that
-the fixnum branch is the one to specialise, would be worth something well
+predicate, teaching the optimizer that it implies "fixnum or bignum", and that
+the fixnum branch is the one to specialize, would be worth something well
 beyond this library.
 
 **Division by a literal constant is not strength-reduced.** `(fxremainder x 3)`

@@ -33,6 +33,8 @@
          pseq-length
          pseq-empty?
          empty-pseq
+         pseq-cons
+         pseq-add
          pseq-push-front
          pseq-push-back
          pseq-pop-front
@@ -280,8 +282,8 @@
 
 ;; ------------------------------------------------------------------ push/pop
 
-(define (pseq-push-front s x)
-  (check-pseq 'pseq-push-front s)
+(define (pseq-cons s x)
+  (check-pseq 'pseq-cons s)
   (define r (psq-rep s))
   (define T (short-threshold))
   (wrap-rep (cond
@@ -297,8 +299,8 @@
                (pt-push-front (vector->tree r) x 1 0 no-owner))]
           [else (pt-push-front r x 1 0 no-owner)])))
 
-(define (pseq-push-back s x)
-  (check-pseq 'pseq-push-back s)
+(define (pseq-add s x)
+  (check-pseq 'pseq-add s)
   (define r (psq-rep s))
   (define T (short-threshold))
   (wrap-rep (cond
@@ -426,7 +428,7 @@
      (values (wrap-rep (normalize t1)) (wrap-rep (normalize t2)))]))
 
 ;; One-sided versions, which build only the half that is wanted.  The reference
-;; specialises `three_way_split` the same way, into `take`, `drop` and `get`
+;; specializes `three_way_split` the same way, into `take`, `drop` and `get`
 ;; (ShareableSequence.ml); `get` is `pseq-ref` here and was already separate.
 (define (pseq-take s i)
   (define n (pseq-length s))
@@ -499,6 +501,11 @@
     [(eqv? n 0) empty-pseq]
     [(<= n (short-threshold)) (wrap-rep (list->vector xs))]
     [else (wrap-rep (pt-of-list xs (fresh-id!)))]))
+
+;; The push names are what the paper and the OCaml library call these, and
+;; are kept so that code written against either goes on working.
+(define pseq-push-front pseq-cons)
+(define pseq-push-back pseq-add)
 
 (define (vector->pseq v) (list->pseq (vector->list v)))
 

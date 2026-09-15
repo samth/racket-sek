@@ -2,8 +2,8 @@
 ;; The derived operations of the OCaml library's SEK signature.
 ;;
 ;; Everything here is written once, over iterators, and works on either
-;; flavour of sequence.  Operations that build a sequence return the same
-;; flavour as the sequence they were given, which is how the OCaml library's
+;; flavor of sequence.  Operations that build a sequence return the same
+;; flavor as the sequence they were given, which is how the OCaml library's
 ;; two parallel modules are collapsed into one set of names.
 ;;
 ;; Traversal goes through segments rather than one element at a time: an
@@ -75,6 +75,11 @@
          sek-sub
          sek-take
          sek-drop
+         sek-take-right
+         sek-drop-right
+         sek-insert
+         sek-delete
+         sek-index-of
          sek-copy
          sek-fill!
          sek-blit!
@@ -295,7 +300,7 @@
   (lambda () #'in-sek/proc)
   sek-for-clause)
 
-;; The same loop, restricted to one flavour.  These shadow the plain readers
+;; The same loop, restricted to one flavor.  These shadow the plain readers
 ;; that persistent.rkt and ephemeral.rkt define.
 (define (in-pseq/proc s)
   (unless (pseq? s) (raise-argument-error 'in-pseq "pseq?" s))
@@ -684,6 +689,55 @@
 
 ;; Neither of these modifies s; the in-place versions are eseq-take! and
 ;; eseq-drop!.
+;; Insert, delete, index-of and the right-hand take and drop, which
+;; racket/treelist has and this did not.  Insert and delete go through split
+;; and append rather than rebuilding, so they cost a split and a concatenation
+;; rather than O(N).
+(define (pseq-insert-at s i v)
+  (define-values (before after) (pseq-split s i))
+  (pseq-append (pseq-add before v) after))
+
+(define (sek-insert s i v)
+  (check-sek 'sek-insert s)
+  (define n (sek-length s))
+  (unless (and (exact-nonnegative-integer? i) (<= i n))
+    (raise-arguments-error 'sek-insert "index out of range" "index" i "length" n))
+  (if (pseq? s)
+      (pseq-insert-at s i v)
+      (pseq-edit (pseq-insert-at (eseq-snapshot s) i v))))
+
+(define (pseq-delete-at s i)
+  (pseq-append (pseq-take s i) (pseq-drop s (add1 i))))
+
+(define (sek-delete s i)
+  (check-sek 'sek-delete s)
+  (define n (sek-length s))
+  (unless (and (exact-nonnegative-integer? i) (< i n))
+    (raise-arguments-error 'sek-delete "index out of range" "index" i "length" n))
+  (if (pseq? s)
+      (pseq-delete-at s i)
+      (pseq-edit (pseq-delete-at (eseq-snapshot s) i))))
+
+;; `same?` receives the value being searched for first, as
+;; `treelist-index-of` calls its `eql?`.
+(define (sek-index-of s v [same? equal?])
+  (check-sek 'sek-index-of s)
+  (sek-find-index s (lambda (x) (same? v x))))
+
+(define (sek-take-right s n)
+  (check-sek 'sek-take-right s)
+  (define len (sek-length s))
+  (unless (and (exact-nonnegative-integer? n) (<= n len))
+    (raise-arguments-error 'sek-take-right "index out of range" "index" n "length" len))
+  (sek-drop s (- len n)))
+
+(define (sek-drop-right s n)
+  (check-sek 'sek-drop-right s)
+  (define len (sek-length s))
+  (unless (and (exact-nonnegative-integer? n) (<= n len))
+    (raise-arguments-error 'sek-drop-right "index out of range" "index" n "length" len))
+  (sek-take s (- len n)))
+
 (define (sek-take s n)
   (check-sek 'sek-take s)
   (if (pseq? s)

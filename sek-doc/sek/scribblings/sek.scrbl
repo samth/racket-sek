@@ -141,18 +141,28 @@ Returns the number of elements in @racket[s].  This operation takes
 (pseq-length (pseq 1 "a" 'apple))
 ]}
 
-@deftogether[(@defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
-              @defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?])]{
- Return a @tech{persistent sequence} with @racket[v] added at the given end.
- This operation takes @math{O(K log_K N)} time in the worst case, and
- @math{O(1)} time when the affected chunk admits a monotonic in-place update.
+@deftogether[(
+@defproc[(pseq-add [s pseq?] [v any/c]) pseq?]
+@defproc[(pseq-cons [s pseq?] [v any/c]) pseq?]
+@defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?]
+@defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
+)]{
+ Return a @tech{persistent sequence} with @racket[v] added at the end, in the
+ case of @racket[pseq-add], or at the front, in the case of
+ @racket[pseq-cons] -- the same division of labor as @racket[treelist-add] and
+ @racket[treelist-cons].  @racket[pseq-push-back] and
+ @racket[pseq-push-front] are aliases for them, under the names the paper and
+ the authors' OCaml library use.
+
+ These take @math{O(K log_K N)} time in the worst case, and @math{O(1)} time
+ when the affected chunk admits a monotonic in-place update.
 
  @examples[
  #:eval the-eval
  (define s (pseq 1 2 3))
- (pseq->list (pseq-push-front s 0))
- (pseq->list (pseq-push-back s 4))
- (pseq->list s)
+ (pseq-cons s 0)
+ (pseq-add s 4)
+ s
  ]}
 
 @deftogether[(@defproc[(pseq-pop-front [s pseq?]) (values any/c pseq?)]
@@ -284,12 +294,18 @@ Returns the number of elements in @racket[e].  This operation takes
 (eseq-length (eseq 1 "a" 'apple))
 ]}
 
-@deftogether[(@defproc[(eseq-push-front! [e eseq?] [v any/c]) void?]
-              @defproc[(eseq-push-back! [e eseq?] [v any/c]) void?]
-              @defproc[(eseq-pop-front! [e eseq?]) any/c]
-              @defproc[(eseq-pop-back! [e eseq?]) any/c])]{
- Adds @racket[v] to, or removes and returns the element at, the given end of
- @racket[e], modifying it in place.
+@deftogether[(
+@defproc[(eseq-add! [e eseq?] [v any/c]) void?]
+@defproc[(eseq-cons! [e eseq?] [v any/c]) void?]
+@defproc[(eseq-push-back! [e eseq?] [v any/c]) void?]
+@defproc[(eseq-push-front! [e eseq?] [v any/c]) void?]
+@defproc[(eseq-pop-back! [e eseq?]) any/c]
+@defproc[(eseq-pop-front! [e eseq?]) any/c]
+)]{
+ Adds @racket[v] at the end (@racket[eseq-add!]) or the front
+ (@racket[eseq-cons!]) of @racket[e], or removes and returns the element at
+ one of its ends, modifying @racket[e] in place.  @racket[eseq-push-back!] and
+ @racket[eseq-push-front!] are aliases, under the names the paper uses.
 
  These take amortized @math{O(log_K N)} time even though the middle of the
  structure may contain chunks shared with snapshots, which is the paper's main
@@ -300,8 +316,8 @@ Returns the number of elements in @racket[e].  This operation takes
  @examples[
  #:eval the-eval
  (define items (eseq 1 2 3))
- (eseq-push-front! items 0)
- (eseq-push-back! items 4)
+ (eseq-cons! items 0)
+ (eseq-add! items 4)
  items
  (eseq-pop-front! items)
  (eseq-pop-back! items)
@@ -388,7 +404,7 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  @racket[in-eseq] below for
  iterating in a @racket[for] clause.}
 
-@subsection{Converting between the two flavours}
+@subsection{Converting between the two flavors}
 
 @defproc[(eseq-snapshot [e eseq?]) pseq?]{
  Returns a @tech{persistent sequence} with the current contents of
@@ -602,10 +618,10 @@ sequence.
  that writes every element therefore costs @math{O(N + K log_K N)} rather than
  one tree descent per element.}
 
-@section{Operations on either flavour}
+@section{Operations on either flavor}
 
 The operations in this section accept a persistent or an ephemeral sequence.
-Those that build a new sequence return the same flavour they were given, which
+Those that build a new sequence return the same flavor they were given, which
 is how the OCaml library's two parallel modules are collapsed into one set of
 names here.
 
@@ -615,7 +631,7 @@ names here.
               @defproc[(sek-ref [s sek?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(sek-first [s sek?]) any/c]
               @defproc[(sek-last [s sek?]) any/c])]{
- Basic accessors, dispatching on the flavour.}
+ Basic accessors, dispatching on the flavor.}
 
 @subsection{Traversal}
 
@@ -697,6 +713,54 @@ names here.
  splitting when the slice is short; @racket[sek-take] and @racket[sek-drop]
  split instead, in @math{O(K log_K N + log_K^2 N)}.  None of them modifies
  @racket[s].  @racket[sek-copy] is the identity on a persistent sequence.}
+
+@deftogether[(
+@defproc[(sek-take-right [s sek?] [n exact-nonnegative-integer?]) sek?]
+@defproc[(sek-drop-right [s sek?] [n exact-nonnegative-integer?]) sek?]
+)]{
+ Produce a sequence like @racket[s] but with only the last @racket[n]
+ elements, or without the last @racket[n] elements, respectively.  They cost
+ what @racket[sek-take] and @racket[sek-drop] cost, and neither modifies
+ @racket[s].
+
+ @examples[
+ #:eval the-eval
+ (sek-take-right (pseq 1 2 3 4 5) 2)
+ (sek-drop-right (pseq 1 2 3 4 5) 2)
+ ]}
+
+@deftogether[(
+@defproc[(sek-insert [s sek?] [i exact-nonnegative-integer?] [v any/c]) sek?]
+@defproc[(sek-delete [s sek?] [i exact-nonnegative-integer?]) sek?]
+)]{
+ Produce a sequence like @racket[s], except that @racket[v] is inserted before
+ the element at @racket[i], or that the element at @racket[i] is removed.  If
+ @racket[i] is @racket[(sek-length s)] then @racket[sek-insert] adds
+ @racket[v] at the end.
+
+ Each goes through a split and a concatenation rather than rebuilding the
+ sequence, so each takes @math{O(K log_K N + log_K^2 N)} time.  Neither
+ modifies @racket[s].
+
+ @examples[
+ #:eval the-eval
+ (sek-insert (pseq 1 2 3) 1 'x)
+ (sek-insert (pseq 1 2 3) 3 'x)
+ (sek-delete (pseq 1 2 3) 1)
+ ]}
+
+@defproc[(sek-index-of [s sek?] [v any/c]
+                       [same? (-> any/c any/c any/c) equal?])
+         (or/c exact-nonnegative-integer? #f)]{
+ Returns the index of the first element of @racket[s] that is @racket[same?]
+ to @racket[v], or @racket[#f] if there is none.  @racket[same?] receives
+ @racket[v] first and the element second.
+
+ @examples[
+ #:eval the-eval
+ (sek-index-of (pseq 'a 'b 'c) 'b)
+ (sek-index-of (pseq 'a 'b 'c) 'z)
+ ]}
 
 @subsection{Ordering}
 
@@ -845,8 +909,8 @@ these.
        sentinel instead, which removes the @tt{default} argument that the
        OCaml library has to thread through every constructor.}
 
- @item{The two flavours are one set of names rather than two parallel modules:
-       an operation that builds a sequence returns the same flavour it was
+ @item{The two flavors are one set of names rather than two parallel modules:
+       an operation that builds a sequence returns the same flavor it was
        given.}
 
  @item{@racket[sek-sort] is stable, so it covers @tt{stable_sort} too;
@@ -880,7 +944,7 @@ these.
        the worst case rather than the @math{O(1)} of Figure 16.}
 
  @item{Like the paper's implementation, monotonic in-place updates make the
-       persistent flavour unsafe to share across threads without
+       persistent flavor unsafe to share across threads without
        synchronization.}]
 
 @bibliography[

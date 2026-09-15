@@ -10,7 +10,7 @@
 ;; Each workload here is a small program.  It runs a script of mixed operations
 ;; over a sequence whose size *changes as it runs* -- growing, being split, being
 ;; rejoined -- so no single n characterises it, and it consumes what it reads so
-;; nothing can be optimised away.  Every implementation executes the identical
+;; nothing can be optimized away.  Every implementation executes the identical
 ;; script, generated once from a fixed seed, and the answer each produces is
 ;; checked against the others: a structure that is fast because it did something
 ;; different is not fast.

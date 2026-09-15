@@ -24,14 +24,14 @@
       (check-eseq s))
   s)
 
-;; Every producer must return the same flavour it was given.
-(define (check-same-flavour s r where)
+;; Every producer must return the same flavor it was given.
+(define (check-same-flavor s r where)
   (unless (eq? (pseq? s) (pseq? r))
-    (error 'generic-tests "~a: flavour not preserved" where))
+    (error 'generic-tests "~a: flavor not preserved" where))
   (validate r))
 
 (define (check-produces s r expected where)
-  (check-same-flavour s r where)
+  (check-same-flavor s r where)
   (unless (equal? (as-list r) expected)
     (error 'generic-tests "~a: got ~s, expected ~s" where (as-list r) expected)))
 

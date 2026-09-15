@@ -160,7 +160,7 @@
       (loop it)))
   (check-equal? (eseq->list e3) (build-list 400 (lambda (i) (* 2 i))))
 
-  ;; the option-flavoured operations return #f at a sentinel instead of raising
+  ;; the option-flavored operations return #f at a sentinel instead of raising
   (define e7 (list->eseq '(1 2 3)))
   (define it8 (sek-iterator e7 'forward))
   (check-true (segment? (sek-iter-segment* it8 'forward)))

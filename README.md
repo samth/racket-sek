@@ -106,8 +106,8 @@ a version-number comparison; `sek-configure!` can turn it off.
 ## Operations
 
 Beyond the core, the library has the operation surface of the OCaml library's
-`SEK` signature. These accept either flavour, and the ones that build a
-sequence return the flavour they were given:
+`SEK` signature. These accept either flavor, and the ones that build a
+sequence return the flavor they were given:
 
 `sek-length` `sek-empty?` `sek-ref` `sek-first` `sek-last` `in-sek`
 `sek-for-each` `sek-for-each/index` `sek-segments-for-each` `sek-fold-left`
@@ -220,7 +220,7 @@ racket -y nqueens.rkt                   # the classic Scheme nqueens benchmark
 `bench/report.rkt` draws the recorded results as one static HTML page, charts
 included; no scripts and no network.
 
-`bench/README.md` has the tables and the analysis. The short version, at a
+`bench/README.md` has the tables and the analyzis. The short version, at a
 million elements, nanoseconds per operation:
 
 | | eseq | treelist | mutable-treelist | gvector | list |
@@ -335,8 +335,8 @@ checked. The remaining differences:
 * Sequences are parameterized by neither an element type nor a `default` value;
   logically empty slots get a private sentinel instead, which removes the
   `default` argument the OCaml library threads through every constructor.
-* The two flavours are one set of names rather than two parallel modules: an
-  operation that builds a sequence returns the flavour it was given.
+* The two flavors are one set of names rather than two parallel modules: an
+  operation that builds a sequence returns the flavor it was given.
 * `sek-append*` builds a fresh result, where the OCaml `flatten` clears the
   sequence of sequences and every sequence in it.
 * `sek-sort` is stable, so it covers `stable_sort` too.
@@ -352,5 +352,5 @@ checked. The remaining differences:
   OCaml library does, so it is O(K log_K n) in the worst case rather than the
   O(1) of Figure 16.
 * A `#:short-threshold` of 0 works here and not there.
-* As in the paper, monotonic in-place updates make the persistent flavour
+* As in the paper, monotonic in-place updates make the persistent flavor
   unsafe to share across threads without synchronization.

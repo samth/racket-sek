@@ -44,6 +44,8 @@
          eseq
          eseq-length
          eseq-empty?
+         eseq-cons!
+         eseq-add!
          eseq-push-front!
          eseq-push-back!
          eseq-pop-front!
@@ -127,7 +129,7 @@
 (define (make-eseq [n 0] [v #f])
   (define id (fresh-id!))
   (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 0))
-  (for ([_ (in-range n)]) (eseq-push-back! e v))
+  (for ([_ (in-range n)]) (eseq-add! e v))
   e)
 
 (define (eseq . xs)
@@ -225,8 +227,8 @@
 
 ;; --------------------------------------------------------------------- push
 
-(define (eseq-push-front! e x)
-  (check-eseq 'eseq-push-front! e)
+(define (eseq-cons! e x)
+  (check-eseq 'eseq-cons! e)
   (eseq-invalidate-iterators! e)
   (define id (esq-id e))
   (define f (esq-front e))
@@ -244,8 +246,8 @@
      (set-esq-ifront! e f)
      (set-esq-front! e (chunk-singleton x 1 (capacity-at 0) id))]))
 
-(define (eseq-push-back! e x)
-  (check-eseq 'eseq-push-back! e)
+(define (eseq-add! e x)
+  (check-eseq 'eseq-add! e)
   (eseq-invalidate-iterators! e)
   (define id (esq-id e))
   (define b (esq-back e))
@@ -525,7 +527,7 @@
 ;; Truncate e at index i, keeping the front part ('front) or the back part
 ;; ('back).
 ;; Only one side is kept, so only one side is built -- pseq-take and pseq-drop
-;; are the specialised splits.
+;; are the specialized splits.
 (define (eseq-take! e i [side 'front])
   (define s (eseq-snapshot-and-clear! e))
   (eseq-become! e (if (eq? side 'front) (pseq-take s i) (pseq-drop s i))))
@@ -587,5 +589,10 @@
 (define (list->eseq xs)
   (define e (make-eseq))
   (for ([x (in-list xs)])
-    (eseq-push-back! e x))
+    (eseq-add! e x))
   e)
+
+;; The push names are what the paper and the OCaml library call these, and are
+;; kept so that code written against either goes on working.
+(define eseq-push-front! eseq-cons!)
+(define eseq-push-back! eseq-add!)

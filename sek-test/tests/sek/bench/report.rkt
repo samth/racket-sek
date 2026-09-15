@@ -142,7 +142,7 @@
                      push-move
                      split-parts))
 
-;; -------------------------------------------------------------------- colour
+;; -------------------------------------------------------------------- color
 
 ;; One hue per family, two values within it, so that a chart reads as
 ;; "the subject against its rivals" before it reads as seven separate lines.

@@ -12,12 +12,12 @@
 ;;   eseq -- an ephemeral sequence: operations update it in place
 ;;
 ;; `eseq-snapshot` and `pseq-edit` convert between them in constant time, and
-;; the two flavours share their internal representation.
+;; the two flavors share their internal representation.
 ;;
 ;; On top of the core there are first-class iterators, segments -- the runs of
 ;; contiguous storage an iterator can hand out in one piece -- and a set of
-;; derived operations that work on either flavour, returning results of the
-;; same flavour as their argument.
+;; derived operations that work on either flavor, returning results of the
+;; same flavor as their argument.
 
 (require "config.rkt"
          ;; generic.rkt provides faster for-clause versions of these two
@@ -37,6 +37,8 @@
          empty-pseq
          pseq-empty?
          pseq-length
+         pseq-cons
+         pseq-add
          pseq-push-front
          pseq-push-back
          pseq-pop-front
@@ -63,6 +65,8 @@
          make-eseq
          eseq-empty?
          eseq-length
+         eseq-cons!
+         eseq-add!
          eseq-push-front!
          eseq-push-back!
          eseq-pop-front!
@@ -85,7 +89,7 @@
          eseq-for-each
          in-eseq
 
-         ;; ---- conversions between the two flavours (§2.1, §3.6)
+         ;; ---- conversions between the two flavors (§2.1, §3.6)
          eseq-snapshot
          eseq-snapshot-and-clear!
          pseq-edit
@@ -137,7 +141,7 @@
          segment->list
          segment->vector
 
-         ;; ---- operations that work on either flavour
+         ;; ---- operations that work on either flavor
          sek?
          sek-length
          sek-empty?
@@ -184,6 +188,11 @@
          sek-sub
          sek-take
          sek-drop
+         sek-take-right
+         sek-drop-right
+         sek-insert
+         sek-delete
+         sek-index-of
          sek-copy
          sek-fill!
          sek-blit!

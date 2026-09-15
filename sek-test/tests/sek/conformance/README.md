@@ -48,7 +48,7 @@ representation — so that configuration is tested on the Racket side only.
 
 The OCaml library is two parallel modules, `Ephemeral` and `Persistent`, with
 the same names in each. Here they are one set of names: an operation that
-builds a sequence returns the same flavour it was given, so `sek-map` covers
+builds a sequence returns the same flavor it was given, so `sek-map` covers
 both `Ephemeral.map` and `Persistent.map`.
 
 | OCaml | this library |

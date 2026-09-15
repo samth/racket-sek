@@ -486,7 +486,7 @@
 ;; vector directly, rather than through `chunk-set` -- iterators do exactly
 ;; that.  It used to be spelled "set element i to itself", which forced the
 ;; copy-on-write path as a side effect; that stopped working once `chunk-set`
-;; learned to recognise a write that changes nothing.
+;; learned to recognize a write that changes nothing.
 ;; A private copy of a chunk's backing store, and the head the copy should use.
 ;;
 ;; When the view covers the whole support there is nothing to clear and nothing

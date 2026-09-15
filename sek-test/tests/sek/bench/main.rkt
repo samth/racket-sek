@@ -41,7 +41,7 @@
 ;; ---------------------------------------------------------------- contenders
 
 ;; One record per data structure.  Mutable structures return themselves from
-;; the update operations, so the same loop drives both flavours.
+;; the update operations, so the same loop drives both flavors.
 (struct impl (name kind
                    empty        ; nat -> s          (nat is a size hint)
                    build        ; list -> s
