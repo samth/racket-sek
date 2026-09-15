@@ -17,7 +17,7 @@
 @author[@author+email["Sam Tobin-Hochstadt" "samth@racket-lang.org"]]
 
 An implementation of the sequence data structure of Charguéraud and Pottier
-@cite["Chargueraud26"].  Section numbers below refer to that paper.
+@cite["Chargueraud26"].
 
 This library provides efficient @tech{persistent sequences} and @tech{ephemeral
 sequences}, together with cheap conversions between the two.  Both support
@@ -29,7 +29,7 @@ one, update that in place as often as it likes, and @racket[eseq-snapshot] it
 to get a persistent sequence back.  It pays neither for copying the sequence
 nor for persistent update while the sequence is being edited.  That round trip
 is what the paper calls @deftech{transience}: the two are one representation,
-and a conversion changes which of them owns it rather than copying it (§2.4).
+and a conversion changes which of them owns it rather than copying it.
 
 @section{Overview}
 
@@ -52,7 +52,7 @@ and a conversion changes which of them owns it rather than copying it (§2.4).
 @section{Sequences}
 
 A sequence is stored as a tree whose nodes hold arrays of
-up to @math{K} items, called @italic{chunks} (§3.1).  Each level of the tree
+up to @math{K} items, called @italic{chunks}.  Each level of the tree
 consists of a front chunk, a back chunk, and a middle sequence, which is itself
 a tree of the same shape one level down, holding chunks of the current level's
 items.  Because the two ends of the sequence live at the root, pushing and
@@ -71,85 +71,81 @@ million elements is three levels deep.
 @section{Comparison with treelists}
 
 Racket's @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{treelists}
-solve a closely related problem, and are the right default: they are in the
-core, they are simpler, and for a program that only indexes and appends they
-are as fast.  The structure here differs in what it makes cheap.
+solve a similar problem, and for most programs they are the better choice:
+they are in the core and they are simpler. Both structures support random
+access, concatenation and splitting in @math{O(log N)} time, with a base large
+enough that the logarithm is effectively a constant.
 
-@itemlist[
+The two differ at the ends and in the conversions. Pushing or popping at
+either end of an @tech{ephemeral sequence} is @math{O(1)} amortized, where the
+corresponding treelist operation takes @math{O(log N)} time.
 
- @item{@bold{Indexed access} is @math{O(log N)} for both, with a base large
-       enough to be effectively constant.}
+Conversion is the larger difference. @racket[treelist-copy] and
+@racket[mutable-treelist-snapshot] each take @math{O(N)} time, so a program
+that moves between the immutable and mutable forms pays for the whole sequence
+at every switch. Here @racket[pseq-edit] takes @math{O(1)} time and
+@racket[eseq-snapshot] takes @math{O(K log_K N)} time, so a loop can move back
+and forth. Likewise @racket[mutable-treelist-append!] takes @math{O(N)} time
+in the length of its second argument, where @racket[eseq-append!] does not.
 
- @item{@bold{The ends} are where this structure wins.  Pushing or popping at
-       either end of an @tech{ephemeral sequence} is @math{O(1)} amortized,
-       against @math{O(log N)} for the corresponding treelist operation.}
+Traversal is @math{O(N)} for both. This library also hands out @tech{segments},
+a run of the sequence's own storage that a caller can process with a vector
+loop instead of one cursor step per element.
 
- @item{@bold{Conversion between the persistent and ephemeral flavours} is the
-       decisive difference, and the whole point of @tech{transience}.
-       @racket[treelist-copy] and
-       @racket[mutable-treelist-snapshot] each take @math{O(N)} time, so a
-       program that alternates between the two pays for the whole sequence
-       every time it switches.  Here @racket[pseq-edit] takes @math{O(1)} time
-       and @racket[eseq-snapshot] takes @math{O(K log_K N)} in the worst case,
-       so switching is affordable in a loop.}
-
- @item{@bold{Concatenation and splitting} are logarithmic for both:
-       @racket[treelist-append] takes @math{O(log N)} time for two treelists,
-       and @racket[pseq-append] takes @math{O(K log_K N + log_K^2 N)}.  But
-       @racket[mutable-treelist-append!] takes @math{O(N)} time in the length
-       of its second argument, where @racket[eseq-append!] does not.}
-
- @item{@bold{Traversal} is @math{O(N)} for both.  This structure additionally
-       exposes @tech{segments}, which hand out a run of contiguous storage so
-       that a caller can process @math{K} elements with a vector loop rather
-       than @math{K} cursor steps.}]
-
-Treelists are RRB trees @cite["Stucki15"]; the structure here is a chunked
-sequence with ownership identifiers, and the two make different trades.  A
-treelist stores single elements at its leaves, so it needs no density
-invariant and no notion of ownership; this structure stores chunks of up to
-@math{K} elements, which is what buys the constant-time ends and the cheap
-conversions, at the cost of the @math{K} factor that appears in several bounds
-above.
+Treelists are RRB trees @cite["Stucki15"], which store one element per leaf
+slot. The sequences here store chunks of up to @math{K} elements and keep
+track of who owns each chunk. That is what makes the ends and the conversions
+cheap, and it is also where the @math{K} in the bounds above comes from.
 
 @subsection{Persistent sequences}
 
 A @deftech{persistent sequence} is immutable: an operation on one produces a
 new sequence and leaves the original intact.
 
+A persistent sequence can be used as a single-valued @racket[sequence], whose
+elements are the elements of the sequence; see also @racket[in-pseq].  It can
+also be used as a @tech[#:doc '(lib
+"scribblings/reference/reference.scrbl")]{stream}, and it is
+@racket[serializable?].  Two persistent sequences are @racket[equal?] when
+their elements are.
+
 @defproc[(pseq? [v any/c]) boolean?]{
- Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
- @racket[#f] otherwise.
 
- A @tech{persistent sequence} can be used as a single-valued
- @racket[sequence], whose elements are the elements of the sequence; see also
- @racket[in-pseq].  It can also be used as a @tech[#:doc '(lib
- "scribblings/reference/reference.scrbl")]{stream}, and it is
- @racket[serializable?].  Two persistent sequences are @racket[equal?] when
- their elements are.}
-
-@defthing[empty-pseq pseq?]{The empty persistent sequence.}
+Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
+@racket[#f] otherwise.}
 
 @defproc[(pseq [v any/c] ...) pseq?]{
- Returns a @tech{persistent sequence} with @racket[v]s as its elements in
- order.
 
- @examples[
- #:eval the-eval
- (pseq 1 "a" 'apple)
- (pseq->list (pseq 1 "a" 'apple))
- ]}
+Returns a @tech{persistent sequence} with @racket[v]s as its elements in
+order.
 
-@deftogether[(@defproc[(pseq-empty? [s pseq?]) boolean?]
-              @defproc[(pseq-length [s pseq?]) exact-nonnegative-integer?])]{
- Emptiness test and length.  These operations take @math{O(1)} time.}
+@examples[
+#:eval the-eval
+(pseq 1 "a" 'apple)
+]}
+
+@deftogether[(
+@defproc[(pseq-empty? [s pseq?]) boolean?]
+@defthing[empty-pseq (and/c pseq? pseq-empty?)]
+)]{
+
+A predicate and constant for a @tech{persistent sequence} of length 0.}
+
+@defproc[(pseq-length [s pseq?]) exact-nonnegative-integer?]{
+
+Returns the number of elements in @racket[s].  This operation takes
+@math{O(1)} time.
+
+@examples[
+#:eval the-eval
+(pseq-length (pseq 1 "a" 'apple))
+]}
 
 @deftogether[(@defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
               @defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?])]{
  Return a @tech{persistent sequence} with @racket[v] added at the given end.
  This operation takes @math{O(K log_K N)} time in the worst case, and
- @math{O(1)} time when the affected chunk admits a monotonic in-place update
- (§3.3).
+ @math{O(1)} time when the affected chunk admits a monotonic in-place update.
 
  @examples[
  #:eval the-eval
@@ -163,19 +159,24 @@ new sequence and leaves the original intact.
               @defproc[(pseq-pop-back [s pseq?]) (values any/c pseq?)])]{
  Return the element at the given end and the rest of the sequence.
  These operations take @math{O(log_K N)} time, or @math{O(T)} time when the
- result becomes short enough to switch to the compact representation.  Raises @racket[exn:fail:contract] if
- @racket[s] is empty.}
+ result becomes short enough to switch to the compact representation.  Raises
+ @racket[exn:fail:contract] if @racket[s] is empty.}
 
 @deftogether[(@defproc[(pseq-first [s pseq?]) any/c]
               @defproc[(pseq-last [s pseq?]) any/c])]{
- The element at either end, without removing it.}
+ Shorthands for using @racket[pseq-ref] to access the first or last element
+ of a @tech{persistent sequence}.}
 
 @deftogether[(@defproc[(pseq-ref [s pseq?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(pseq-set [s pseq?] [i exact-nonnegative-integer?]
                                  [v any/c]) pseq?])]{
- Random access.  These operations take @math{O(K log_K N)} time in general,
- and @math{O(log_K N)} time when every chunk on the path is @italic{packed},
- which is the case for any sequence built without concatenation (§3.2).
+ Returns the @racket[i]th element of @racket[s], or a sequence with that
+ element replaced by @racket[v].  The first element is position @racket[0],
+ and the last position is one less than @racket[(pseq-length s)].
+
+ These operations take @math{O(K log_K N)} time in general, and
+ @math{O(log_K N)} time when every chunk on the path is @italic{packed}, which
+ is the case for any sequence built without concatenation.
 
  @examples[
  #:eval the-eval
@@ -235,16 +236,17 @@ An @deftech{ephemeral sequence} is updated in place.  Where an operation on a
 @tech{persistent sequence} returns a new sequence, the corresponding operation
 here modifies the sequence it is given and returns @racket[void].
 
-@defproc[(eseq? [v any/c]) boolean?]{
- Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
- @racket[#f] otherwise.
+An ephemeral sequence can be used as a single-valued @racket[sequence]; see
+also @racket[in-eseq].  It is @racket[serializable?], and two ephemeral
+sequences are @racket[equal?] when their elements are.  It is not a
+@tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream}, for the
+same reason a @racket[mutable-treelist] is not: a stream's rest is a value,
+and this one is modified in place.
 
- An @tech{ephemeral sequence} can be used as a single-valued
- @racket[sequence]; see also @racket[in-eseq].  It is @racket[serializable?],
- and two ephemeral sequences are @racket[equal?] when their elements are.  It
- is not a @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream},
- for the same reason a @racket[mutable-treelist] is not: a stream's rest is a
- value, and this one is modified in place.}
+@defproc[(eseq? [v any/c]) boolean?]{
+
+Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
+@racket[#f] otherwise.}
 
 @deftogether[(@defproc[(make-eseq [n exact-nonnegative-integer? 0]
                                   [v any/c #f]) eseq?]
@@ -254,13 +256,14 @@ here modifies the sequence it is given and returns @racket[void].
 
 @deftogether[(@defproc[(eseq-empty? [e eseq?]) boolean?]
               @defproc[(eseq-length [e eseq?]) exact-nonnegative-integer?])]{
- Emptiness test and length, both @math{O(1)}.}
+ A predicate for an @tech{ephemeral sequence} of length 0, and the number of
+ elements in one.  Both take @math{O(1)} time.}
 
 @deftogether[(@defproc[(eseq-push-front! [e eseq?] [v any/c]) void?]
               @defproc[(eseq-push-back! [e eseq?] [v any/c]) void?]
               @defproc[(eseq-pop-front! [e eseq?]) any/c]
               @defproc[(eseq-pop-back! [e eseq?]) any/c])]{
- Update @racket[e] in place at either end.  The paper's key result (§3.6) is
+ Update @racket[e] in place at either end.  The paper's key result is
  that these have amortized cost @math{O(log_K N)}, even though the middle of the
  structure may contain chunks shared with snapshots.  The bound relies on the two
  @italic{inner chunks} held at the root, which stop an alternating series of
@@ -273,7 +276,7 @@ here modifies the sequence it is given and returns @racket[void].
                                   [v any/c]) void?])]{
  Random access.  @racket[eseq-set!] takes @math{O(K log_K N)} time, dropping
  to @math{O(log_K N)} once the chunks along the path are uniquely owned --
- which is what makes a run of updates at nearby indices cheap (§2.4).}
+ which is what makes a run of updates at nearby indices cheap.}
 
 The five operations that follow rearrange ephemeral sequences in place, and
 they @italic{consume} the sequences they are given: each one is emptied.  That
@@ -338,7 +341,7 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  inner chunks are folded into the middle sequence first, and only then does the
  conversion install a fresh ownership identifier on @racket[e], which makes
  every chunk in the structure stop being recognizable as uniquely owned and so
- silently immutable (§2.4).  The cost of re-acquiring ownership is paid later,
+ silently immutable.  The cost of re-acquiring ownership is paid later,
  and only for the chunks that are actually written.  Compare
  @racket[mutable-treelist-snapshot], which takes @math{O(N)} time.
 
@@ -710,11 +713,12 @@ names here.
                          [#:overwrite-empty-slots? overwrite? any/c]
                          [#:check-iterator-validity? check? any/c])
          void?]{
- The settings of §4.1.  Any argument that is not supplied is left as it is.
+ Set the tunable parameters of the implementation.  Any argument that is not
+ supplied is left as it is.
 
  @racket[k0] and @racket[k1] are the chunk capacities used at the leaves and
  at internal nodes, and @racket[t] is the length below which a persistent
- sequence is represented by a plain vector (§3.5).  The defaults are 128, 16
+ sequence is represented by a plain vector.  The defaults are 128, 16
  and 32.
 
  @racket[overwrite?] controls whether a slot that becomes logically empty is

@@ -105,22 +105,10 @@
      (hash-elements (in-eseq a) (eseq-length a) rec))
    (define (hash2-proc a rec)
      (hash-elements (in-eseq a) (eseq-length a) rec))]
+  #:property prop:custom-print-quotable 'never
   #:methods gen:custom-write
   [(define (write-proc e port mode)
-     (define xs (eseq->list e))
-     (write-string "#<eseq:" port)
-     (let loop ([xs xs]
-                [n 0])
-       (cond
-         [(null? xs) (void)]
-         [(= n 10) (write-string " ..." port)]
-         [else
-          (write-string " " port)
-          (if (eq? mode #t)
-              (write (car xs) port)
-              (display (car xs) port))
-          (loop (cdr xs) (add1 n))]))
-     (write-string ">" port))])
+     (print-sek "eseq" (eseq-empty? e) (lambda (f) (eseq-for-each e f)) port mode))])
 
 ;; The front and back chunks start as the shared zero-capacity stand-in, and
 ;; a real one is allocated by the first push to that side.  Creating a

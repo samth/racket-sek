@@ -15,7 +15,8 @@
 ;; read one mutable variable was costing more than the operation.
 (#%declare #:unsafe)
 
-(provide hash-elements
+(provide print-sek
+         hash-elements
          capacity-at
          max-item-weight
          max-item-weight-shift
@@ -133,3 +134,30 @@
 (define (hash-elements seq n rec)
   (for/fold ([h (fxand n hash-mask)]) ([x seq])
     (fxand (fx+ (fx* h 31) (fxand (rec x) hash-mask)) hash-mask)))
+
+;; Print as racket/treelist does: `#<pseq: 1 "a">` for write and display, and
+;; the constructor form `(pseq 1 "a")` for print, so that a printed sequence
+;; reads back as an expression that rebuilds it.  The struct must also carry
+;; `prop:custom-print-quotable 'never`, or print mode quotes the form.
+;;
+;; `for-each-element` rather than a list of elements: this runs on every
+;; display of a sequence, and there is no reason for it to allocate.
+(define (print-sek name empty? for-each-element port mode)
+  (case mode
+    [(#t #f)
+     (write-string "#<" port)
+     (write-string name port)
+     (unless empty? (write-string ":" port))]
+    [else
+     (write-string "(" port)
+     (write-string name port)])
+  (for-each-element
+   (lambda (e)
+     (write-string " " port)
+     (case mode
+       [(#t) (write e port)]
+       [(#f) (display e port)]
+       [else (print e port)])))
+  (case mode
+    [(#t #f) (write-string ">" port)]
+    [else (write-string ")" port)]))

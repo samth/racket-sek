@@ -108,22 +108,10 @@
      (hash-elements (in-pseq a) (pseq-length a) rec))
    (define (hash2-proc a rec)
      (hash-elements (in-pseq a) (pseq-length a) rec))]
+  #:property prop:custom-print-quotable 'never
   #:methods gen:custom-write
   [(define (write-proc s port mode)
-     (define xs (pseq->list s))
-     (write-string "#<pseq:" port)
-     (let loop ([xs xs]
-                [n 0])
-       (cond
-         [(null? xs) (void)]
-         [(= n 10) (write-string " ..." port)]
-         [else
-          (write-string " " port)
-          (if (eq? mode #t)
-              (write (car xs) port)
-              (display (car xs) port))
-          (loop (cdr xs) (add1 n))]))
-     (write-string ">" port))])
+     (print-sek "pseq" (pseq-empty? s) (lambda (f) (pseq-for-each s f)) port mode))])
 
 (define empty-pseq (wrap-rep #f))
 
