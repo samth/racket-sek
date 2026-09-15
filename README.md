@@ -31,7 +31,6 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 | file | paper | contents |
 | --- | --- | --- |
 | `sek/config.rkt` | §4.1 | chunk capacities and the short-sequence threshold |
-| `sek/array.rkt` | §2 | transient arrays: `parray` / `earray` |
 | `sek/chunk.rkt` | §3.3, Fig. 11–13 | transient chunks: circular support + view + ownership id |
 | `sek/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
 | `sek/persistent.rkt` | §3.5 | `pseq`, including the compact representation of short sequences |

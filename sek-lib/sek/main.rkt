@@ -12,8 +12,7 @@
 ;;   eseq -- an ephemeral sequence: operations update it in place
 ;;
 ;; `eseq-snapshot` and `pseq-edit` convert between them in constant time, and
-;; the two flavours share their internal representation.  Section §2's simpler
-;; fixed-size structure, the transient array, is also provided.
+;; the two flavours share their internal representation.
 ;;
 ;; On top of the core there are first-class iterators, segments -- the runs of
 ;; contiguous storage an iterator can hand out in one piece -- and a set of
@@ -21,7 +20,6 @@
 ;; same flavour as their argument.
 
 (require "config.rkt"
-         "array.rkt"
          ;; generic.rkt provides faster for-clause versions of these two
          (except-in "persistent.rkt" in-pseq)
          (except-in "ephemeral.rkt" in-eseq)
@@ -32,28 +30,6 @@
 
 ;; ---- configuration (§4.1)
 (provide sek-configure!
-
-         ;; ---- transient arrays (§2)
-         parray?
-         earray?
-         make-parray
-         make-earray
-         parray-length
-         earray-length
-         parray-ref
-         earray-ref
-         in-parray
-         in-earray
-         parray-set
-         earray-set!
-         earray-snapshot
-         parray-edit
-         parray->vector
-         earray->vector
-         parray->list
-         earray->list
-         vector->parray
-         vector->earray
 
          ;; ---- persistent sequences (§3.1-3.5)
          pseq?

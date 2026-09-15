@@ -25,12 +25,15 @@ persistent snapshot in constant time whenever they need one, while keeping the
 performance of destructive updates in the stretches of code where persistence
 is not needed.
 
-This library provides two such structures:
+This library provides @tech{transient sequences} (§3): sequences that support
+random access, pushing and popping at either end, concatenation and splitting,
+in either a persistent or an ephemeral flavour, with constant-time conversion
+between the two.
 
-@itemlist[
- @item{@tech{transient arrays} (§2), which represent fixed-size sequences;}
- @item{@tech{transient sequences} (§3), which additionally support pushing and
-       popping at either end, concatenation and splitting.}]
+The paper's §2 develops a simpler structure, a fixed-size transient array, in
+order to introduce ownership identifiers before §3 builds sequences out of
+chunks.  It is a step in the exposition rather than an interface, and the
+authors' OCaml library does not export one either, so neither does this.
 
 @section{Overview}
 
@@ -703,67 +706,6 @@ names here.
  @racket[sequence], or from the results of a comprehension, in
  @math{O(N + K)}.  See also @racket[make-eseq], which takes the same arguments
  as @racket[make-vector].}
-
-@section{Transient arrays}
-
-A @deftech{transient array} (§2) is a fixed-size sequence with random access.
-It is a tree of arity @math{K} in which every node carries an ownership
-identifier: when a node's identifier matches that of the ephemeral array being
-updated, the node is not shared with anybody and can be written in place;
-otherwise it is copied, and the copy becomes uniquely owned.
-
-@deftogether[(@defproc[(parray? [v any/c]) boolean?]
-              @defproc[(earray? [v any/c]) boolean?])]{
- Return @racket[#t] if @racket[v] is a persistent or an ephemeral
- @tech{transient array} respectively, @racket[#f] otherwise.
-
- Either kind can be used as a single-valued @racket[sequence]; see also
- @racket[in-parray] and @racket[in-earray].  Both are @racket[serializable?],
- and two arrays of the same flavour are @racket[equal?] when their elements
- are.}
-
-@deftogether[(@defproc[(in-parray [a parray?]) sequence?]
-              @defproc[(in-earray [a earray?]) sequence?])]{
- Sequences over the elements of an array, in order.  Each step is an indexed
- access, so a full traversal takes @math{O(N log_K N)} time; to visit every
- element, @racket[parray->vector] and @racket[earray->vector] walk the tree
- once instead and take @math{O(N)} time.}
-
-@deftogether[(@defproc[(make-parray [n exact-nonnegative-integer?] [v any/c])
-                       parray?]
-              @defproc[(make-earray [n exact-nonnegative-integer?] [v any/c])
-                       earray?])]{
- An array of @racket[n] copies of @racket[v].  This operation takes
- @math{O(N)} time.}
-
-@deftogether[(@defproc[(parray-length [a parray?]) exact-nonnegative-integer?]
-              @defproc[(earray-length [a earray?]) exact-nonnegative-integer?]
-              @defproc[(parray-ref [a parray?]
-                                   [i exact-nonnegative-integer?]) any/c]
-              @defproc[(earray-ref [a earray?]
-                                   [i exact-nonnegative-integer?]) any/c])]{
- Length takes @math{O(1)} time; indexing takes @math{O(log_K N)} time.}
-
-@deftogether[(@defproc[(parray-set [a parray?] [i exact-nonnegative-integer?]
-                                   [v any/c]) parray?]
-              @defproc[(earray-set! [a earray?] [i exact-nonnegative-integer?]
-                                    [v any/c]) void?])]{
- Update.  These operations take @math{O(K log_K N)} time in the worst case.
- For an ephemeral array the cost falls to @math{O(log_K N)} once the path is
- uniquely owned, so repeated writes at the same or nearby indices are cheap.}
-
-@deftogether[(@defproc[(earray-snapshot [a earray?]) parray?]
-              @defproc[(parray-edit [a parray?]) earray?])]{
- Convert between the flavours.  These operations take @math{O(1)} time, and
- both arrays remain usable.}
-
-@deftogether[(@defproc[(parray->vector [a parray?]) vector?]
-              @defproc[(earray->vector [a earray?]) vector?]
-              @defproc[(parray->list [a parray?]) list?]
-              @defproc[(earray->list [a earray?]) list?]
-              @defproc[(vector->parray [v vector?]) parray?]
-              @defproc[(vector->earray [v vector?]) earray?])]{
- Conversions.  Each of these takes @math{O(N)} time.}
 
 @section{Configuration}
 

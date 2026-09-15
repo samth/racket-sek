@@ -16,8 +16,6 @@
 
 (define p (list->pseq '(1 2 3)))
 (define e (list->eseq '(1 2 3)))
-(define pa (vector->parray (vector 1 2 3)))
-(define ea (vector->earray (vector 1 2 3)))
 
 ;; ------------------------------------------------- wrong type where a sequence
 ;; is expected.  7, a list and a vector are the three shapes most likely to be
@@ -85,21 +83,6 @@
     (raises (sek-equal? p bad))
     (raises (sek-iterator bad 'forward))))
 
-(test-case "transient arrays reject the wrong flavour"
-  (for ([bad (in-list (list 7 (vector 1 2 3) ea))])
-    (raises (parray-length bad))
-    (raises (parray-ref bad 0))
-    (raises (parray-set bad 0 'x))
-    (raises (parray-edit bad))
-    (raises (parray->vector bad))
-    (raises (parray->list bad)))
-  (for ([bad (in-list (list 7 (vector 1 2 3) pa))])
-    (raises (earray-length bad))
-    (raises (earray-ref bad 0))
-    (raises (earray-set! bad 0 'x))
-    (raises (earray-snapshot bad))
-    (raises (earray->vector bad))))
-
 (test-case "segments reject a non-segment"
   (for ([bad (in-list (list 7 '(1 2) (vector 1 2)))])
     (raises (segment-length bad))
@@ -123,9 +106,7 @@
   (for ([i (in-list (list -1 3 4 100 'x 1.5 (expt 2 70)))])
     (raises (pseq-ref p i))
     (raises (eseq-ref e i))
-    (raises (sek-ref p i))
-    (raises (parray-ref pa i))
-    (raises (earray-ref ea i)))
+    (raises (sek-ref p i)))
   ;; split, take and drop accept the length itself but nothing beyond it
   (check-equal? (pseq->list (pseq-take p 3)) '(1 2 3))
   (check-equal? (pseq->list (pseq-drop p 3)) '())

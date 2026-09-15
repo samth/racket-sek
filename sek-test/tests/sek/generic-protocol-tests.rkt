@@ -20,10 +20,8 @@
 
   ;; ---- sequences -------------------------------------------------------
   (for ([make (list (lambda (n) (list->pseq (elems n)))
-                    (lambda (n) (list->eseq (elems n)))
-                    (lambda (n) (vector->parray (build-vector n values)))
-                    (lambda (n) (vector->earray (build-vector n values))))]
-        [name '(pseq eseq parray earray)])
+                    (lambda (n) (list->eseq (elems n))))]
+        [name '(pseq eseq)])
     (for ([n (in-list '(0 1 2 17 200))])
       (define v (make n))
       (check-true (sequence? v) (format "~a is a sequence" name))
@@ -31,10 +29,6 @@
                     (format "~a iterates in order at ~a" name n))
       (check-equal? (sequence-length v) n
                     (format "~a has the right sequence length at ~a" name n))))
-
-  ;; the named forms agree with using the value directly
-  (check-equal? (for/list ([x (in-parray (vector->parray (vector 1 2 3)))]) x) '(1 2 3))
-  (check-equal? (for/list ([x (in-earray (vector->earray (vector 1 2 3)))]) x) '(1 2 3))
 
   ;; ---- streams ---------------------------------------------------------
   ;; A persistent sequence is a stream, as an immutable treelist is.
@@ -49,16 +43,12 @@
   ;; ---- structural equality and hashing ---------------------------------
   (check-equal? (pseq 1 2 3) (pseq 1 2 3))
   (check-equal? (eseq 1 2 3) (eseq 1 2 3))
-  (check-equal? (vector->parray (vector 1 2)) (vector->parray (vector 1 2)))
-  (check-equal? (vector->earray (vector 1 2)) (vector->earray (vector 1 2)))
   (check-not-equal? (pseq 1 2 3) (pseq 1 2))
   (check-not-equal? (pseq 1 2 3) (pseq 1 2 4))
   (check-not-equal? (eseq 1 2 3) (eseq 1 2 4))
   ;; equal? values must hash alike, or they break hash tables
   (for ([pair (in-list (list (cons (pseq 1 2 3) (pseq 1 2 3))
-                             (cons (eseq 1 2 3) (eseq 1 2 3))
-                             (cons (vector->parray (vector 4 5))
-                                   (vector->parray (vector 4 5)))))])
+                             (cons (eseq 1 2 3) (eseq 1 2 3))))])
     (check-equal? (equal-hash-code (car pair)) (equal-hash-code (cdr pair))))
   ;; and they must actually work as hash keys
   (let ([h (hash (pseq 1 2) 'a)])
@@ -70,12 +60,7 @@
                   (elems n))
     (check-equal? (eseq->list (deserialize (serialize (list->eseq (elems n)))))
                   (elems n))
-    (check-equal? (parray->list
-                   (deserialize (serialize (vector->parray (build-vector n values)))))
-                  (elems n))
-    (check-equal? (earray->list
-                   (deserialize (serialize (vector->earray (build-vector n values)))))
-                  (elems n)))
+    )
   (check-true (serializable? (pseq 1 2 3)))
   (check-true (serializable? (eseq 1 2 3)))
 

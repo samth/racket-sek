@@ -96,16 +96,4 @@
   (check-equal? (eseq-length qe) 15000)
   (check-equal? (eseq->list qe)
                 (append (reverse (build-list 5000 (lambda (i) (- (add1 i)))))
-                        (build-list 10000 (lambda (i) (+ i 10000)))))
-
-  ;; ---- transient arrays ---------------------------------------------------
-  (define a (make-earray 5000 'init))
-  (for ([i (in-range 5000)])
-    (earray-set! a i i))
-  (define snap (earray-snapshot a))
-  (for ([i (in-range 5000)])
-    (earray-set! a i 'overwritten))
-  (check-equal? (parray-ref snap 2500) 2500)
-  (check-equal? (earray-ref a 2500) 'overwritten)
-  (check-equal? (parray-ref (parray-set snap 0 'x) 0) 'x)
-  (check-equal? (parray-ref snap 0) 0))
+                        (build-list 10000 (lambda (i) (+ i 10000))))))
