@@ -1,11 +1,18 @@
 #lang scribble/manual
-@(require (for-label racket/base
+@(require scribble/example
+          (for-label racket/base
                      racket/contract
+                     racket/vector
                      sek))
+
+@(define the-eval (make-base-eval))
+@(the-eval '(require sek))
 
 @title{Sek: Catenable, Splittable, Transient Sequences}
 
 @defmodule[sek]
+
+@author[@author+email["Sam Tobin-Hochstadt" "samth@racket-lang.org"]]
 
 An implementation of the data structure described by Arthur Charguéraud and
 François Pottier in
@@ -28,19 +35,20 @@ This library provides two such structures:
 
 @section{Overview}
 
-@racketblock[
-(require sek)
-
+@examples[
+#:eval the-eval
 (define p (list->pseq '(1 2 3 4 5)))
-(pseq->list (pseq-push-front p 0))   (code:comment "'(0 1 2 3 4 5)")
-(pseq->list p)                       (code:comment "'(1 2 3 4 5) -- unchanged")
-
-(define e (pseq-edit p))             (code:comment "O(1): switch to in-place updates")
+(pseq->list (pseq-push-front p 0))
+(code:comment "p itself is unchanged")
+(pseq->list p)
+(code:comment "switch to in-place updates in O(1) ...")
+(define e (pseq-edit p))
 (eseq-push-back! e 6)
 (eseq-set! e 0 'a)
-(define q (eseq-snapshot e))         (code:comment "O(1): switch back")
-(pseq->list q)                       (code:comment "'(a 2 3 4 5 6)")
-(pseq->list p)                       (code:comment "'(1 2 3 4 5) -- still unchanged")
+(code:comment "... and back again, also in O(1)")
+(define q (eseq-snapshot e))
+(pseq->list q)
+(pseq->list p)
 ]
 
 @section{Transient sequences}
@@ -53,21 +61,34 @@ items.  Because the two ends of the sequence live at the root, pushing and
 popping there is cheap; because the tree is balanced by a density invariant on
 the middle sequences, indexing, splitting and concatenation are logarithmic.
 
-Throughout, @math{n} is the length of the sequence, @math{K} the chunk
+Throughout, @math{N} is the length of the sequence, @math{K} the chunk
 capacity, and @math{T} the threshold below which a persistent sequence is held
 in a plain vector.
 
 @subsection{Persistent sequences}
 
+A @deftech{persistent sequence} is a @tech{transient sequence} that is never
+modified: an operation on one produces a new sequence and leaves the original
+intact.
+
 @defproc[(pseq? [v any/c]) boolean?]{
- Recognizes persistent sequences.  A persistent sequence is also a
- @racket[sequence], and two of them are @racket[equal?] when their elements
- are.}
+ Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
+ @racket[#f] otherwise.
+
+ A @tech{persistent sequence} is also a @racket[sequence], and two of them are
+ @racket[equal?] when their elements are.}
 
 @defthing[empty-pseq pseq?]{The empty persistent sequence.}
 
 @defproc[(pseq [v any/c] ...) pseq?]{
- Returns a persistent sequence holding the given elements.}
+ Returns a @tech{persistent sequence} with @racket[v]s as its elements in
+ order.
+
+ @examples[
+ #:eval the-eval
+ (pseq 1 "a" 'apple)
+ (pseq->list (pseq 1 "a" 'apple))
+ ]}
 
 @deftogether[(@defproc[(pseq-empty? [s pseq?]) boolean?]
               @defproc[(pseq-length [s pseq?]) exact-nonnegative-integer?])]{
@@ -75,14 +96,22 @@ in a plain vector.
 
 @deftogether[(@defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
               @defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?])]{
- Return a sequence with @racket[v] added at the given end.  @math{O(K
- log_K n)} in the worst case, and @math{O(1)} when the affected chunk admits a
- monotonic in-place update (§3.3).}
+ Return a @tech{persistent sequence} with @racket[v] added at the given end.
+ @math{O(K log_K N)} in the worst case, and @math{O(1)} when the affected chunk
+ admits a monotonic in-place update (§3.3).
+
+ @examples[
+ #:eval the-eval
+ (define s (pseq 1 2 3))
+ (pseq->list (pseq-push-front s 0))
+ (pseq->list (pseq-push-back s 4))
+ (pseq->list s)
+ ]}
 
 @deftogether[(@defproc[(pseq-pop-front [s pseq?]) (values any/c pseq?)]
               @defproc[(pseq-pop-back [s pseq?]) (values any/c pseq?)])]{
  Return the element at the given end and the rest of the sequence.
- @math{O(log_K n)}, or @math{O(T)} when the result becomes short enough to
+ @math{O(log_K N)}, or @math{O(T)} when the result becomes short enough to
  switch to the compact representation.  Raises @racket[exn:fail:contract] if
  @racket[s] is empty.}
 
@@ -93,17 +122,51 @@ in a plain vector.
 @deftogether[(@defproc[(pseq-ref [s pseq?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(pseq-set [s pseq?] [i exact-nonnegative-integer?]
                                  [v any/c]) pseq?])]{
- Random access.  @math{O(K log_K n)} in general and @math{O(log_K n)} when
+ Random access.  @math{O(K log_K N)} in general and @math{O(log_K N)} when
  every chunk on the path is @italic{packed}, which is the case for any sequence
- built without concatenation (§3.2).}
+ built without concatenation (§3.2).
+
+ @examples[
+ #:eval the-eval
+ (define s (list->pseq '(a b c d)))
+ (pseq-ref s 2)
+ (pseq->list (pseq-set s 2 'C))
+ (pseq->list s)
+ ]}
 
 @defproc[(pseq-append [s1 pseq?] [s2 pseq?]) pseq?]{
- Concatenation, in @math{O(K log_K n + log_K^2 n)}.}
+ Returns a @tech{persistent sequence} with the elements of @racket[s1]
+ followed by those of @racket[s2], in @math{O(K log_K N + log_K^2 N)}.
+
+ @examples[
+ #:eval the-eval
+ (pseq->list (pseq-append (pseq 1 2) (pseq 3 4)))
+ ]}
 
 @defproc[(pseq-split [s pseq?] [i exact-nonnegative-integer?])
          (values pseq? pseq?)]{
  Returns the first @racket[i] elements and the rest, in
- @math{O(K log_K n + log_K^2 n)}.}
+ @math{O(K log_K N + log_K^2 N)}.
+
+ @examples[
+ #:eval the-eval
+ (define-values (before after) (pseq-split (list->pseq '(a b c d e)) 2))
+ (pseq->list before)
+ (pseq->list after)
+ ]}
+
+@deftogether[(@defproc[(pseq-take [s pseq?] [i exact-nonnegative-integer?]) pseq?]
+              @defproc[(pseq-drop [s pseq?] [i exact-nonnegative-integer?]) pseq?])]{
+ The two halves of @racket[pseq-split] separately: the first @racket[i]
+ elements, or all but the first @racket[i].  Same cost as
+ @racket[pseq-split], and @racket[s] is unchanged.
+
+ @examples[
+ #:eval the-eval
+ (define s (list->pseq '(a b c d e)))
+ (pseq->list (pseq-take s 2))
+ (pseq->list (pseq-drop s 2))
+ ]}
 
 @deftogether[(@defproc[(pseq->list [s pseq?]) list?]
               @defproc[(list->pseq [xs list?]) pseq?]
@@ -111,14 +174,20 @@ in a plain vector.
               @defproc[(vector->pseq [v vector?]) pseq?]
               @defproc[(pseq-for-each [s pseq?] [proc (-> any/c any)]) void?]
               @defproc[(pseq-map [s pseq?] [proc (-> any/c any/c)]) pseq?])]{
- Conversion and iteration, all @math{O(n)}.  See @racket[in-pseq] below for
+ Conversion and iteration, all @math{O(N)}.  See @racket[in-pseq] below for
  iterating in a @racket[for] clause.}
 
 @subsection{Ephemeral sequences}
 
+An @deftech{ephemeral sequence} is a @tech{transient sequence} that is updated
+in place.  Where a @tech{persistent sequence} returns a new sequence, an
+ephemeral one modifies the sequence it is given and returns @racket[void].
+
 @defproc[(eseq? [v any/c]) boolean?]{
- Recognizes ephemeral sequences.  An ephemeral sequence is also a
- @racket[sequence].}
+ Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
+ @racket[#f] otherwise.
+
+ An @tech{ephemeral sequence} is also a @racket[sequence].}
 
 @deftogether[(@defproc[(make-eseq [n exact-nonnegative-integer? 0]
                                   [v any/c #f]) eseq?]
@@ -135,9 +204,8 @@ in a plain vector.
               @defproc[(eseq-pop-front! [e eseq?]) any/c]
               @defproc[(eseq-pop-back! [e eseq?]) any/c])]{
  Update @racket[e] in place at either end.  The paper's key result (§3.6) is
- that these have amortized cost @math{O(log_K N)}, where @math{N} bounds the
- length the sequence reaches, even though the middle of the structure may
- contain chunks shared with snapshots.  The bound relies on the two
+ that these have amortized cost @math{O(log_K N)}, even though the middle of the
+ structure may contain chunks shared with snapshots.  The bound relies on the two
  @italic{inner chunks} held at the root, which stop an alternating series of
  pushes and pops from cascading down the tree on every operation.}
 
@@ -146,8 +214,8 @@ in a plain vector.
               @defproc[(eseq-ref [e eseq?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(eseq-set! [e eseq?] [i exact-nonnegative-integer?]
                                   [v any/c]) void?])]{
- Random access.  @racket[eseq-set!] costs @math{O(K log_K n)}, dropping to
- @math{O(log_K n)} once the chunks along the path are uniquely owned -- which
+ Random access.  @racket[eseq-set!] costs @math{O(K log_K N)}, dropping to
+ @math{O(log_K N)} once the chunks along the path are uniquely owned -- which
  is what makes a run of updates at nearby indices cheap (§2.4).}
 
 The five operations that follow rearrange ephemeral sequences in place, and
@@ -197,13 +265,14 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
               @defproc[(list->eseq [xs list?]) eseq?]
               @defproc[(eseq->vector [e eseq?]) vector?]
               @defproc[(eseq-for-each [e eseq?] [proc (-> any/c any)]) void?])]{
- Conversion and iteration, all @math{O(n)}.  See @racket[in-eseq] below for
+ Conversion and iteration, all @math{O(N)}.  See @racket[in-eseq] below for
  iterating in a @racket[for] clause.}
 
 @subsection{Converting between the two flavours}
 
 @defproc[(eseq-snapshot [e eseq?]) pseq?]{
- Returns a persistent sequence with the current contents of @racket[e].
+ Returns a @tech{persistent sequence} with the current contents of
+ @racket[e].
  @racket[e] remains usable and keeps its contents; later updates to it do not
  affect the snapshot.
 
@@ -211,12 +280,31 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  @racket[e], and every chunk in the structure thereby stops being recognizable
  as uniquely owned, which silently makes it immutable (§2.4).  The cost of
  re-acquiring ownership is paid later, and only for the chunks that are
- actually written.}
+ actually written.
+
+ @examples[
+ #:eval the-eval
+ (define e (list->eseq '(1 2 3)))
+ (define snap (eseq-snapshot e))
+ (eseq-push-back! e 4)
+ (eseq->list e)
+ (code:comment "the snapshot does not see the push")
+ (pseq->list snap)
+ ]}
 
 @defproc[(pseq-edit [s pseq?]) eseq?]{
- Returns an ephemeral sequence with the contents of @racket[s], sharing its
- representation.  @racket[s] is unaffected by later updates to the result.
- @math{O(K)}.}
+ Returns an @tech{ephemeral sequence} with the contents of @racket[s], sharing
+ its representation.  @racket[s] is unaffected by later updates to the result.
+ @math{O(K)}.
+
+ @examples[
+ #:eval the-eval
+ (define s (pseq 1 2 3))
+ (define e (pseq-edit s))
+ (eseq-set! e 0 'changed)
+ (eseq->list e)
+ (pseq->list s)
+ ]}
 
 @defproc[(eseq-snapshot-and-clear! [e eseq?]) pseq?]{
  Takes the snapshot and empties @racket[e].  Because nothing is left sharing
@@ -229,20 +317,20 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  sequences start out sharing everything and are separated lazily by whichever
  one writes first, which is @math{O(1)} now and makes the next update to
  either sequence more expensive; in @racket['copy] mode the elements are
- copied up front, which costs @math{O(n)} and leaves no latent cost.}
+ copied up front, which costs @math{O(N)} and leaves no latent cost.}
 
 @section{Iterators}
 
 An @deftech{iterator} is a cursor into a sequence.  Its position is an integer
-in @math{[-1, n]}: the indices in @math{[0, n)} designate elements, and the two
+in @math{[-1, N]}: the indices in @math{[0, N)} designate elements, and the two
 extremes are @italic{sentinels}, one just before the sequence and one just
 after.  An iterator that sits on a sentinel is @racket[sek-iter-finished?].
 
 Moving one step costs @math{O(1)} as long as the iterator stays inside one
 run of contiguous storage, which is the common case; crossing a chunk or a
 level of the tree costs more, but happens only once every @math{K} elements.
-This is what makes a full traversal @math{O(n)} where repeated
-@racket[pseq-ref] would be @math{O(n log_K n)}.
+This is what makes a full traversal @math{O(N)} where repeated
+@racket[pseq-ref] would be @math{O(N log_K N)}.
 
 Iterating an ephemeral sequence is guarded: any update to the sequence
 invalidates every iterator on it, and using an invalidated iterator raises an
@@ -260,7 +348,9 @@ is undefined.  Iterators on persistent sequences are never invalidated.
                                    [side (or/c 'front 'back) 'front]) sek-iter?]{
  An iterator on the sentinel just before (or just after) the sequence.}
 
-@defproc[(sek-iter? [v any/c]) boolean?]{Recognizes iterators.}
+@defproc[(sek-iter? [v any/c]) boolean?]{
+ Returns @racket[#t] if @racket[v] is an @tech{iterator}, @racket[#f]
+ otherwise.}
 
 @deftogether[(@defproc[(sek-iter-sequence [it sek-iter?]) (or/c pseq? eseq?)]
               @defproc[(sek-iter-length [it sek-iter?]) exact-nonnegative-integer?]
@@ -382,9 +472,9 @@ sequence.
  invalidate every @italic{other} iterator on that sequence.
 
  The first write into a chunk that is shared with some snapshot costs
- @math{O(K log_K n)}, because the chunk has to be copied and the iterator
+ @math{O(K log_K N)}, because the chunk has to be copied and the iterator
  rebuilt; after that, writes into the same chunk are @math{O(1)}.  A sweep
- that writes every element therefore costs @math{O(n + K log_K n)} rather than
+ that writes every element therefore costs @math{O(N + K log_K N)} rather than
  one tree descent per element.}
 
 @section{Operations on either flavour}
@@ -431,7 +521,7 @@ names here.
                                       [init any/c]) any/c]
               @defproc[(sek-fold-right [s sek?] [proc (-> any/c any/c any/c)]
                                        [init any/c]) any/c])]{
- Fold from the left or from the right, in @math{O(n)}.}
+ Fold from the left or from the right, in @math{O(N)}.}
 
 @deftogether[(@defproc[(sek->list [s sek?] [dir (or/c 'forward 'backward) 'forward]) list?]
               @defproc[(sek->vector [s sek?]) vector?])]{Conversions.}
@@ -466,7 +556,7 @@ names here.
               @defproc[(sek-reverse [s sek?]) sek?]
               @defproc[(sek-append* [s sek?]) sek?]
               @defproc[(sek-append-map [s sek?] [proc (-> any/c sek?)]) sek?])]{
- The usual list-shaped operations, each @math{O(n)} plus the cost of
+ The usual list-shaped operations, each @math{O(N)} plus the cost of
  @racket[proc].  @racket[sek-append*] concatenates a sequence of sequences;
  given an ephemeral one it empties both it and its elements, as the reference
  library's @tt{flatten} does, because it hands over each sequence's
@@ -479,7 +569,7 @@ names here.
               @defproc[(sek-copy [s sek?] [#:mode mode (or/c 'share 'copy) 'share]) sek?])]{
  @racket[sek-sub] extracts a slice in @math{O(size + K)}, which beats
  splitting when the slice is short; @racket[sek-take] and @racket[sek-drop]
- split instead, in @math{O(K log_K n + log_K^2 n)}.  None of them modifies
+ split instead, in @math{O(K log_K N + log_K^2 N)}.  None of them modifies
  @racket[s].  @racket[sek-copy] is the identity on a persistent sequence.}
 
 @subsection{Ordering}
@@ -487,7 +577,7 @@ names here.
 @deftogether[(@defproc[(sek-sort [s sek?] [less? (-> any/c any/c any/c)]) sek?]
               @defproc[(sek-uniq [s sek?] [same? (-> any/c any/c any/c) equal?]) sek?]
               @defproc[(sek-merge [s1 sek?] [s2 sek?] [less? (-> any/c any/c any/c)]) sek?])]{
- A stable sort in @math{O(n log n)}; removal of adjacent duplicates, which
+ A stable sort in @math{O(N log N)}; removal of adjacent duplicates, which
  removes all duplicates from a sorted sequence; and a stable merge of two
  sorted sequences.}
 
@@ -523,7 +613,7 @@ names here.
                                   [size exact-nonnegative-integer?]) void?])]{
  Overwrite a range with one value, or copy a range from one sequence into
  another.  Both go through writable segments, so they cost
- @math{O(size + K log_K n)} rather than one tree descent per element.
+ @math{O(size + K log_K N)} rather than one tree descent per element.
  @racket[sek-blit!] handles the case where @racket[src] and @racket[dst] are
  the same sequence and the ranges overlap.}
 
@@ -544,7 +634,7 @@ names here.
               @defform[(for*/pseq (for-clause ...) body ...+)])]{
  Build a sequence of @racket[n] elements, or from the elements of any Racket
  @racket[sequence], or from the results of a comprehension, in
- @math{O(n + K)}.  See also @racket[make-eseq], which takes the same arguments
+ @math{O(N + K)}.  See also @racket[make-eseq], which takes the same arguments
  as @racket[make-vector].}
 
 @section{Transient arrays}
@@ -557,13 +647,14 @@ otherwise it is copied, and the copy becomes uniquely owned.
 
 @deftogether[(@defproc[(parray? [v any/c]) boolean?]
               @defproc[(earray? [v any/c]) boolean?])]{
- Recognize persistent and ephemeral arrays.}
+ Return @racket[#t] if @racket[v] is a persistent or an ephemeral
+ @tech{transient array} respectively, @racket[#f] otherwise.}
 
 @deftogether[(@defproc[(make-parray [n exact-nonnegative-integer?] [v any/c])
                        parray?]
               @defproc[(make-earray [n exact-nonnegative-integer?] [v any/c])
                        earray?])]{
- An array of @racket[n] copies of @racket[v].  @math{O(n)}.}
+ An array of @racket[n] copies of @racket[v].  @math{O(N)}.}
 
 @deftogether[(@defproc[(parray-length [a parray?]) exact-nonnegative-integer?]
               @defproc[(earray-length [a earray?]) exact-nonnegative-integer?]
@@ -571,14 +662,14 @@ otherwise it is copied, and the copy becomes uniquely owned.
                                    [i exact-nonnegative-integer?]) any/c]
               @defproc[(earray-ref [a earray?]
                                    [i exact-nonnegative-integer?]) any/c])]{
- Length is @math{O(1)}; indexing is @math{O(log_K n)}.}
+ Length is @math{O(1)}; indexing is @math{O(log_K N)}.}
 
 @deftogether[(@defproc[(parray-set [a parray?] [i exact-nonnegative-integer?]
                                    [v any/c]) parray?]
               @defproc[(earray-set! [a earray?] [i exact-nonnegative-integer?]
                                     [v any/c]) void?])]{
- Update.  @math{O(K log_K n)} in the worst case.  For an ephemeral array the
- cost falls to @math{O(log_K n)} once the path is uniquely owned, so repeated
+ Update.  @math{O(K log_K N)} in the worst case.  For an ephemeral array the
+ cost falls to @math{O(log_K N)} once the path is uniquely owned, so repeated
  writes at the same or nearby indices are cheap.}
 
 @deftogether[(@defproc[(earray-snapshot [a earray?]) parray?]
@@ -591,7 +682,7 @@ otherwise it is copied, and the copy becomes uniquely owned.
               @defproc[(earray->list [a earray?]) list?]
               @defproc[(vector->parray [v vector?]) parray?]
               @defproc[(vector->earray [v vector?]) earray?])]{
- Conversions, all @math{O(n)}.}
+ Conversions, all @math{O(N)}.}
 
 @section{Configuration}
 
@@ -631,7 +722,7 @@ otherwise it is copied, and the copy becomes uniquely owned.
  Check the structural invariants of a sequence and return it, raising an
  exception describing the first violation found.  This is the runtime
  validation function of Appendix A; the test suite calls it after every
- operation.  It costs @math{O(n)} and is meant for testing, not production
+ operation.  It costs @math{O(N)} and is meant for testing, not production
  use.}
 
 @section{Implementation notes}
@@ -647,7 +738,7 @@ the same operations against the reference implementation.
 
 An ephemeral sequence does not allocate its front and back chunks until the
 first push to that side.  Figure 16 gives the cost of creating one as
-@math{O(n + K)}, the @math{K} being those two arrays; deferring them makes
+@math{O(N + K)}, the @math{K} being those two arrays; deferring them makes
 creation @math{O(1)} without making anything else slower, since the first push
 allocates exactly the chunk it needs.  It is worth having when a program makes
 many short-lived sequences -- though for that use a growable vector is still
@@ -708,9 +799,11 @@ these.
        back chunks, where the OCaml library's does.}
 
  @item{@racket[eseq-snapshot] folds the two inner chunks into the middle
-       sequence, as the OCaml library does, so it costs @math{O(K log_K n)} in
+       sequence, as the OCaml library does, so it costs @math{O(K log_K N)} in
        the worst case rather than the @math{O(1)} of Figure 16.}
 
  @item{Like the paper's implementation, monotonic in-place updates make the
        persistent flavour unsafe to share across threads without
        synchronization.}]
+
+@close-eval[the-eval]
