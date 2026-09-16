@@ -194,8 +194,8 @@
          sek-delete
          sek-index-of
          sek-copy
-         sek-fill!
-         sek-blit!
+         eseq-fill!
+         eseq-copy!
          make-pseq
          build-pseq
          build-eseq

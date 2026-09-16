@@ -160,7 +160,7 @@
   ;; fill!
   (when (> n 2)
     (define e (list->eseq xs))
-    (sek-fill! e 1 (- n 2) 'z)
+    (eseq-fill! e 'z 1 (- n 1))
     (check-eseq e)
     (check-equal? (eseq->list e)
                   (append (list (car xs)) (build-list (- n 2) (lambda (_) 'z)) (list (last xs)))))
@@ -168,7 +168,7 @@
   (when (> n 3)
     (define src (list->pseq (map (lambda (x) (list 'src x)) xs)))
     (define dst (list->eseq xs))
-    (sek-blit! src 1 dst 0 (- n 2))
+    (eseq-copy! dst 0 src 1 (- n 1))
     (check-eseq dst)
     (check-equal? (eseq->list dst)
                   (append (take (drop (map (lambda (x) (list 'src x)) xs) 1) (- n 2))
@@ -176,7 +176,7 @@
   ;; blit! within one sequence
   (when (> n 4)
     (define e (list->eseq xs))
-    (sek-blit! e 0 e 2 (- n 2))
+    (eseq-copy! e 2 e 0 (- n 2))
     (check-eseq e)
     (check-equal? (eseq->list e) (append (take xs 2) (take xs (- n 2))))))
 

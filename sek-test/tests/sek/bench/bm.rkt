@@ -324,7 +324,7 @@
   (bm sek "! eseq-fill!"
       (let ([e (for/eseq ([i (in-range 0 N)]) i)])
         (for ([j (in-range 0 M)])
-          (sek-fill! e 0 N 17))))
+          (eseq-fill! e 17))))
 
   (bm sek "! pseq-set"
       (let ([l (for/pseq ([i (in-range 0 N)]) i)])

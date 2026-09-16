@@ -1058,10 +1058,10 @@
    (format "fill: overwrite k consecutive elements of ~a, ns per element" n)
    sizes
    (list
-    (cons "eseq (sek-fill!)"
+    (cons "eseq (eseq-fill!)"
           (for/list ([k (in-list sizes)])
             (define e (list->eseq (build-list n values)))
-            (measure k (lambda () (sek-fill! e 0 k 0)))))
+            (measure k (lambda () (eseq-fill! e 0 0 k)))))
     (cons "eseq (set! loop)"
           (for/list ([k (in-list sizes)])
             (define e (list->eseq (build-list n values)))

@@ -108,8 +108,8 @@
       [("etake") (eseq-take! (E (a 0)) (a 2) (side (a 1)))]
       [("edrop") (eseq-drop! (E (a 0)) (a 2) (side (a 1)))]
       [("esub") (E! (a 0) (sek-sub (E (a 1)) (a 2) (a 3)))]
-      [("efill") (sek-fill! (E (a 0)) (a 1) (a 2) (a 3))]
-      [("eblit") (sek-blit! (E (a 1)) (a 2) (E (a 0)) (a 3) (a 4))]
+      [("efill") (eseq-fill! (E (a 0)) (a 3) (a 1) (+ (a 1) (a 2)))]
+      [("eblit") (eseq-copy! (E (a 0)) (a 3) (E (a 1)) (a 2) (+ (a 2) (a 4)))]
       ;; ---- conversions
       [("esnap") (P! (a 0) (eseq-snapshot (E (a 1))))]
       [("esnapclear") (P! (a 0) (eseq-snapshot-and-clear! (E (a 1))))]

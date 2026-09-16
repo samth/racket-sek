@@ -81,8 +81,8 @@
          sek-delete
          sek-index-of
          sek-copy
-         sek-fill!
-         sek-blit!
+         eseq-fill!
+         eseq-copy!
          make-pseq
          build-pseq
          build-eseq
@@ -762,21 +762,23 @@
 ;; Overwrite `size` elements starting at `start` with x.  Uses writable
 ;; segments, so the cost is O(size + K.log n) rather than one tree descent
 ;; per element.
-(define (sek-fill! e start size x)
+(define (eseq-fill! e x [start 0] [end #f])
   (unless (eseq? e)
-    (raise-argument-error 'sek-fill! "eseq?" e))
+    (raise-argument-error 'eseq-fill! "eseq?" e))
   (define n (eseq-length e))
+  (define stop (or end n))
   (unless (and (exact-nonnegative-integer? start)
-               (exact-nonnegative-integer? size)
-               (<= (+ start size) n))
-    (raise-arguments-error 'sek-fill!
+               (exact-nonnegative-integer? stop)
+               (<= start stop n))
+    (raise-arguments-error 'eseq-fill!
                            "range outside the sequence"
                            "start"
                            start
-                           "size"
-                           size
+                           "end"
+                           stop
                            "length"
                            n))
+  (define size (- stop start))
   (unless (eqv? size 0)
     (define it (sek-iterator-at-sentinel e 'front))
     (sek-iter-reach! it start)
@@ -789,24 +791,27 @@
         (sek-iter-jump! it 'forward k)
         (loop (- remaining k))))))
 
-;; Copy `size` elements from src starting at src-start into dst at dst-start.
-(define (sek-blit! src src-start dst dst-start size)
+;; Shaped like `vector-copy!`: the destination and its start, then the source
+;; and the range of it to take.
+(define (eseq-copy! dst dst-start src [src-start 0] [src-end #f])
   (unless (eseq? dst)
-    (raise-argument-error 'sek-blit! "eseq?" dst))
-  (check-sek 'sek-blit! src)
+    (raise-argument-error 'eseq-copy! "eseq?" dst))
+  (check-sek 'eseq-copy! src)
+  (define src-stop (or src-end (sek-length src)))
   (unless (and (exact-nonnegative-integer? src-start)
                (exact-nonnegative-integer? dst-start)
-               (exact-nonnegative-integer? size)
-               (<= (+ src-start size) (sek-length src))
-               (<= (+ dst-start size) (eseq-length dst)))
-    (raise-arguments-error 'sek-blit!
+               (exact-nonnegative-integer? src-stop)
+               (<= src-start src-stop (sek-length src))
+               (<= (+ dst-start (- src-stop src-start)) (eseq-length dst)))
+    (raise-arguments-error 'eseq-copy!
                            "range outside a sequence"
-                           "src-start"
-                           src-start
                            "dst-start"
                            dst-start
-                           "size"
-                           size))
+                           "src-start"
+                           src-start
+                           "src-end"
+                           src-stop))
+  (define size (- src-stop src-start))
   (unless (eqv? size 0)
     ;; take a snapshot when the two sequences might be the same, so that
     ;; overlapping ranges behave as if the source were read first

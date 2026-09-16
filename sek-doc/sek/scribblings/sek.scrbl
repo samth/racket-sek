@@ -404,6 +404,40 @@ copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
  @racket[in-eseq] below for
  iterating in a @racket[for] clause.}
 
+@deftogether[(
+@defproc[(eseq-fill! [e eseq?] [v any/c]
+                     [start exact-nonnegative-integer? 0]
+                     [end exact-nonnegative-integer? (eseq-length e)]) void?]
+@defproc[(eseq-copy! [dst eseq?] [dst-start exact-nonnegative-integer?]
+                     [src sek?]
+                     [src-start exact-nonnegative-integer? 0]
+                     [src-end exact-nonnegative-integer? (sek-length src)]) void?]
+)]{
+
+Change the elements of an @tech{ephemeral sequence} in place: @racket[eseq-fill!]
+sets those from @racket[start] to @racket[end] to @racket[v], and
+@racket[eseq-copy!] sets those starting at @racket[dst-start] to match the
+elements of @racket[src] from @racket[src-start] to @racket[src-end].  They
+take the same arguments in the same order as @racket[vector-fill!] and
+@racket[vector-copy!], and @racket[eseq-copy!] stands to @racket[eseq-copy] as
+@racket[vector-copy!] stands to @racket[vector-copy].
+
+@racket[src] may be of either flavor; only the destination is modified.
+@racket[eseq-copy!] handles the case where @racket[src] and @racket[dst] are
+the same sequence and the ranges overlap.
+
+Both go through writable segments, so they cost @math{O(size + K log_K N)}
+time rather than one tree descent per element.
+
+@examples[
+#:eval the-eval
+(define items (eseq 1 2 3 4 5))
+(eseq-fill! items 'x 1 3)
+items
+(eseq-copy! items 0 (pseq 'a 'b))
+items
+]}
+
 @subsection{Converting between the two flavors}
 
 @defproc[(eseq-snapshot [e eseq?]) pseq?]{
@@ -795,19 +829,6 @@ names here.
  which orders a proper prefix before the sequence that extends it.
  @racket[sek-zip] pairs elements with @racket[cons]; @racket[sek-unzip] undoes
  it.}
-
-@subsection{Bulk writes}
-
-@deftogether[(@defproc[(sek-fill! [e eseq?] [start exact-nonnegative-integer?]
-                                  [size exact-nonnegative-integer?] [v any/c]) void?]
-              @defproc[(sek-blit! [src sek?] [src-start exact-nonnegative-integer?]
-                                  [dst eseq?] [dst-start exact-nonnegative-integer?]
-                                  [size exact-nonnegative-integer?]) void?])]{
- Overwrite a range with one value, or copy a range from one sequence into
- another.  Both go through writable segments, so they cost
- @math{O(size + K log_K N)} rather than one tree descent per element.
- @racket[sek-blit!] handles the case where @racket[src] and @racket[dst] are
- the same sequence and the ranges overlap.}
 
 @subsection{Construction}
 
