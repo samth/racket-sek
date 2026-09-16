@@ -20,7 +20,9 @@ jobs:
         racket-version: ["9.2", "current"]
         racket-variant: ["CS"]
         include:
-          - racket-version: "current"
+          # BC has no `current` snapshot for setup-racket to fetch, so pin a
+          # release rather than leaving the job permanently red
+          - racket-version: "8.17"
             racket-variant: "BC"
     steps:
       - uses: actions/checkout@v5
@@ -35,7 +37,7 @@ jobs:
         run: raco pkg install --auto --batch sek-lib/ sek-test/
 
       - name: Test
-        run: raco test -x -j 2 sek-test/
+        run: raco test -e -x -j 2 sek-test/
 
   docs:
     name: "docs build"
@@ -56,7 +58,7 @@ jobs:
         run: raco pkg install --auto --batch sek-lib/ sek-doc/ sek-test/
 
       - name: Check that every export is documented
-        run: raco test -x sek-test/tests/sek/test-docs-complete.rkt
+        run: raco test -e -x sek-test/tests/sek/test-docs-complete.rkt
 
   lint:
     name: "packages are well-formed"

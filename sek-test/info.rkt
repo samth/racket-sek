@@ -9,6 +9,7 @@
 (define pkg-authors '(samth))
 
 (define build-deps '(["sek-lib" #:version "1.0"]
+                     "sek-doc"
                      "racket-index"
                      "rackunit-lib"))
 
