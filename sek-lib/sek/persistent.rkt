@@ -92,7 +92,7 @@
           (lambda (s) (pseq-first s))
           (lambda (s) (let-values ([(v rest) (pseq-pop-front s)]) rest)))
   #:property prop:serializable
-  (make-serialize-info serialize-pseq
+  (make-serialize-info (lambda (v) (vector (pseq->vector v)))
                        (cons 'deserialize-pseq
                              (module-path-index-join
                               '(submod "." deserialize)
@@ -116,11 +116,6 @@
      (print-sek "pseq" (pseq-empty? s) (lambda (f) (pseq-for-each s f)) port mode))])
 
 (define empty-pseq (wrap-rep #f))
-
-;; Reached through a procedure rather than named inside the `prop:serializable`
-;; value: that value escapes into `make-serialize-info`, and a struct accessor
-;; mentioned there becomes possibly-undefined for the whole module.
-(define (serialize-pseq s) (vector (pseq->vector s)))
 
 (module+ deserialize
   (provide deserialize-pseq)

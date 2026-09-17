@@ -91,7 +91,7 @@
   #:property prop:sequence
   (lambda (e) (in-eseq e))
   #:property prop:serializable
-  (make-serialize-info serialize-eseq
+  (make-serialize-info (lambda (v) (vector (eseq->vector v)))
                        (cons 'deserialize-eseq
                              (module-path-index-join
                               '(submod "." deserialize)
@@ -573,12 +573,6 @@
                         (cons (esq-middle e) 1)
                         (cons (esq-iback e) 0)
                         (cons (esq-back e) 0))))))
-
-;; Reached through a procedure rather than named inside the `prop:serializable`
-;; value: that value escapes into `make-serialize-info`, which the compiler
-;; cannot see through, and a struct accessor mentioned there becomes
-;; possibly-undefined for every use of it in the module.
-(define (serialize-eseq e) (vector (eseq->vector e)))
 
 (module+ deserialize
   (provide deserialize-eseq)
