@@ -14,10 +14,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `current` catches breakage from in-development Racket; the pinned
-        # release is the oldest version the packages claim to support, so it
-        # catches accidental use of anything newer.
-        racket-version: ["9.2", "current"]
+        # 9.3 is the current release, and the version the package build server
+        # installs into.  9.2 is the oldest release these packages are known to
+        # work on, so it catches accidental use of anything newer.  `current`
+        # is setup-racket's name for the latest snapshot, which catches
+        # breakage from in-development Racket before it reaches a release.
+        racket-version: ["9.2", "9.3", "current"]
         racket-variant: ["CS"]
         include:
           # BC has no `current` snapshot for setup-racket to fetch, so pin a
@@ -47,7 +49,7 @@ jobs:
 
       - uses: Bogdanp/setup-racket@v1.15
         with:
-          version: current
+          version: "9.3"
           variant: CS
           packages: ""
 
@@ -68,7 +70,7 @@ jobs:
 
       - uses: Bogdanp/setup-racket@v1.15
         with:
-          version: current
+          version: "9.3"
           variant: CS
           packages: ""
 
