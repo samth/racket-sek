@@ -102,6 +102,7 @@
   v)
 
 (define (sek-length s)
+  (check-sek 'sek-length s)
   (if (pseq? s)
       (pseq-length s)
       (eseq-length s)))
@@ -111,6 +112,7 @@
   (eqv? 0 (sek-length s)))
 
 (define (sek-ref s i)
+  (check-sek 'sek-ref s)
   (if (pseq? s)
       (pseq-ref s i)
       (eseq-ref s i)))
@@ -121,6 +123,7 @@
       (pseq-first s)
       (eseq-first s)))
 (define (sek-last s)
+  (check-sek 'sek-last s)
   (if (pseq? s)
       (pseq-last s)
       (eseq-last s)))
@@ -545,6 +548,8 @@
   (build-from s (lambda (emit) (sek-for-each/index s (lambda (i x) (emit (proc i x)))))))
 
 (define (sek-map2 s1 s2 proc)
+  (check-sek 'sek-map2 s1)
+  (check-sek 'sek-map2 s2)
   (build-from s1 (lambda (emit) (sek-for-each2 s1 s2 (lambda (x y) (emit (proc x y)))))))
 
 (define (sek-filter s pred)
@@ -567,6 +572,8 @@
   (build-from s (lambda (emit) (sek-for-each s emit 'backward))))
 
 (define (sek-zip s1 s2)
+  (check-sek 'sek-zip s1)
+  (check-sek 'sek-zip s2)
   (sek-map2 s1 s2 cons))
 
 (define (sek-unzip s)

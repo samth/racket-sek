@@ -213,6 +213,7 @@
                            (chunk-weight (esq-back e))))))
 
 (define (eseq-empty? e)
+  (check-eseq 'eseq-empty? e)
   (eqv? 0 (eseq-length e)))
 
 (define (eseq-clear! e)
@@ -358,6 +359,7 @@
                          "index" i "length" (eseq-length e)))
 
 (define (eseq-ref e i)
+  (check-eseq 'eseq-ref e)
   (unless (and (fixnum? i) (unsafe-fx>= i 0))
     (bad-index 'eseq-ref e i))
   (define-values (where j) (eseq-locate e i 'eseq-ref))
@@ -369,6 +371,7 @@
     [else (chunk-ref (esq-back e) j)]))
 
 (define (eseq-set! e i x)
+  (check-eseq 'eseq-set! e)
   (unless (and (fixnum? i) (unsafe-fx>= i 0))
     (bad-index 'eseq-set! e i))
   ;; a set may replace a shared chunk with a private copy, so any iterator
@@ -399,11 +402,13 @@
     [else (set-esq-back! e (chunk-own (esq-back e) id))]))
 
 (define (eseq-first e)
+  (check-eseq 'eseq-first e)
   (when (eseq-empty? e)
     (raise-arguments-error 'eseq-first "sequence is empty"))
   (eseq-ref e 0))
 
 (define (eseq-last e)
+  (check-eseq 'eseq-last e)
   (when (eseq-empty? e)
     (raise-arguments-error 'eseq-last "sequence is empty"))
   (eseq-ref e (sub1 (eseq-length e))))
@@ -486,6 +491,8 @@
 
 ;; Move the contents of e2 into e1 and empty e2.
 (define (eseq-assign! e1 e2)
+  (check-eseq 'eseq-assign! e1)
+  (check-eseq 'eseq-assign! e2)
   (unless (eq? e1 e2)
     (eseq-become! e1 (eseq-snapshot e2))
     (eseq-clear! e2))
@@ -496,6 +503,9 @@
 ;; rather than sharing it is what keeps later updates to either sequence out
 ;; of the copy-on-write path.  A persistent `other` is of course untouched.
 (define (eseq-append! e other [side 'back])
+  (check-eseq 'eseq-append! e)
+  (unless (or (esq? other) (pseq? other))
+    (raise-argument-error 'eseq-append! "(or/c eseq? pseq?)" other))
   (when (eq? e other)
     (raise-arguments-error 'eseq-append! "the two sequences must be distinct"))
   (define o (if (esq? other) (eseq-snapshot-and-clear! other) other))
@@ -504,6 +514,8 @@
 
 ;; The concatenation of e1 and e2, as a new sequence; both are emptied.
 (define (eseq-concat! e1 e2)
+  (check-eseq 'eseq-concat! e1)
+  (check-eseq 'eseq-concat! e2)
   (when (eq? e1 e2)
     (raise-arguments-error 'eseq-concat! "the two sequences must be distinct"))
   (pseq-edit (pseq-append (eseq-snapshot-and-clear! e1)
@@ -529,6 +541,7 @@
 ;; Only one side is kept, so only one side is built -- pseq-take and pseq-drop
 ;; are the specialized splits.
 (define (eseq-take! e i [side 'front])
+  (check-eseq 'eseq-take! e)
   (define s (eseq-snapshot-and-clear! e))
   (eseq-become! e (if (eq? side 'front) (pseq-take s i) (pseq-drop s i))))
 

@@ -231,13 +231,15 @@
          [else (values (bld-middle b) (make-chunk k no-owner))]))
      (wrap-rep (normalize (make-level front mid back)))]))
 
-(define (pseq-length s)
-  (check-pseq 'pseq-length s)
-  (define r (psq-rep s))
+(define (rep-length r)
   (cond
     [(not r) 0]
     [(vector? r) (vector-length r)]
     [else (lvl-weight r)]))
+
+(define (pseq-length s)
+  (check-pseq 'pseq-length s)
+  (rep-length (psq-rep s)))
 
 ;; ------------------------------------------------------- representation swaps
 
@@ -312,6 +314,7 @@
           [else (pt-push-back r x 1 0 no-owner)])))
 
 (define (pseq-pop-front s)
+  (check-pseq 'pseq-pop-front s)
   (define r (psq-rep s))
   (cond
     [(not r) (raise-arguments-error 'pseq-pop-front "sequence is empty")]
@@ -325,6 +328,7 @@
      (values x (wrap-rep (normalize t)))]))
 
 (define (pseq-pop-back s)
+  (check-pseq 'pseq-pop-back s)
   (define r (psq-rep s))
   (cond
     [(not r) (raise-arguments-error 'pseq-pop-back "sequence is empty")]
@@ -339,6 +343,7 @@
      (values x (wrap-rep (normalize t)))]))
 
 (define (pseq-first s)
+  (check-pseq 'pseq-first s)
   (define r (psq-rep s))
   (cond
     [(not r) (raise-arguments-error 'pseq-first "sequence is empty")]
@@ -346,6 +351,7 @@
     [else (pt-ref r 0 0)]))
 
 (define (pseq-last s)
+  (check-pseq 'pseq-last s)
   (define r (psq-rep s))
   (cond
     [(not r) (raise-arguments-error 'pseq-last "sequence is empty")]
@@ -358,7 +364,8 @@
 ;; in `pseq-ref`: the operations below index with `unsafe-fx`, and a length is
 ;; a fixnum, so a bignum index is out of range by definition.
 (define (check-index who s i)
-  (define n (pseq-length s))
+  (check-pseq who s)
+  (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i n))
     (raise-arguments-error who "index out of range" "index" i "length" n)))
 
@@ -398,6 +405,8 @@
 ;; ------------------------------------------------------- concat and split
 
 (define (pseq-append s1 s2)
+  (check-pseq 'pseq-append s1)
+  (check-pseq 'pseq-append s2)
   (define r1 (psq-rep s1))
   (define r2 (psq-rep s2))
   (cond
@@ -409,7 +418,8 @@
 
 ;; Split into the first i elements and the rest.
 (define (pseq-split s i)
-  (define n (pseq-length s))
+  (check-pseq 'pseq-split s)
+  (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
     (raise-arguments-error 'pseq-split "index out of range"
                            "index" i "length" n))
@@ -426,7 +436,8 @@
 ;; specializes `three_way_split` the same way, into `take`, `drop` and `get`
 ;; (ShareableSequence.ml); `get` is `pseq-ref` here and was already separate.
 (define (pseq-take s i)
-  (define n (pseq-length s))
+  (check-pseq 'pseq-take s)
+  (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
     (raise-arguments-error 'pseq-take "index out of range"
                            "index" i "length" n))
@@ -438,7 +449,8 @@
     [else (wrap-rep (normalize (pt-take r i no-owner)))]))
 
 (define (pseq-drop s i)
-  (define n (pseq-length s))
+  (check-pseq 'pseq-drop s)
+  (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
     (raise-arguments-error 'pseq-drop "index out of range"
                            "index" i "length" n))

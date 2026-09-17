@@ -69,6 +69,7 @@
   (eqv? 0 (seg-length s)))
 
 (define (segment-ref s i)
+  (check-segment 'segment-ref s)
   (unless (and (exact-nonnegative-integer? i) (< i (seg-length s)))
     (raise-arguments-error 'segment-ref "index out of range" "index" i "length" (seg-length s)))
   (vector-ref (seg-vector s) (+ (seg-start s) i)))
@@ -76,6 +77,7 @@
 ;; Writing through a segment writes into the sequence itself.  Only a segment
 ;; obtained from a writable iterator on an ephemeral sequence may be written.
 (define (segment-set! s i x)
+  (check-segment 'segment-set! s)
   (unless (and (exact-nonnegative-integer? i) (< i (seg-length s)))
     (raise-arguments-error 'segment-set! "index out of range" "index" i "length" (seg-length s)))
   (vector-set! (seg-vector s) (+ (seg-start s) i) x))

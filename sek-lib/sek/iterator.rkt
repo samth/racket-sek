@@ -103,6 +103,8 @@
 ;; value, it reads whatever happens to be at that offset.
 (define-syntax-rule (check-iter who v)
   (unless (siter? v) (raise-argument-error who "sek-iterator?" v)))
+(define-syntax-rule (check-sek who v)
+  (unless (or (pseq? v) (eseq? v)) (raise-argument-error who "sek?" v)))
 
 (define empty-support (vector))
 
@@ -509,24 +511,34 @@
 ;; An iterator positioned on the first element (dir 'forward) or the last
 ;; element (dir 'backward).  On an empty sequence it starts out finished.
 (define (sek-iterator s [dir 'forward])
+  (check-sek 'sek-iterator s)
   (unless (memq dir '(forward backward))
     (raise-argument-error 'sek-iterator "(or/c 'forward 'backward)" dir))
   (define it (sek-iterator-at-sentinel s (if (eq? dir 'forward) 'front 'back)))
   (cur-move! (siter-cursor it) dir)
   it)
 
-(define (sek-iter-valid? it)
-  (check-iter 'sek-iter-valid? it)
+;; The validity test without the argument check, for the callers below that
+;; have just made it themselves.
+(define (iter-valid? it)
   (or (eq? (siter-kind it) 'p) (eseq-iterator-valid? (siter-seq it) (siter-birth it))))
 
+(define (sek-iter-valid? it)
+  (check-iter 'sek-iter-valid? it)
+  (iter-valid? it))
+
+;; Checks both things an iterator argument can be wrong about, and blames the
+;; operation the caller actually named rather than the test it reached.
 (define (check-valid! it who)
-  (unless (sek-iter-valid? it)
+  (check-iter who it)
+  (unless (iter-valid? it)
     (raise-arguments-error who "iterator was invalidated by an update to its sequence")))
 
 (define (sek-iter-sequence it)
   (check-iter 'sek-iter-sequence it)
   (siter-seq it))
 (define (sek-iter-length it)
+  (check-iter 'sek-iter-length it)
   (cur-wt (siter-cursor it)))
 
 (define (sek-iter-index it)
@@ -544,6 +556,7 @@
 ;; Put the iterator back where a freshly created one would be.  For an
 ;; ephemeral sequence this also makes an invalidated iterator usable again.
 (define (sek-iter-reset! it [dir 'forward])
+  (check-iter 'sek-iter-reset! it)
   (when (eq? (siter-kind it) 'e)
     (set-siter-birth! it (eseq-iterator-born! (siter-seq it))))
   (reload! it)
