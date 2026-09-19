@@ -23,13 +23,13 @@ This library provides efficient @tech{persistent sequences} and @tech{ephemeral
 sequences}, together with cheap conversions between the two.  Both support
 random access, pushing and popping at either end, concatenation and splitting.
 
-The conversions are what make the pair worth having together.  Holding a
-persistent sequence, a program can @racket[pseq-edit] it to obtain an ephemeral
-one, update that in place as often as it likes, and @racket[eseq-snapshot] it
-to get a persistent sequence back.  It pays neither for copying the sequence
-nor for persistent update while the sequence is being edited.  That round trip
-is what the paper calls @deftech{transience}: the two are one representation,
-and a conversion changes which of them owns it rather than copying it.
+Those conversions are why the two flavors belong in one library.  A program
+holding a persistent sequence can @racket[pseq-edit] it into an ephemeral one,
+update that in place as often as it likes, and @racket[eseq-snapshot] it back.
+While it edits, the program neither copies the sequence nor pays for
+persistent update.  The paper calls that round trip @deftech{transience}: both
+flavors share one representation, and converting hands ownership from one to
+the other instead of copying.
 
 @section{Overview}
 
@@ -51,13 +51,13 @@ and a conversion changes which of them owns it rather than copying it.
 
 @section{Sequences}
 
-A sequence is stored as a tree whose nodes hold arrays of
-up to @math{K} items, called @italic{chunks}.  Each level of the tree
-consists of a front chunk, a back chunk, and a middle sequence, which is itself
-a tree of the same shape one level down, holding chunks of the current level's
-items.  Because the two ends of the sequence live at the root, pushing and
-popping there is cheap; because the tree is balanced by a density invariant on
-the middle sequences, indexing, splitting and concatenation are logarithmic.
+A sequence is a tree whose nodes hold arrays of up to @math{K} items, called
+@italic{chunks}.  Each level holds a front chunk, a back chunk, and a middle
+sequence, itself a tree of the same shape one level down whose chunks hold the
+current level's items.  Because the two ends live at the root, pushing and
+popping there is cheap; because a density invariant on the middle sequences
+keeps the tree balanced, indexing, splitting and concatenation are
+logarithmic.
 
 Throughout, @math{N} is the length of the sequence, @math{K} the chunk
 capacity, and @math{T} the threshold below which a persistent sequence is held
@@ -80,7 +80,7 @@ The two differ at the ends and in the conversions. Pushing or popping at
 either end of an @tech{ephemeral sequence} is @math{O(1)} amortized, where the
 corresponding treelist operation takes @math{O(log N)} time.
 
-Conversion is the larger difference. @racket[treelist-copy] and
+The conversions differ more sharply. @racket[treelist-copy] and
 @racket[mutable-treelist-snapshot] each take @math{O(N)} time, so a program
 that moves between the immutable and mutable forms pays for the whole sequence
 at every switch. Here @racket[pseq-edit] takes @math{O(1)} time and
@@ -94,8 +94,8 @@ loop instead of one cursor step per element.
 
 Treelists are RRB trees @cite["Stucki15"], which store one element per leaf
 slot. The sequences here store chunks of up to @math{K} elements and keep
-track of who owns each chunk. That is what makes the ends and the conversions
-cheap, and it is also where the @math{K} in the bounds above comes from.
+track of who owns each chunk. Chunks and ownership together make the ends and
+the conversions cheap, and they put the @math{K} into the bounds above.
 
 @subsection{Persistent sequences}
 
@@ -147,12 +147,11 @@ Returns the number of elements in @racket[s].  This operation takes
 @defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?]
 @defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
 )]{
- Return a @tech{persistent sequence} with @racket[v] added at the end, in the
- case of @racket[pseq-add], or at the front, in the case of
- @racket[pseq-cons] -- the same division of labor as @racket[treelist-add] and
- @racket[treelist-cons].  @racket[pseq-push-back] and
- @racket[pseq-push-front] are aliases for them, under the names the paper and
- the authors' OCaml library use.
+ Return a @tech{persistent sequence} with @racket[v] added at the end
+ (@racket[pseq-add]) or at the front (@racket[pseq-cons]), the same division of
+ labor as @racket[treelist-add] and @racket[treelist-cons].
+ @racket[pseq-push-back] and @racket[pseq-push-front] are aliases, under the
+ names the paper and the authors' OCaml library use.
 
  These take @math{O(K log_K N)} time in the worst case, and @math{O(1)} time
  when the affected chunk admits a monotonic in-place update.
@@ -242,7 +241,7 @@ Returns the number of elements in @racket[s].  This operation takes
 
 @subsection{Ephemeral sequences}
 
-An @deftech{ephemeral sequence} is updated in place.  Where an operation on a
+An @deftech{ephemeral sequence} changes in place.  Where an operation on a
 @tech{persistent sequence} returns a new sequence, the corresponding operation
 here modifies the sequence it is given and returns @racket[void].
 
@@ -251,7 +250,7 @@ also @racket[in-eseq].  It is @racket[serializable?], and two ephemeral
 sequences are @racket[equal?] when their elements are.  It is not a
 @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream}, for the
 same reason a @racket[mutable-treelist] is not: a stream's rest is a value,
-and this one is modified in place.
+and this one changes in place.
 
 @defproc[(eseq? [v any/c]) boolean?]{
 
@@ -354,16 +353,16 @@ Shorthands for using @racket[eseq-ref] to access the first or last element of
 an @tech{ephemeral sequence}.}
 
 The five operations that follow rearrange ephemeral sequences in place, and
-they @italic{consume} the sequences they are given: each one is emptied.  That
-is what the reference library does, and for a good reason -- handing over a
-sequence's representation instead of sharing it keeps later updates out of the
+they @italic{consume} the sequences they are given, leaving each empty.  The
+reference library does the same, for a good reason: handing over a sequence's
+representation instead of sharing it keeps later updates out of the
 copy-on-write path.  Use @racket[sek-take], @racket[sek-drop] and
 @racket[sek-sub] when the input must survive.
 
 @defproc[(eseq-append! [e eseq?] [other (or/c eseq? pseq?)]
                        [side (or/c 'front 'back) 'back]) void?]{
  Appends the contents of @racket[other] to @racket[e], in place, at the given
- end.  An ephemeral @racket[other] is emptied; a persistent one is of course
+ end.  This empties an ephemeral @racket[other] and leaves a persistent one
  untouched.  The two sequences must be distinct.}
 
 @defproc[(eseq-concat! [e1 eseq?] [e2 eseq?]) eseq?]{
@@ -504,14 +503,14 @@ after.  An iterator that sits on a sentinel is @racket[sek-iter-finished?].
 Moving one step costs @math{O(1)} as long as the iterator stays inside one
 run of contiguous storage, which is the common case; crossing a chunk or a
 level of the tree costs more, but happens only once every @math{K} elements.
-This is what makes a full traversal @math{O(N)} where repeated
-@racket[pseq-ref] would be @math{O(N log_K N)}.
+A full traversal therefore costs @math{O(N)}, where repeated
+@racket[pseq-ref] would cost @math{O(N log_K N)}.
 
-Iterating an ephemeral sequence is guarded: any update to the sequence
-invalidates every iterator on it, and using an invalidated iterator raises an
-exception instead of quietly reading stale storage.  The check can be turned
-off with @racket[sek-configure!], at which point using an invalidated iterator
-is undefined.  Iterators on persistent sequences are never invalidated.
+Iterating an ephemeral sequence is checked: any update to the sequence
+invalidates every iterator on it, and an invalidated iterator raises an
+exception rather than quietly reading stale storage. @racket[sek-configure!]
+turns the check off, after which an invalidated iterator is undefined.
+Iterators on persistent sequences are never invalidated.
 
 @defproc[(sek-iterator [s (or/c pseq? eseq?)]
                        [dir (or/c 'forward 'backward) 'forward]) sek-iter?]{
@@ -577,10 +576,10 @@ is undefined.  Iterators on persistent sequences are never invalidated.
 @subsection{Segments}
 
 A @deftech{segment} is a run of contiguous storage inside the sequence: a
-vector, a start index and a length.  An iterator can hand out the whole run it
+vector, a start index and a length. An iterator can hand out the whole run it
 is sitting on, which lets a caller process @math{K} elements with a tight
-vector loop instead of @math{K} iterator steps.  This is how
-@racket[sek-fold-left] and the rest of the derived operations are implemented.
+vector loop instead of @math{K} iterator steps. @racket[sek-fold-left] and the
+rest of the derived operations all work this way.
 
 A segment is a view into the sequence, not a copy.  It is valid only as long
 as the iterator that produced it is, and writing through one writes into the
@@ -642,22 +641,21 @@ sequence.
               @defproc[(sek-iter-writable-segment-and-jump*! [it sek-iter?]
                                                              [dir (or/c 'forward 'backward) 'forward])
                        (or/c segment? #f)])]{
- Write at the iterator's position, or obtain a segment that may be written
- through.  Both require an iterator on an ephemeral sequence, and both
+ Write at the iterator's position, or obtain a writable segment.  Both
+ require an iterator on an ephemeral sequence, and both
  invalidate every @italic{other} iterator on that sequence.
 
  The first write into a chunk that is shared with some snapshot costs
- @math{O(K log_K N)}, because the chunk has to be copied and the iterator
- rebuilt; after that, writes into the same chunk are @math{O(1)}.  A sweep
+ @math{O(K log_K N)}, because that write copies the chunk and rebuilds the
+ iterator; after that, writes into the same chunk are @math{O(1)}.  A sweep
  that writes every element therefore costs @math{O(N + K log_K N)} rather than
  one tree descent per element.}
 
 @section{Operations on either flavor}
 
 The operations in this section accept a persistent or an ephemeral sequence.
-Those that build a new sequence return the same flavor they were given, which
-is how the OCaml library's two parallel modules are collapsed into one set of
-names here.
+Those that build a new sequence return the same flavor they were given,
+collapsing the OCaml library's two parallel modules into one set of names.
 
 @deftogether[(@defproc[(sek? [v any/c]) boolean?]
               @defproc[(sek-length [s sek?]) exact-nonnegative-integer?]
@@ -672,12 +670,12 @@ names here.
 @deftogether[(@defform*[((in-sek s) (in-sek s dir))]
               @defform*[((in-pseq s) (in-pseq s dir))]
               @defform*[((in-eseq e) (in-eseq e dir))])]{
- Sequences over the elements, in @racket['forward] order by default.  Written
+ Sequences over the elements, in @racket['forward] order by default. Written
  directly in a @racket[for] clause these expand to a loop over the sequence's
  own storage, so a step is a vector reference and an increment; used as
- ordinary values they fall back to a checked iterator.  Either way, modifying
- an ephemeral sequence during the loop is detected rather than silently
- producing nonsense.}
+ ordinary values they fall back to a checked iterator. Either way, the loop
+ detects an update to an ephemeral sequence rather than silently producing
+ nonsense.}
 
 @deftogether[(@defproc[(sek-for-each [s sek?] [proc (-> any/c any)]
                                      [dir (or/c 'forward 'backward) 'forward]) void?]
@@ -802,10 +800,9 @@ names here.
 @deftogether[(@defproc[(sek-sort [s sek?] [less? (-> any/c any/c any/c)]) sek?]
               @defproc[(sek-uniq [s sek?] [same? (-> any/c any/c any/c) equal?]) sek?]
               @defproc[(sek-merge [s1 sek?] [s2 sek?] [less? (-> any/c any/c any/c)]) sek?])]{
- A stable sort, which takes @math{O(N log N)} time; removal of adjacent
- duplicates, which
- removes all duplicates from a sorted sequence; and a stable merge of two
- sorted sequences.}
+ A stable sort, which takes @math{O(N log N)} time; a pass that drops
+ adjacent duplicates, and so drops every duplicate from a sorted sequence; and
+ a stable merge of two sorted sequences.}
 
 @subsection{Two sequences at once}
 
@@ -858,25 +855,25 @@ names here.
                          [#:overwrite-empty-slots? overwrite? any/c]
                          [#:check-iterator-validity? check? any/c])
          void?]{
- Set the tunable parameters of the implementation.  Any argument that is not
- supplied is left as it is.
+ Set the tunable parameters of the implementation.  An argument you do not
+ supply keeps its current value.
 
  @racket[k0] and @racket[k1] are the chunk capacities used at the leaves and
  at internal nodes, and @racket[t] is the length below which a persistent
  sequence is represented by a plain vector.  The defaults are 128, 16
  and 32.
 
- @racket[overwrite?] controls whether a slot that becomes logically empty is
- overwritten.  Leaving it alone saves one write per pop but lets the garbage
- collector retain a value that the sequence no longer holds; overwriting is
- the default.
+ @racket[overwrite?] controls whether the library overwrites a slot that
+ becomes logically empty. Leaving it alone saves one write per pop but lets
+ the garbage collector retain a value that the sequence no longer holds;
+ overwriting is the default.
 
- @racket[check?] controls whether the use of an invalidated iterator is
- detected at runtime.  Detection costs a comparison per iterator operation and
- a sign test per update, and is on by default; with it off, using an
- invalidated iterator is undefined rather than an error.
+ @racket[check?] controls whether the library detects the use of an
+ invalidated iterator at runtime. The check costs a comparison per iterator
+ operation and a sign test per update, and is on by default; with it off,
+ using an invalidated iterator is undefined rather than an error.
 
- Call the capacity and threshold settings before building any sequences: a
+ Set the capacities and the threshold before building any sequences: a
  structure whose chunks were allocated under different settings will not
  satisfy the invariants that @racket[sek-validate-pseq] checks, and its
  density bounds no longer hold.  Small capacities are chiefly useful for
@@ -894,34 +891,35 @@ names here.
 
 @section{Implementation notes}
 
-The paths that every push, pop and indexed access goes through use
-@racketmodname[racket/unsafe/ops].  Each use rests on an invariant the
-library maintains: a chunk's backing vector is allocated here and never
-impersonated; an index into it is always reduced modulo the capacity, so it is
-in range; and heads, sizes and weights are bounded by a vector length or a
-sequence length, so they are fixnums.  The runtime validator checks the first
-two after every operation in the test suite, and the conformance harness runs
-the same operations against the reference implementation.
+Every push, pop and indexed access goes through paths that use
+@racketmodname[racket/unsafe/ops]. Each use rests on an invariant the library
+maintains: it allocates every chunk's backing vector itself and never
+impersonates one; it reduces every index into a chunk modulo the capacity, so
+the index is in range; and it bounds heads, sizes and weights by a vector
+length or a sequence length, so they are fixnums. The runtime validator checks
+the first two after every operation in the test suite, and the conformance
+harness runs the same operations against the reference implementation.
 
 An ephemeral sequence does not allocate its front and back chunks until the
-first push to that side.  Figure 16 gives the cost of creating one as
-@math{O(N + K)}, the @math{K} being those two arrays; deferring them makes
-creation @math{O(1)} without making anything else slower, since the first push
-allocates exactly the chunk it needs.  It is worth having when a program makes
-many short-lived sequences -- though for that use a growable vector is still
-the better tool, because a chunk of capacity @math{K} is a lot of storage for
-a ten-element sequence.
+first push to that side. Figure 16 gives the cost of creating one as @math{O(N
++ K)}, the @math{K} being those two arrays; deferring them makes creation
+@math{O(1)} without making anything else slower, since the first push
+allocates exactly the chunk it needs. Deferring them is worth doing when a
+program makes many short-lived sequences -- though for that use a growable
+vector is still the better tool, because a chunk of capacity @math{K} is a lot
+of storage for a ten-element sequence.
 
 @section{Differences from the paper}
 
 This library follows the paper, and where the paper is silent, the authors'
 OCaml library @hyperlink["https://gitlab.inria.fr/fpottier/sek/"]{Sek}.
 
-Agreement with the reference is checked by running both implementations on the
-same generated script and comparing the traces: the result of every operation
-and the full contents of a dozen sequences after each one.  The harness, the
-operation-by-operation mapping between the two APIs, and what has been checked
-are all in the @tt{conformance} directory.  The remaining differences are
+A conformance harness checks agreement with the reference: it runs both
+implementations on the same generated script and compares the traces -- the
+result of every operation, and the full contents of a dozen sequences after
+each one.  The @tt{conformance} directory holds that harness, the
+operation-by-operation mapping between the two APIs, and a record of what it
+has checked.  The remaining differences are
 these.
 
 @itemlist[
@@ -946,26 +944,28 @@ these.
        the reference can sometimes continue from the middle-sequence cursor.}
 
  @item{@racket[pseq-edit] and @racket[eseq-snapshot] share the front and back
-       chunks instead of copying them, where the OCaml library's copy.  A
+       chunks instead of copying them, where the OCaml library's versions
+       copy.  A
        chunk is copied on the first write to it, if there is one, which makes
        @racket[pseq-edit] take @math{O(1)} time rather than @math{O(K)}.  This
        is observationally identical and measurably better: a loop that
        snapshots after every push runs ten times faster, because the next push
        usually extends a chunk monotonically and copies nothing.}
 
- @item{A @racket[#:short-threshold] of 0 is supported here; the reference
+ @item{This library supports a @racket[#:short-threshold] of 0; the reference
        rejects it, because it still builds a compact node for a two-element
        sequence and its own validator then refuses that node.}
 
- @item{The paper's @tt{One} and @tt{Short} constructors for short persistent
-       sequences are unified into a single vector representation, and appear
-       only at the top of the structure, as in the authors' implementation.}
+ @item{This library unifies the paper's @tt{One} and @tt{Short} constructors
+       for short persistent sequences into a single vector representation,
+       which appears only at the top of the structure, as in the authors'
+       implementation.}
 
  @item{@racket[eseq-snapshot] folds the two inner chunks into the middle
        sequence, as the OCaml library does, so it costs @math{O(K log_K N)} in
        the worst case rather than the @math{O(1)} of Figure 16.}
 
- @item{Like the paper's implementation, monotonic in-place updates make the
+ @item{As in the paper's implementation, monotonic in-place updates make the
        persistent flavor unsafe to share across threads without
        synchronization.}]
 
