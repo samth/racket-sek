@@ -884,10 +884,9 @@ collapsing the OCaml library's two parallel modules into one set of names.
 @deftogether[(@defproc[(sek-validate-pseq [s pseq?]) pseq?]
               @defproc[(sek-validate-eseq [e eseq?]) eseq?])]{
  Check the structural invariants of a sequence and return it, raising an
- exception describing the first violation found.  This is the runtime
- validation function of Appendix A; the test suite calls it after every
- operation.  It costs @math{O(N)} and is meant for testing, not production
- use.}
+ exception describing the first violation found.  This is the paper's runtime
+ validation function; the test suite calls it after every operation.  It costs
+ @math{O(N)} and is meant for testing, not production use.}
 
 @section{Implementation notes}
 
@@ -901,7 +900,7 @@ the first two after every operation in the test suite, and the conformance
 harness runs the same operations against the reference implementation.
 
 An ephemeral sequence does not allocate its front and back chunks until the
-first push to that side. Figure 16 gives the cost of creating one as @math{O(N
+first push to that side. The paper gives the cost of creating one as @math{O(N
 + K)}, the @math{K} being those two arrays; deferring them makes creation
 @math{O(1)} without making anything else slower, since the first push
 allocates exactly the chunk it needs. Deferring them is worth doing when a
@@ -963,7 +962,7 @@ these.
 
  @item{@racket[eseq-snapshot] folds the two inner chunks into the middle
        sequence, as the OCaml library does, so it costs @math{O(K log_K N)} in
-       the worst case rather than the @math{O(1)} of Figure 16.}
+       the worst case rather than the @math{O(1)} the paper gives.}
 
  @item{As in the paper's implementation, monotonic in-place updates make the
        persistent flavor unsafe to share across threads without
