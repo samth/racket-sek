@@ -13,11 +13,22 @@ racket -y main.rkt stack     # a single scenario
 
 racket -y bm.rkt             # the benchmark from racket/data PR #34, plus sek
 racket -y nqueens.rkt        # the classic Scheme nqueens benchmark
+racket -y scaling.rkt        # one operation at four sizes, with a fitted slope
+racket -y scaling.rkt ref checkpoint --quick
 
 ./run.sh --all --json results.json     # record every table
 racket -y nqueens.rkt --json results.json    # append
 racket -y report.rkt results.json report.html    # draw it
 ```
+
+`scaling.rkt` runs one operation at 1k, 10k, 100k and 1M elements and fits a
+slope through the results on log-log axes, where the slope is the asymptotic
+class: about 0 for constant time, 0.2 for log n at the bases these structures
+use, 1 for an operation that touches every element. It is the one table that
+distinguishes a structure which is merely slow from one that will stop being
+usable as the sequence grows. The `checkpoint` row is the sharpest: taking a
+copy you could go back to is constant for every persistent structure and
+linear for every mutable one.
 
 `main.rkt` follows the benchmarks that accompany the OCaml library — stack,
 reach, iteration, traversal, construction, fill, split — and Figures 17 and 18
@@ -93,6 +104,21 @@ mutable-treelist                        4.44       36.93         n/a
 gvector                                 3.91       68.76         n/a
 array                                   3.01       49.16         n/a
 list                                   14.54       352.7         n/a
+
+undo: edit with an undo history: checkpoint often, occasionally restore
+                                    1k lines   20k lines  400k lines
+eseq                                    0.90        1.18        1.43
+pseq                                    0.69        1.00        1.36
+treelist                                1.97        3.33       20.70
+gvector                                22.55       410.8         n/a
+array                                   3.37       48.28         n/a
+list                                    6.69       143.7         n/a
+
+The editor workload above and this one run the same kind of script; the
+difference is the checkpoints. A persistent sequence checkpoints by keeping
+the value it already holds, so the column barely moves with the size of the
+document. A mutable one copies, and at 20k lines that is most of what gvector
+is doing.
 
 queue: feed a work queue in bursts, drain it, snapshot the backlog
                                  2000 rounds

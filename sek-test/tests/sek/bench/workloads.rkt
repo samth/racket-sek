@@ -153,6 +153,54 @@
 ;; occasionally handed to a reader as an immutable snapshot.  The size swings
 ;; by orders of magnitude over the run, which is the point: a structure that is
 ;; good at one size has to be good across the range.
+;; -------------------------------------------------------------------------
+;; Editing with an undo history.  Every so often the session checkpoints, and
+;; occasionally it goes back to the last checkpoint.  A persistent sequence
+;; checkpoints by keeping the value it already holds; a mutable one copies.
+;; That is the whole point of the workload: the editing is ordinary, and the
+;; checkpoints are what separate the two families.
+(define-workload undo
+  "edit with an undo history: checkpoint often, occasionally restore"
+  (len split append push-back drop ref)
+  (lambda (i n edits)
+    (define script
+      (make-script edits 20260921
+                   (lambda () (vector (random 1000) (random 10)))))
+    (lambda ()
+      (define doc0 ((impl-construct i) n (lambda (k) k)))
+      (let loop ([doc doc0]
+                 [saved ((impl-fresh i) doc0)]
+                 [k 0]
+                 [checksum 0])
+        (cond
+          [(fx= k (vector-length script)) checksum]
+          [else
+           (define e (vector-ref script k))
+           (define len ((impl-len i) doc))
+           (define at (fxmodulo (fx* (vector-ref e 0) 977) (fxmax 1 len)))
+           (case (vector-ref e 1)
+             ;; type a line
+             [(0 1 2 3)
+              (define-values (a b) ((impl-split i) doc at))
+              (loop ((impl-append i) ((impl-push-back i) a k) b) saved (add1 k) checksum)]
+             ;; delete a line
+             [(4 5)
+              (cond
+                [(fx< len 2) (loop doc saved (add1 k) checksum)]
+                [else
+                 (define-values (a b) ((impl-split i) doc at))
+                 (loop ((impl-append i) a ((impl-drop i) b 1)) saved (add1 k) checksum)])]
+             ;; read one, so the edits cannot all be dead code
+             [(6 7)
+              (loop doc saved (add1 k) (fxand (fx+ checksum ((impl-ref i) doc at)) #xffffff))]
+             ;; checkpoint: free for a persistent sequence, a copy for a
+             ;; mutable one, which is the asymmetry this workload exists for
+             [(8)
+              (loop doc ((impl-fresh i) doc) (add1 k) checksum)]
+             ;; undo: go back to the last checkpoint and keep editing from it
+             [else
+              (loop ((impl-fresh i) saved) saved (add1 k) checksum)])])))))
+
 (define-workload queue
   "feed a work queue in bursts, drain it, snapshot the backlog"
   (push-back pop-front len)
@@ -321,6 +369,11 @@
                                  '(("1k lines" 1000 400) ("20k lines" 20000 400))
                                  '(("1k lines" 1000 2000) ("20k lines" 20000 2000)
                                    ("400k lines" 400000 2000))))]
+      [(undo)
+       (run-workload 'undo (if quick?
+                               '(("1k lines" 1000 400) ("20k lines" 20000 400))
+                               '(("1k lines" 1000 2000) ("20k lines" 20000 2000)
+                                 ("400k lines" 400000 1000))))]
       [(queue)
        (run-workload 'queue (if quick?
                                 '(("200 rounds" 0 200))
