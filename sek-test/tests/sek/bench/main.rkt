@@ -215,7 +215,9 @@
       #:ref gvector-ref
       #:set (lambda (s i v) (gvector-set! s i v) s)
       #:len gvector-count
-      #:append (lambda (a b) (gvector-append! a b) a)
+      ;; data/gvector has no append; adding each element is what a caller
+      ;; would write, and is linear in the second sequence.
+      #:append (lambda (a b) (for ([x (in-gvector b)]) (gvector-add! a x)) a)
       #:split (lambda (s i)
                 (define v (gvector->vector s))
                 (values (vector->gvector (vector-copy v 0 i))
@@ -226,7 +228,7 @@
       #:filter (lambda (g p) (for/gvector ([x (in-gvector g)] #:when (p x)) x))
       #:map (lambda (g f) (for/gvector ([x (in-gvector g)]) (f x)))
       #:fresh (lambda (s) (vector->gvector (gvector->vector s)))
-      #:linear '(push-front pop-front split)))
+      #:linear '(push-front pop-front split append)))
 
 ;; A cons list does have a back and does have an index; both are Theta(n) away,
 ;; which is a number worth printing rather than a dash.  `list-set` is
