@@ -471,10 +471,11 @@ items
  when the old contents are not needed: later updates to @racket[e] cost no more
  than they would have.}
 
-@defproc[(eseq-copy [e eseq?] [#:mode mode (or/c 'share 'copy) 'share]) eseq?]{
- An independent ephemeral copy of @racket[e].  @racket['share] mode costs
- @math{O(1)} and makes the next update to either sequence more expensive;
- @racket['copy] mode costs @math{O(N)} up front and leaves no later cost.}
+@defproc[(eseq-copy [e eseq?] [#:mode mode (or/c 'share 'copy) 'copy]) eseq?]{
+ An independent ephemeral copy of @racket[e].  @racket['copy] mode, the
+ default, costs @math{O(N)} and leaves no later cost.  @racket['share] mode
+ costs @math{O(1)} but makes later updates to either sequence more expensive,
+ @racket[e] included.}
 
 @section{Iterators}
 
@@ -722,11 +723,12 @@ collapsing the OCaml library's two parallel modules into one set of names.
                                 [size exact-nonnegative-integer?]) sek?]
               @defproc[(sek-take [s sek?] [n exact-nonnegative-integer?]) sek?]
               @defproc[(sek-drop [s sek?] [n exact-nonnegative-integer?]) sek?]
-              @defproc[(sek-copy [s sek?] [#:mode mode (or/c 'share 'copy) 'share]) sek?])]{
+              @defproc[(sek-copy [s sek?] [#:mode mode (or/c 'share 'copy) 'copy]) sek?])]{
  @racket[sek-sub] extracts a slice in @math{O(size + K log_K N)}, which beats
  splitting when the slice is short; @racket[sek-take] and @racket[sek-drop]
  split instead, in @math{O(K log_K N + log_K^2 N)}.  None of them modifies
- @racket[s].  @racket[sek-copy] is the identity on a persistent sequence.}
+ @racket[s].  @racket[sek-copy] is the identity on a persistent sequence and
+ @racket[eseq-copy] on an ephemeral one.}
 
 @deftogether[(
 @defproc[(sek-take-right [s sek?] [n exact-nonnegative-integer?]) sek?]

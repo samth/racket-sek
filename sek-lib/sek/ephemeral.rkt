@@ -458,11 +458,11 @@
     [else
      (esq id (lvl-front r) empty-chunk (lvl-middle r) empty-chunk (lvl-back r) 0)]))
 
-;; mode 'share leaves the copy sharing chunks with e, which is O(K) now and
-;; pays for itself later only if neither sequence is updated much; mode 'copy
-;; walks the elements, which costs O(n) but leaves both structures with their
-;; own chunks.
-(define (eseq-copy e #:mode [mode 'share])
+;; mode 'copy, the default, walks the elements, which costs O(n) but leaves
+;; both structures with their own chunks.  Mode 'share leaves the copy sharing
+;; chunks with e, which is O(1) now and pays for itself later only if neither
+;; sequence is updated much -- and e loses ownership of its chunks as well.
+(define (eseq-copy e #:mode [mode 'copy])
   (check-eseq 'eseq-copy e)
   (case mode
     [(share)

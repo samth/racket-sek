@@ -143,7 +143,7 @@
          en)]
       [(12)
        (if ephemeral?
-           (entry 'e (eseq-copy s) xs)
+           (entry 'e (eseq-copy s #:mode (if (zero? (random 2)) 'share 'copy)) xs)
            (entry 'p s xs))]
       [(13 14)
        (define j (random n))

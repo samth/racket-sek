@@ -758,7 +758,7 @@
       (pseq-drop s n)
       (pseq-edit (pseq-drop (eseq-snapshot s) n))))
 
-(define (sek-copy s #:mode [mode 'share])
+(define (sek-copy s #:mode [mode 'copy])
   (check-sek 'sek-copy s)
   (if (pseq? s)
       s
