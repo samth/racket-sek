@@ -115,11 +115,6 @@ both `Ephemeral.map` and `Persistent.map`.
   library must initialize array slots without knowing the element type. Here
   a private sentinel does that job, so the argument does not appear.
 * **`sort` is stable**, so it also serves as `stable_sort`.
-* **`sek-iter-reach!` exploits slightly less locality.** It reuses the cursor's
-  position when the target is in the run or the chunk it is already on, and
-  scans an unpacked chunk from there; it descends from the root when the
-  target is in a different chunk, where the OCaml version can sometimes
-  continue from the middle-sequence cursor. Same result either way.
 * **`pseq-edit` and `eseq-snapshot` do not copy the front and back chunks**,
   where the OCaml versions do. Observationally identical, and measurably
   better: a loop that snapshots after every push runs ten times faster this

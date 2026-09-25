@@ -663,8 +663,8 @@
 ;; ---------------------------------------------------------------- slicing
 
 ;; The `size` elements starting at `start`.  Unlike take/drop this costs
-;; O(size + K) rather than O(K.log n + log^2 n), so it is the cheaper choice
-;; when the slice is short.
+;; O(size + K.log n) -- a lookup to find `start`, then a copy -- rather than
+;; O(K.log n + log^2 n), so it is the cheaper choice when the slice is short.
 (define (sek-sub s start size)
   (check-sek 'sek-sub s)
   (define n (sek-length s))
@@ -768,7 +768,8 @@
 
 ;; Overwrite `size` elements starting at `start` with x.  Uses writable
 ;; segments, so the cost is O(size + K.log n) rather than one tree descent
-;; per element.
+;; per element -- plus, for each chunk in the range shared with a snapshot,
+;; the cost of taking ownership of it.
 (define (eseq-fill! e x [start 0] [end #f])
   (unless (eseq? e)
     (raise-argument-error 'eseq-fill! "eseq?" e))
