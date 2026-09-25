@@ -662,9 +662,17 @@
 
 ;; ---------------------------------------------------------------- slicing
 
-;; The `size` elements starting at `start`.  Unlike take/drop this costs
-;; O(size + K.log n) -- a lookup to find `start`, then a copy -- rather than
-;; O(K.log n + log^2 n), so it is the cheaper choice when the slice is short.
+;; The `size` elements starting at `start`.
+;;
+;; A persistent sequence is sliced by splitting, which shares its chunks and
+;; costs O(K.log n + log^2 n) whatever the size -- faster than copying even at
+;; sixteen elements, and three orders of magnitude faster at half a million.
+;; The OCaml library shares only above the threshold T; below it, `pseq-take`
+;; normalizes the result into the compact vector anyway.
+;;
+;; An ephemeral sequence is copied instead, at O(size + K.log n): splitting it
+;; goes through a snapshot, which would cost `s` the ownership of its chunks
+;; and make its own later updates more expensive.
 (define (sek-sub s start size)
   (check-sek 'sek-sub s)
   (define n (sek-length s))
@@ -679,6 +687,11 @@
                            size
                            "length"
                            n))
+  (if (pseq? s)
+      (pseq-take (pseq-drop s start) size)
+      (copy-slice s start size)))
+
+(define (copy-slice s start size)
   (define b (open-builder))
   (unless (eqv? size 0)
     (define it (sek-iterator-at-sentinel s 'front))

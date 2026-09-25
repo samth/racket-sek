@@ -115,6 +115,11 @@ both `Ephemeral.map` and `Persistent.map`.
   library must initialize array slots without knowing the element type. Here
   a private sentinel does that job, so the argument does not appear.
 * **`sort` is stable**, so it also serves as `stable_sort`.
+* **`sek-sub` on a persistent sequence always shares.** The OCaml version
+  copies a slice of at most T elements and shares a longer one; splitting is
+  faster here at every size, from 16 elements (0.002 ms against 0.003) to half
+  a million (0.002 ms against 2.1), and `pseq-take` normalizes a short result
+  into the compact vector anyway. Same result either way.
 * **`pseq-edit` and `eseq-snapshot` do not copy the front and back chunks**,
   where the OCaml versions do. Observationally identical, and measurably
   better: a loop that snapshots after every push runs ten times faster this

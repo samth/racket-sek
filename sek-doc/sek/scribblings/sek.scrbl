@@ -724,11 +724,13 @@ collapsing the OCaml library's two parallel modules into one set of names.
               @defproc[(sek-take [s sek?] [n exact-nonnegative-integer?]) sek?]
               @defproc[(sek-drop [s sek?] [n exact-nonnegative-integer?]) sek?]
               @defproc[(sek-copy [s sek?] [#:mode mode (or/c 'share 'copy) 'copy]) sek?])]{
- @racket[sek-sub] extracts a slice in @math{O(size + K log_K N)}, which beats
- splitting when the slice is short; @racket[sek-take] and @racket[sek-drop]
- split instead, in @math{O(K log_K N + log_K^2 N)}.  None of them modifies
- @racket[s].  @racket[sek-copy] is the identity on a persistent sequence and
- @racket[eseq-copy] on an ephemeral one.}
+ @racket[sek-take] and @racket[sek-drop] take @math{O(K log_K N + log_K^2 N)}
+ time.  So does @racket[sek-sub] on a @tech{persistent sequence}; on an
+ @tech{ephemeral sequence} it copies the slice instead, in
+ @math{O(size + K log_K N)} time, which is cheaper when the slice is short and
+ does not make later updates to @racket[s] more expensive.  None of them
+ modifies @racket[s].  @racket[sek-copy] is the identity on a persistent
+ sequence and @racket[eseq-copy] on an ephemeral one.}
 
 @deftogether[(
 @defproc[(sek-take-right [s sek?] [n exact-nonnegative-integer?]) sek?]
@@ -917,6 +919,12 @@ these.
 
  @item{@racket[sek-sort] is stable, so it covers @tt{stable_sort} too;
        @tt{sort} makes no such promise.}
+
+ @item{@racket[sek-sub] on a persistent sequence always shares the
+       sequence's chunks, where the OCaml library copies a slice of at most
+       @math{T} elements.  Sharing is faster at every size, and the result is
+       the same: @racket[pseq-take] puts a short result into the compact
+       representation either way.}
 
  @item{@racket[pseq-edit] and @racket[eseq-snapshot] share the front and back
        chunks instead of copying them, where the OCaml library's versions
