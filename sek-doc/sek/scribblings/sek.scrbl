@@ -107,8 +107,8 @@ also be used as a @tech[#:doc '(lib
 @racket[serializable?].  Two persistent sequences are @racket[equal?] when
 their elements are.
 
-Adding elements to the same persistent sequence from several threads at once
-requires synchronization.
+Several threads may use a persistent sequence at once, including adding
+elements to it, without synchronization.
 
 @defproc[(pseq? [v any/c]) boolean?]{
 
@@ -251,6 +251,9 @@ An ephemeral sequence can be used as a single-valued @racket[sequence]; see
 also @racket[in-eseq].  It is @racket[serializable?], and two ephemeral
 sequences are @racket[equal?] when their elements are.  It is not a
 @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream}.
+
+Using an ephemeral sequence from several threads at once requires
+synchronization, even when none of them updates it.
 
 @defproc[(eseq? [v any/c]) boolean?]{
 

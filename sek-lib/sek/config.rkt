@@ -17,6 +17,7 @@
 (provide print-sek
          hash-elements
          capacity-at
+         capacity-bits
          max-item-weight
          max-item-weight-shift
          leaf-capacity
@@ -103,6 +104,12 @@
 (begin-encourage-inline
   (define (check-iterator-validity?) checking?))
 
+;; A support keeps its head and its size in one fixnum (see chunk.rkt), each in
+;; `capacity-bits` bits, so a capacity must be below 2^capacity-bits.  That is
+;; 2^30 where fixnums reach 2^60 - 1, and 2^14 where they are 30 bits wide.
+(define capacity-bits (if (fixnum? (sub1 (expt 2 60))) 30 14))
+(define max-capacity (sub1 (expt 2 capacity-bits)))
+
 ;; Settings must be chosen before any sequence is built; mixing capacities
 ;; within one structure breaks the density invariant checks.
 (define (sek-configure! #:leaf-capacity [k0 leaf-cap]
@@ -110,10 +117,10 @@
                         #:short-threshold [t thresh]
                         #:overwrite-empty-slots? [ow overwrite?]
                         #:check-iterator-validity? [ck checking?])
-  (unless (and (exact-integer? k0) (>= k0 2))
-    (raise-argument-error 'sek-configure! "(and/c exact-integer? (>=/c 2))" k0))
-  (unless (and (exact-integer? k1) (>= k1 2))
-    (raise-argument-error 'sek-configure! "(and/c exact-integer? (>=/c 2))" k1))
+  (unless (and (exact-integer? k0) (<= 2 k0 max-capacity))
+    (raise-argument-error 'sek-configure! (format "(integer-in 2 ~a)" max-capacity) k0))
+  (unless (and (exact-integer? k1) (<= 2 k1 max-capacity))
+    (raise-argument-error 'sek-configure! (format "(integer-in 2 ~a)" max-capacity) k1))
   (unless (and (exact-integer? t) (>= t 0) (<= t k0))
     (raise-argument-error 'sek-configure! "threshold in [0, leaf-capacity]" t))
   (set! leaf-cap k0)

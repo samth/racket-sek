@@ -353,5 +353,8 @@ checked. The remaining differences:
   OCaml library does, so it is O(K log_K n) in the worst case rather than the
   O(1) of Figure 16.
 * A `#:short-threshold` of 0 works here and not there.
-* As in the paper, monotonic in-place updates make the persistent flavor
-  unsafe to share across threads without synchronization.
+* A persistent sequence may be shared between threads.  A monotonic in-place
+  update claims its slot with a compare-and-swap on the support's head and
+  size, which share one field for the purpose; the OCaml library writes the
+  slot without synchronization, so there two threads that extend one
+  sequence at once can overwrite each other's element.

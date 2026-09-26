@@ -37,7 +37,8 @@
 ;; (struct/unchecked name (field ...) option ...)
 ;;
 ;; Like `struct`, except that `name-field` and `set-name-field!` read and write
-;; the field without checking that their argument is a `name`.  The type is
+;; the field without checking that their argument is a `name`.  A mutable field
+;; also gets `name-field-cas!`, a compare-and-swap on the field.  The type is
 ;; defined under a hidden name; `name` is still its constructor (unless
 ;; #:constructor-name says otherwise) and `name?` its predicate.
 (define-syntax (struct/unchecked stx)
@@ -52,7 +53,8 @@
             [options (syntax->datum #'(option ...))]
             [hidden (format-id #'name "~a/checked" #'name)]
             [ref (lambda (f) (format-id #'name "~a-~a" #'name (field-id f)))]
-            [set (lambda (f) (format-id #'name "set-~a-~a!" #'name (field-id f)))])
+            [set (lambda (f) (format-id #'name "set-~a-~a!" #'name (field-id f)))]
+            [cas (lambda (f) (format-id #'name "~a-~a-cas!" #'name (field-id f)))])
        (with-syntax ([hidden hidden]
                      [hidden? (format-id #'name "~a?" hidden)]
                      [name? (format-id #'name "~a?" #'name)]
@@ -65,9 +67,12 @@
                         (with-syntax ([ref (ref f)] [i i])
                           #'(define (ref x) (unsafe-struct*-ref x i))))]
                      [(mutator ...)
-                      (for/list ([f (in-list fields)] [i (in-naturals)] #:when (mutable? f))
-                        (with-syntax ([set (set f)] [i i])
-                          #'(define (set x v) (unsafe-struct*-set! x i v))))])
+                      (apply append
+                             (for/list ([f (in-list fields)] [i (in-naturals)] #:when (mutable? f))
+                               (with-syntax ([set (set f)] [cas (cas f)] [i i])
+                                 (list #'(define (set x v) (unsafe-struct*-set! x i v))
+                                       #'(define (cas x old new)
+                                           (unsafe-struct*-cas! x i old new))))))])
          #'(begin
              (struct hidden (field ...) option ... extra ...)
              (define name? hidden?)

@@ -112,16 +112,34 @@
 ;; get the length out of the header word.
 ;;
 ;; `data` and `cap` are immutable so that the compiler may treat those loads as
-;; pure and share them across the stores to `head` and `size`.  The constructor
-;; is wrapped rather than the call sites changed, so `cap` cannot be passed
-;; wrong.
-(struct/unchecked support ([data] [head #:mutable] [size #:mutable] [cap])
+;; pure and share them across the stores to the head and size.  The
+;; constructor is wrapped rather than the call sites changed, so `cap` cannot
+;; be passed wrong.
+;;
+;; The head and the size share one field, `extent`, the head in its high half
+;; and the size in its low half.  Persistent sequences that share a support
+;; may be extended from several threads at once, and a monotonic push has to
+;; test and advance the extent as one step: see `persistent-push-back`.
+(struct/unchecked support ([data] [extent #:mutable] [cap])
   #:authentic #:sealed)
 
-;; Every support is built through this, so `cap` cannot disagree with `data`.
+(define size-mask (sub1 (arithmetic-shift 1 capacity-bits)))
+
 (begin-encourage-inline
+  (define (extent head size) (fxior (fxlshift head capacity-bits) size))
+  (define (extent-head e) (fxrshift e capacity-bits))
+  (define (extent-size e) (fxand e size-mask))
+
+  (define (support-head s) (extent-head (support-extent s)))
+  (define (support-size s) (extent-size (support-extent s)))
+  (define (set-support-head! s h)
+    (set-support-extent! s (extent h (support-size s))))
+  (define (set-support-size! s n)
+    (set-support-extent! s (extent (support-head s) n)))
+
+  ;; Every support is built through this, so `cap` cannot disagree with `data`.
   (define (support* data head size)
-    (support data head size (unsafe-vector*-length data))))
+    (support data (extent head size) (unsafe-vector*-length data))))
 
 ;; support : the underlying circular buffer
 ;; head, size : the view, which must be a sub-range of the support's range
@@ -139,7 +157,7 @@
 ;; slot then holds a chunk, occupied or not, so that a read of an empty slot --
 ;; which only a data race can cause -- still yields a value that the
 ;; unchecked chunk accessors can take.
-(define none (chunk (support (vector) 0 0 0) 0 0 0 #f))
+(define none (chunk (support* (vector) 0 0) 0 0 0 #f))
 
 ;; These are two or three instructions each, and every one of them is read on
 ;; a hot path in another module.  Left as ordinary definitions they compile to
@@ -173,9 +191,9 @@
   (define (chunk-data c) (support-data (chunk-support c)))
 
   (define (chunk-aligned? c)
-    (define s (chunk-support c))
-    (and (fx= (chunk-head c) (support-head s))
-         (fx= (chunk-size c) (support-size s))))
+    (define e (support-extent (chunk-support c)))
+    (and (fx= (chunk-head c) (extent-head e))
+         (fx= (chunk-size c) (extent-size e))))
 
   (define (chunk-ref c i)
     (define data (support-data (chunk-support c)))
@@ -385,16 +403,26 @@
 
 ;; Persistent push: either a monotonic in-place update of a slot that no view
 ;; covers, or a copy of the view into a fresh support.
+;;
+;; The monotonic update claims its slot by advancing the support's extent with
+;; a compare-and-swap, and writes the slot only once the claim has succeeded.
+;; Other threads may hold persistent sequences that share this support and
+;; push onto them at the same moment; the extent they read is then stale, the
+;; swap fails, and they copy instead.  So each slot is written at most once,
+;; by the one push that claimed it, and no view ever sees a slot change.
 (define (persistent-push-back c x w owner)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (define n (chunk-size c))
+  (define e (support-extent s))
+  (define size (extent-size e))
   (define view-back (wrap+ (fx+ (chunk-head c) n) k))
-  (define support-back (wrap+ (fx+ (support-head s) (support-size s)) k))
+  (define support-back (wrap+ (fx+ (extent-head e) size) k))
   (cond
-    [(and (fx< (support-size s) k) (fx= view-back support-back))
+    [(and (fx< size k)
+          (fx= view-back support-back)
+          (support-extent-cas! s e (extent (extent-head e) (fx+ size 1))))
      (vector-set! (support-data s) support-back x)
-     (set-support-size! s (fx+ (support-size s) 1))
      (chunk s (chunk-head c) (fx+ n 1) (fx+ (chunk-weight c) w) (chunk-id c))]
     [else
      (define data (make-vector k none))
@@ -407,12 +435,14 @@
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (define n (chunk-size c))
+  (define e (support-extent s))
+  (define size (extent-size e))
+  (define i (wrap- (fx- (extent-head e) 1) k))
   (cond
-    [(and (fx< (support-size s) k) (fx= (chunk-head c) (support-head s)))
-     (define i (wrap- (fx- (support-head s) 1) k))
+    [(and (fx< size k)
+          (fx= (chunk-head c) (extent-head e))
+          (support-extent-cas! s e (extent i (fx+ size 1))))
      (vector-set! (support-data s) i x)
-     (set-support-head! s i)
-     (set-support-size! s (fx+ (support-size s) 1))
      (chunk s i (fx+ n 1) (fx+ (chunk-weight c) w) (chunk-id c))]
     [else
      (define data (make-vector k none))
