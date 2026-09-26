@@ -16,7 +16,7 @@
 ;; may be updated in place.  Taking a snapshot installs a fresh id, at which
 ;; point every chunk in the structure silently becomes immutable.
 
-(require racket/fixnum
+(require "unchecked.rkt"
          racket/serialize
          (only-in racket/unsafe/ops
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx<=
@@ -27,11 +27,10 @@
          "persistent.rkt"
          "iterate.rkt")
 
-;; Compiled in unsafe mode.  Every function here that a caller outside the
-;; library can reach checks its arguments explicitly, with `unless` rather
-;; than by relying on a struct accessor or a vector reference to raise --
-;; in unsafe mode those do not raise, they read whatever is at the offset.
-(#%declare #:unsafe)
+;; Every function here that a caller outside the library can reach checks its
+;; arguments explicitly, with `unless`: the accessors of the library's own
+;; structures do not check (see unchecked.rkt), so they would not raise on a
+;; value of the wrong kind.
 
 (provide (rename-out [esq? eseq?]
                      [esq-id eseq-id]
@@ -80,7 +79,7 @@
          eseq-invalidate-iterators-except!
          eseq-become!)
 
-(struct esq
+(struct/unchecked esq
         ([id #:mutable] [front #:mutable]
                         [ifront #:mutable]
                         [middle #:mutable]
@@ -118,9 +117,9 @@
 ;; many short-lived ones; nothing downstream gets slower, because the first
 ;; push allocates exactly the chunk it needs.
 
-;; Argument checking is explicit here, because this module is compiled in
-;; unsafe mode: a struct accessor no longer raises on the wrong kind of
-;; value, it reads whatever happens to be at that offset.
+;; Argument checking is explicit here, because the structure accessors do not
+;; check (see unchecked.rkt): on the wrong kind of value they would read
+;; whatever happens to be at that offset.
 (define-syntax-rule (check-eseq who v)
   (unless (esq? v) (raise-argument-error who "eseq?" v)))
 (define-syntax-rule (check-pseq who v)

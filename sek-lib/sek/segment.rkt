@@ -14,11 +14,9 @@
 (require racket/vector
          (only-in racket/unsafe/ops unsafe-vector*-ref unsafe-fx+ unsafe-fx-))
 
-;; Compiled in unsafe mode.  Every function here that a caller outside the
-;; library can reach checks its arguments explicitly, with `unless` rather
-;; than by relying on a struct accessor or a vector reference to raise --
-;; in unsafe mode those do not raise, they read whatever is at the offset.
-(#%declare #:unsafe)
+;; Every function here that a caller outside the library can reach checks its
+;; arguments explicitly, with `unless`, so that an error names the operation
+;; the caller used.
 
 (provide (rename-out [seg segment])
          segment?
@@ -47,9 +45,8 @@
      (write-string ">" port))])
 
 
-;; Argument checking is explicit here, because this module is compiled in
-;; unsafe mode: a struct accessor no longer raises on the wrong kind of
-;; value, it reads whatever happens to be at that offset.
+;; Argument checking is explicit here, so that an error names the operation the
+;; caller used rather than the accessor it reached.
 (define-syntax-rule (check-segment who v)
   (unless (seg? v) (raise-argument-error who "segment?" v)))
 

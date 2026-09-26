@@ -17,33 +17,22 @@
 ;; support.
 
 (require racket/vector
-         racket/fixnum
          racket/performance-hint
          (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-set! unsafe-vector*-length
                   unsafe-vector*-set/copy
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>= unsafe-fx=)
+         "unchecked.rkt"
          "config.rkt")
 
-;; Unsafe operations are used on the paths that every push, pop and indexed
-;; access goes through.  Each use rests on an invariant maintained here:
-;;
-;;   * a support's data vector is created by make-vector in this module and is
-;;     never impersonated, so unsafe-vector*- operations apply;
-;;   * an index into a support is always reduced modulo the capacity by wrap+
-;;     or wrap-, so it lies in [0, capacity);
-;;   * heads, sizes and capacities are bounded by a vector length, and weights
-;;     by the length of a sequence, so all of them are fixnums.
-;;
-;; The invariant checker in check.rkt verifies the first two after every
-;; operation in the test suite, and the conformance harness runs the same
-;; operations against the reference implementation.
-
-;; Compiled in unsafe mode: this module is the inner loop of the whole
-;; library, and its safe operations were costing a type check on every struct
-;; field read.  Every index that reaches here has already been bounds-checked
-;; by the public entry points, which do it with an explicit `unless`.
-(#%declare #:unsafe)
+;; Unchecked vector operations are used on the paths that every push, pop and
+;; indexed access goes through.  A support's data vector is created by
+;; make-vector in this module and never impersonated, so they apply; and every
+;; index goes through `checked-index` first.  While the invariants hold, an
+;; index computed from a chunk's head and size lies in [0, capacity) anyway --
+;; `wrap+` and `wrap-` reduce it modulo the capacity -- but two threads that
+;; update the same ephemeral sequence at once can break the invariants, and the
+;; check is what keeps that from reaching memory.  See also unchecked.rkt.
 
 (provide chunk-weight
          chunk-length
@@ -83,7 +72,8 @@
          chunk-aligned?
          chunk-data
          chunk-segment-at
-         chunk-index->support-index)
+         chunk-index->support-index
+         inconsistent-structure)
 
 ;; ---------------------------------------------------------------- ownership
 
@@ -100,7 +90,7 @@
 ;; counter may in principle reach a bignum.  A freshly allocated record can
 ;; only be compared with `eq?`, which is one instruction.  The counter is kept
 ;; inside it so an id still prints as something a person can follow.
-(struct owner-id (n) #:authentic #:sealed
+(struct/unchecked owner-id (n) #:authentic #:sealed
   #:property prop:custom-write
   (lambda (o port mode) (fprintf port "#<owner ~a>" (owner-id-n o))))
 
@@ -109,10 +99,6 @@
   (owner-id id-counter))
 
 ;; ------------------------------------------------------------------- layout
-
-;; The value written into a slot that is logically empty.  Overwriting emptied
-;; slots costs one write but avoids retaining garbage (§4.1).
-(define none (string->uninterned-symbol "sek-empty-slot"))
 
 ;; data : (vectorof any), of length K
 ;; head : index of the first occupied slot
@@ -129,7 +115,7 @@
 ;; pure and share them across the stores to `head` and `size`.  The constructor
 ;; is wrapped rather than the call sites changed, so `cap` cannot be passed
 ;; wrong.
-(struct support ([data] [head #:mutable] [size #:mutable] [cap])
+(struct/unchecked support ([data] [head #:mutable] [size #:mutable] [cap])
   #:authentic #:sealed)
 
 ;; Every support is built through this, so `cap` cannot disagree with `data`.
@@ -143,9 +129,17 @@
 ;; id : ownership id, or #f
 ;; `support` and `id` are never assigned -- a chunk that needs a different one
 ;; of either is a new chunk -- so they are immutable, for the same reason.
-(struct chunk
+(struct/unchecked chunk
         ([support] [head #:mutable] [size #:mutable] [weight #:mutable] [id])
   #:authentic #:sealed)
+
+;; The value written into a slot that is logically empty.  Overwriting emptied
+;; slots costs one write but avoids retaining garbage (§4.1).  It is an empty
+;; chunk rather than, say, a unique symbol: in a support of depth d > 0 every
+;; slot then holds a chunk, occupied or not, so that a read of an empty slot --
+;; which only a data race can cause -- still yields a value that the
+;; unchecked chunk accessors can take.
+(define none (chunk (support (vector) 0 0 0) 0 0 0 #f))
 
 ;; These are two or three instructions each, and every one of them is read on
 ;; a hot path in another module.  Left as ordinary definitions they compile to
@@ -185,9 +179,21 @@
 
   (define (chunk-ref c i)
     (define data (support-data (chunk-support c)))
-    (unsafe-vector*-ref data
-                        (wrap+ (unsafe-fx+ (chunk-head c) i)
-                               (unsafe-vector*-length data)))))
+    (define k (unsafe-vector*-length data))
+    (unsafe-vector*-ref data (checked-index (wrap+ (unsafe-fx+ (chunk-head c) i) k) k))))
+
+;; Every unchecked access to a support goes through this; it costs two
+;; comparisons.
+(define-syntax-rule (checked-index i k)
+  (let ([j i])
+    (if (and (unsafe-fx>= j 0) (unsafe-fx< j k))
+        j
+        (inconsistent-structure))))
+
+(define (inconsistent-structure)
+  (raise (exn:fail:sek
+          "sek: the sequence's structure is inconsistent; was an ephemeral sequence updated by two threads at once?"
+          (current-continuation-marks))))
 
 ;; ------------------------------------------------------------------ measure
 
@@ -358,7 +364,7 @@
   (define s (chunk-support c))
   (define k (chunk-capacity c))
   (unsafe-vector*-set! (support-data s)
-                       (wrap+ (unsafe-fx+ (chunk-head c) (chunk-size c)) k)
+                       (checked-index (wrap+ (unsafe-fx+ (chunk-head c) (chunk-size c)) k) k)
                        x)
   (set-support-size! s (unsafe-fx+ (support-size s) 1))
   (set-chunk-size! c (unsafe-fx+ (chunk-size c) 1))
@@ -368,7 +374,7 @@
  (define (owned-push-front! c x w)
   (define s (chunk-support c))
   (define k (chunk-capacity c))
-  (define i (wrap- (unsafe-fx- (chunk-head c) 1) k))
+  (define i (checked-index (wrap- (unsafe-fx- (chunk-head c) 1) k) k))
   (unsafe-vector*-set! (support-data s) i x)
   (set-support-head! s i)
   (set-support-size! s (unsafe-fx+ (support-size s) 1))
@@ -444,7 +450,7 @@
      (define k (chunk-capacity c))
      (when (overwrite-empty-slots?)
        (unsafe-vector*-set! (support-data s)
-                            (wrap+ (unsafe-fx+ (chunk-head c) (unsafe-fx- n 1)) k)
+                            (checked-index (wrap+ (unsafe-fx+ (chunk-head c) (unsafe-fx- n 1)) k) k)
                             none))
      (set-support-size! s (unsafe-fx- (support-size s) 1))
      (set-chunk-size! c (unsafe-fx- n 1))
@@ -462,7 +468,7 @@
     [(chunk-owned? c owner)
      (define s (chunk-support c))
      (when (overwrite-empty-slots?)
-       (unsafe-vector*-set! (support-data s) (chunk-head c) none))
+       (unsafe-vector*-set! (support-data s) (checked-index (chunk-head c) k) none))
      (set-support-head! s (wrap+ (unsafe-fx+ (chunk-head c) 1) k))
      (set-support-size! s (unsafe-fx- (support-size s) 1))
      (set-chunk-head! c (wrap+ (unsafe-fx+ (chunk-head c) 1) k))
@@ -516,7 +522,7 @@
     [(chunk-owned? c owner)
      (define s (chunk-support c))
      (define k (chunk-capacity c))
-     (unsafe-vector*-set! (support-data s) (wrap+ (unsafe-fx+ (chunk-head c) i) k) x)
+     (unsafe-vector*-set! (support-data s) (checked-index (wrap+ (unsafe-fx+ (chunk-head c) i) k) k) x)
      (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) (unsafe-fx- wnew wold)))
      c]
     ;; Writing back what is already there changes nothing, and the reference
@@ -535,7 +541,7 @@
        [(chunk-aligned? c)
         (define head (chunk-head c))
         (define data (unsafe-vector*-set/copy (support-data (chunk-support c))
-                                              (wrap+ (fx+ head i) k) x))
+                                              (checked-index (wrap+ (fx+ head i) k) k) x))
         (chunk (support* data head n) head n
                (fx+ (chunk-weight c) (fx- wnew wold)) owner)]
        [else

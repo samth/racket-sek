@@ -1,12 +1,12 @@
 #lang racket/base
 ;; Every public operation must check its principal argument.
 ;;
-;; Each module of sek-lib is compiled `(#%declare #:unsafe)`, so a struct
-;; accessor handed the wrong kind of value does not raise -- it reads whatever
-;; is at that field offset.  An operation that reaches an accessor without
-;; testing its argument is therefore reading arbitrary memory: `segment-ref`
-;; had no check and aborted the process with SIGABRT on BC, after passing on
-;; CS, where the same read happened to land on something harmless.
+;; The accessors of sek-lib's own structures do not check their argument (see
+;; sek/unchecked), so one handed the wrong kind of value does not raise -- it
+;; reads whatever is at that field offset.  An operation that reaches an
+;; accessor without testing its argument is therefore reading arbitrary
+;; memory, and on some platforms that read lands on something harmless and
+;; passes.
 ;;
 ;; `error-tests.rkt` lists the operations by hand, so it only covers what
 ;; someone remembered to add.  This derives the list from the module's exports
@@ -16,7 +16,7 @@
 ;; The property tested is that the operation blames *itself*.  An operation
 ;; cannot name itself in an error without having checked, so this catches a
 ;; missing check even when the unchecked read happens not to crash -- which is
-;; the case that hid `segment-ref` on CS for as long as it did.
+;; the case a crash test would miss.
 (require rackunit
          racket/list
          racket/string
@@ -47,9 +47,7 @@
 
 ;; A predicate answers #f instead of raising, and a constructor or conversion
 ;; takes what it is given; neither is a missing check.  The named exceptions
-;; are aliases, which blame the operation they are an alias for, and the two
-;; validators, which live in `check.rkt` -- the one module not compiled in
-;; unsafe mode, so an accessor there still raises on its own.
+;; are aliases, which blame the operation they are an alias for.
 (define exempt
   (set 'pseq
        'eseq
@@ -57,9 +55,7 @@
        'pseq-push-front
        'pseq-push-back
        'eseq-push-front!
-       'eseq-push-back!
-       'sek-validate-pseq
-       'sek-validate-eseq))
+       'eseq-push-back!))
 
 (define (exempt? name)
   (define s (symbol->string name))

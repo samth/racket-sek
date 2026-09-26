@@ -7,13 +7,12 @@
 ;; internal nodes, with a threshold of 32 for the array representation of short
 ;; persistent sequences (§3.5).
 
-(require racket/fixnum
+(require "unchecked.rkt"
          racket/performance-hint)
 
-;; Compiled in unsafe mode, and the accessors below are inlined: they are
-;; consulted on every operation in the library, and a cross-module call to
-;; read one mutable variable was costing more than the operation.
-(#%declare #:unsafe)
+;; The accessors below are inlined: they are consulted on every operation in
+;; the library, and a cross-module call to read one mutable variable was
+;; costing more than the operation.
 
 (provide print-sek
          hash-elements

@@ -86,6 +86,7 @@
   total)
 
 (define (check-pseq s)
+  (unless (pseq? s) (raise-argument-error 'sek-validate-pseq "pseq?" s))
   (define r (pseq-rep s))
   (cond
     [(not r) (void)]
@@ -106,6 +107,7 @@
 ;; that each inner chunk must be either empty or full, and that a chunk
 ;; carrying this sequence's id really is aligned with its support.
 (define (check-eseq e)
+  (unless (eseq? e) (raise-argument-error 'sek-validate-eseq "eseq?" e))
   (define id (eseq-id e))
   ;; a side that has never been pushed to carries the shared stand-in
   (define f (eseq-front e))

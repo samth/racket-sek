@@ -1,7 +1,7 @@
 #lang racket/base
-;; Every module of the library is compiled with `(#%declare #:unsafe)`, so a
-;; struct accessor or a vector reference no longer raises when handed the wrong
-;; kind of value -- it reads whatever is at that offset.  Everything a caller
+;; The accessors of the library's own structures do not check their argument
+;; (see sek/unchecked), so one handed the wrong kind of value does not raise --
+;; it reads whatever is at that offset.  Everything a caller
 ;; outside the library can reach therefore has to check its arguments with an
 ;; explicit `unless`, and this file is what holds that line: it calls the public
 ;; surface with wrong types and out-of-range indices and insists on an

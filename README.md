@@ -160,9 +160,10 @@ raco test sek/
 The suite runs at chunk capacities from 2 upwards, so the trees get deep and
 the cascading cases in `push`, `pop`, `split` and `merge` are actually reached.
 
-Every module of the library is compiled with `(#%declare #:unsafe)`, so nothing
-here raises by accident: a struct accessor handed the wrong kind of value reads
-whatever is at that offset rather than complaining. Every function a caller
+The accessors of the library's own structures do not check their argument (see
+`sek/unchecked`), so nothing here raises by accident: an accessor handed the
+wrong kind of value reads whatever is at that offset rather than complaining.
+Every function a caller
 outside the library can reach therefore checks its arguments with an explicit
 `unless`, and `sek/tests/error-tests.rkt` is what holds that line — it calls the
 public surface with wrong types and out-of-range indices across about 150 cases
@@ -304,10 +305,10 @@ contract-checked list functions on three-element lists; it paid three closure
 calls an element where the loop could be the caller's own. The exception that
 proves the rule is the one that *was* about Racket: every struct was paying a
 walk of its type's ancestry vector on each field access, which `#:sealed`
-collapses to one comparison, and the innermost modules had implicit checks that
-`(#%declare #:unsafe)` removes — two lines of declaration, found by reading the
-generated code, worth `pseq-ref` 35.6 ns to 22.2 and `eseq` push-back 8.8 to
-4.7. A second reading of the generated code, this time of the machine code
+collapses to one comparison, and the innermost modules had implicit checks on
+every field access and fixnum operation, which unchecked accessors and
+arithmetic remove — found by reading the generated code, worth `pseq-ref`
+35.6 ns to 22.2 and `eseq` push-back 8.8 to 4.7. A second reading of the generated code, this time of the machine code
 rather than the intermediate form, found six more of the same kind: two calls
 on the push path that inlining removes, a capacity read that was three
 dependent loads, an ownership test that went through generic `eqv?` because an

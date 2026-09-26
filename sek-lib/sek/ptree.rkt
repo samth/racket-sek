@@ -16,18 +16,17 @@
 ;; The empty tree is represented by #f.
 
 (require racket/list
-         racket/fixnum
+         "unchecked.rkt"
          racket/performance-hint
          "config.rkt"
          "chunk.rkt")
 
-;; Compiled in unsafe mode: this module is the inner loop of the whole
-;; library, and its safe operations were costing a type check on every struct
-;; field read.  Every index that reaches here has already been bounds-checked
-;; by the public entry points, which do it with an explicit `unless`.
-(#%declare #:unsafe)
+;; Structure accessors and fixnum operations here do not check their
+;; arguments (see unchecked.rkt).  Every index that reaches here has already
+;; been bounds-checked by the public entry points, which do it with an explicit
+;; `unless`.
 
-(provide (struct-out lvl)
+(provide lvl lvl? lvl-weight lvl-front lvl-middle lvl-back
          pt-weight
          make-level
          pt-push-front
@@ -47,7 +46,7 @@
          pt-of-list)
 
 ;; weight : total number of atomic elements below this level
-(struct lvl (weight front middle back) #:authentic #:sealed)
+(struct/unchecked lvl (weight front middle back) #:authentic #:sealed)
 
 (define (pt-weight t)
   (if t

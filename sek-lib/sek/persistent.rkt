@@ -11,7 +11,7 @@
 ;; top of the structure; middle sequences are always trees.
 
 (require racket/vector
-         racket/fixnum
+         "unchecked.rkt"
          racket/serialize
          racket/stream
          racket/performance-hint
@@ -23,11 +23,10 @@
          "ptree.rkt"
          "iterate.rkt")
 
-;; Compiled in unsafe mode.  Every function here that a caller outside the
-;; library can reach checks its arguments explicitly, with `unless` rather
-;; than by relying on a struct accessor or a vector reference to raise --
-;; in unsafe mode those do not raise, they read whatever is at the offset.
-(#%declare #:unsafe)
+;; Every function here that a caller outside the library can reach checks its
+;; arguments explicitly, with `unless`: the accessors of the library's own
+;; structures do not check (see unchecked.rkt), so they would not raise on a
+;; value of the wrong kind.
 
 (provide (rename-out [psq? pseq?] [psq-rep pseq-rep])
          pseq-length
@@ -67,9 +66,9 @@
 ;; ------------------------------------------------------------- the datatype
 
 
-;; Argument checking is explicit here, because this module is compiled in
-;; unsafe mode: a struct accessor no longer raises on the wrong kind of
-;; value, it reads whatever happens to be at that offset.
+;; Argument checking is explicit here, because the structure accessors do not
+;; check (see unchecked.rkt): on the wrong kind of value they would read
+;; whatever happens to be at that offset.
 (define-syntax-rule (check-pseq who v)
   (unless (psq? v) (raise-argument-error who "pseq?" v)))
 
@@ -82,7 +81,7 @@
        (pt-for-each rep 0 (lambda (x) (set! acc (cons x acc))))
        (reverse acc))]))
 
-(struct psq (rep)
+(struct/unchecked psq (rep)
   #:constructor-name wrap-rep
   #:authentic #:sealed
   #:property prop:sequence
@@ -164,7 +163,7 @@
 ;; the buffer is empty at the end.
 ;; `cap` is the leaf capacity, which never changes over a builder's life, so
 ;; the hot path reads it from the builder rather than re-deriving it.
-(struct bld ([buf #:mutable] [n #:mutable] cap [front #:mutable]
+(struct/unchecked bld ([buf #:mutable] [n #:mutable] cap [front #:mutable]
              [held #:mutable] [middle #:mutable])
   #:authentic #:sealed)
 

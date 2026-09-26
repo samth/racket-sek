@@ -26,7 +26,8 @@
 ;; to the sequence invalidates every live iterator, and using an invalidated
 ;; iterator raises an error rather than quietly reading stale memory.
 
-(require (only-in racket/unsafe/ops
+(require "unchecked.rkt"
+         (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-vector*-set!
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>)
          "config.rkt"
@@ -36,11 +37,10 @@
          "ephemeral.rkt"
          "segment.rkt")
 
-;; Compiled in unsafe mode.  Every function here that a caller outside the
-;; library can reach checks its arguments explicitly, with `unless` rather
-;; than by relying on a struct accessor or a vector reference to raise --
-;; in unsafe mode those do not raise, they read whatever is at the offset.
-(#%declare #:unsafe)
+;; Every function here that a caller outside the library can reach checks its
+;; arguments explicitly, with `unless`: the accessors of the library's own
+;; structures do not check (see unchecked.rkt), so they would not raise on a
+;; value of the wrong kind.
 
 (provide sek-iterator
          sek-iterator-at-sentinel
@@ -76,7 +76,7 @@
 ;; A cursor over the items of one level of the tree.  At depth 0 the items are
 ;; the sequence's elements, each of weight one; deeper down they are chunks,
 ;; and every index is a weight index -- the number of elements to the left.
-(struct cur
+(struct/unchecked cur
         (depth [wt #:mutable]
                [front #:mutable]
                [middle #:mutable]
@@ -98,9 +98,9 @@
   #:authentic #:sealed)
 
 
-;; Argument checking is explicit here, because this module is compiled in
-;; unsafe mode: a struct accessor no longer raises on the wrong kind of
-;; value, it reads whatever happens to be at that offset.
+;; Argument checking is explicit here, because the structure accessors do not
+;; check (see unchecked.rkt): on the wrong kind of value they would read
+;; whatever happens to be at that offset.
 (define-syntax-rule (check-iter who v)
   (unless (siter? v) (raise-argument-error who "sek-iterator?" v)))
 (define-syntax-rule (check-sek who v)
@@ -184,6 +184,13 @@
 (define (install-in-chunk! c i wcur)
   (define ch (cur-chunk c))
   (define-values (start len shd) (chunk-segment-at ch i))
+  ;; The loops that walk the run read it unchecked, so the run must lie inside
+  ;; the vector.  While the invariants hold it does; a data race on an
+  ;; ephemeral sequence can break them.
+  (let ([offset (- i shd)])
+    (unless (and (<= 0 start) (<= 0 offset) (< offset len)
+                 (<= (+ start len) (vector-length (chunk-data ch))))
+      (inconsistent-structure)))
   (set-cur-support! c (chunk-data ch))
   (set-cur-ishd! c start)
   (set-cur-istl! c (+ start len))
@@ -454,7 +461,7 @@
 
 ;; ------------------------------------------------------- the public iterator
 
-(struct siter (seq kind [birth #:mutable] cursor)
+(struct/unchecked siter (seq kind [birth #:mutable] cursor)
   #:authentic #:sealed
   #:reflection-name 'sek-iterator
   #:methods gen:custom-write
