@@ -18,7 +18,7 @@
 ;; arguments explicitly, with `unless`, so that an error names the operation
 ;; the caller used.
 
-(provide (rename-out [seg segment])
+(provide segment
          segment?
          segment-vector
          segment-start
@@ -49,6 +49,21 @@
 ;; caller used rather than the accessor it reached.
 (define-syntax-rule (check-segment who v)
   (unless (seg? v) (raise-argument-error who "segment?" v)))
+
+;; `segment-for-each` reads the run without checking each index, so the
+;; constructor checks the whole run once: it must lie inside a vector that is
+;; not an impersonator.
+(define (segment v start len)
+  (unless (and (vector? v) (not (impersonator? v)))
+    (raise-argument-error 'segment "(and/c vector? (not/c impersonator?))" 0 v start len))
+  (unless (exact-nonnegative-integer? start)
+    (raise-argument-error 'segment "exact-nonnegative-integer?" 1 v start len))
+  (unless (exact-nonnegative-integer? len)
+    (raise-argument-error 'segment "exact-nonnegative-integer?" 2 v start len))
+  (unless (<= (+ start len) (vector-length v))
+    (raise-arguments-error 'segment "the run does not fit in the vector"
+                           "start" start "length" len "vector length" (vector-length v)))
+  (seg v start len))
 
 (define segment? seg?)
 (define segment-vector seg-vector)

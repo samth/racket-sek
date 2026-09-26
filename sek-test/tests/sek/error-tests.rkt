@@ -92,6 +92,16 @@
     (raises (segment->vector bad))
     (raises (segment-for-each bad void))))
 
+;; segment-for-each reads the run unchecked, so the constructor has to refuse a
+;; run that does not fit, or a vector it could not read that way
+(test-case "segment rejects a run outside its vector"
+  (raises (segment (vector 1 2) 0 5))
+  (raises (segment (vector 1 2) 3 0))
+  (raises (segment (vector 1 2) -1 1))
+  (raises (segment "ab" 0 1))
+  (raises (segment (chaperone-vector (vector 1 2) (lambda (v i x) x) (lambda (v i x) x)) 0 1))
+  (check-equal? (segment->list (segment (vector 1 2 3) 1 2)) '(2 3)))
+
 (test-case "iterators reject a non-iterator"
   (for ([bad (in-list (list 7 p e))])
     (raises (sek-iter-get bad))

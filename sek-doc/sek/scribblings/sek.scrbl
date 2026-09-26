@@ -612,7 +612,9 @@ sequence.
               @defproc[(in-segment [s segment?]) sequence?]
               @defproc[(segment->list [s segment?]) list?]
               @defproc[(segment->vector [s segment?]) vector?])]{
- Segments and their accessors.}
+ Segments and their accessors.  The @racket[segment] constructor requires
+ that @racket[v] be neither a chaperone nor an impersonator and that
+ @racket[(+ start len)] be at most @racket[(vector-length v)].}
 
 @subsection{Writing through an iterator}
 

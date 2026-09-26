@@ -51,6 +51,7 @@
 (define exempt
   (set 'pseq
        'eseq
+       'segment
        'sek-configure!
        'pseq-push-front
        'pseq-push-back
