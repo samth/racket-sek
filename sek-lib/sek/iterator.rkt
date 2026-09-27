@@ -17,10 +17,19 @@
 ;; A cursor's position in the tree is its `path`:
 ;;   'sf, 'sb    -- at the front or back sentinel
 ;;   'front      -- inside the front chunk of this level
+;;   'ifront     -- inside the inner front chunk (the top level of an
+;;                  ephemeral sequence only)
+;;   'iback      -- inside the inner back chunk (likewise)
 ;;   'back       -- inside the back chunk
 ;;   'short      -- inside the vector of a short persistent sequence
 ;;   a cursor    -- inside the middle sequence, at the chunk that cursor
 ;;                  currently designates (one level deeper)
+;;
+;; A level is thus up to five regions, in order: front, inner front, middle,
+;; inner back, back.  The cursor walks an ephemeral sequence's inner chunks
+;; where they are rather than first moving them into the middle sequence, so
+;; that creating an iterator does not change the sequence -- several threads
+;; may then iterate over one ephemeral sequence at once.
 ;;
 ;; Iterating an ephemeral sequence is guarded by version numbers: any update
 ;; to the sequence invalidates every live iterator, and using an invalidated
@@ -79,7 +88,9 @@
 (struct/unchecked cur
         (depth [wt #:mutable]
                [front #:mutable]
+               [ifront #:mutable] ; #f below the top level
                [middle #:mutable]
+               [iback #:mutable] ; #f below the top level
                [back #:mutable]
                [sv #:mutable] ; the vector of a short sequence, or #f
                [path #:mutable]
@@ -130,26 +141,28 @@
 
 ;; ------------------------------------------------------------ construction
 
-(define (blank-cur depth wt front middle back sv)
-  (cur depth wt front middle back sv 'sf #f empty-support 0 0 0 0 -1 0))
+(define (blank-cur depth wt front ifront middle iback back sv)
+  (cur depth wt front ifront middle iback back sv 'sf #f empty-support 0 0 0 0 -1 0))
 
 (define (cur-of-tree t depth)
   (if t
-      (blank-cur depth (lvl-weight t) (lvl-front t) (lvl-middle t) (lvl-back t) #f)
-      (blank-cur depth 0 #f #f #f #f)))
+      (blank-cur depth (lvl-weight t) (lvl-front t) #f (lvl-middle t) #f (lvl-back t) #f)
+      (blank-cur depth 0 #f #f #f #f #f #f)))
 
-(define (cur-of-level f m b depth wt)
-  (blank-cur depth wt f m b #f))
+(define (cur-of-level f fi m bi b depth wt)
+  (blank-cur depth wt f fi m bi b #f))
 
 (define (cur-of-vector v)
-  (blank-cur 0 (vector-length v) #f #f #f v))
+  (blank-cur 0 (vector-length v) #f #f #f #f #f v))
 
 (define (cur-copy c)
   (define p (cur-path c))
   (cur (cur-depth c)
        (cur-wt c)
        (cur-front c)
+       (cur-ifront c)
        (cur-middle c)
+       (cur-iback c)
        (cur-back c)
        (cur-sv c)
        (if (cur? p)
@@ -212,15 +225,33 @@
 (define (icur-sch c)
   (unsafe-fx+ (cur-ishd-sch c) (unsafe-fx- (cur-icur c) (cur-ishd c))))
 
-;; The weight of the front chunk and of the middle sequence, which together
-;; give the weight index at which each of the three regions of a level starts.
-(define (wf-of c)
-  (let ([f (cur-front c)])
-    (if f
-        (chunk-weight f)
-        0)))
-(define (wm-of c)
-  (pt-weight (cur-middle c)))
+;; The regions of a level, numbered in forward order: 0 front, 1 inner front,
+;; 2 middle, 3 inner back, 4 back.  A missing chunk weighs nothing.
+(define (weight-of ch)
+  (if ch
+      (chunk-weight ch)
+      0))
+
+;; The weight index at which region r starts.
+(define (region-base c r)
+  (define b1 (weight-of (cur-front c)))
+  (define b2 (+ b1 (weight-of (cur-ifront c))))
+  (case r
+    [(0) 0]
+    [(1) b1]
+    [(2) b2]
+    [else
+     (define b3 (+ b2 (pt-weight (cur-middle c))))
+     (if (eqv? r 3)
+         b3
+         (+ b3 (weight-of (cur-iback c))))]))
+
+(define (region-of-path p)
+  (case p
+    [(front) 0]
+    [(ifront) 1]
+    [(iback) 3]
+    [else 4]))
 
 ;; ------------------------------------------------------------------- move
 
@@ -290,7 +321,7 @@
 ;; Enter the middle sequence from one end, or continue with an existing
 ;; cursor into it.
 (define (enter-middle! c dir mi)
-  (enter-chunk! c dir mi (cur-get mi) (+ (wf-of c) (cur-index mi))))
+  (enter-chunk! c dir mi (cur-get mi) (+ (region-base c 2) (cur-index mi))))
 
 (define (fresh-middle-cursor c dir)
   (define mi (cur-of-tree (cur-middle c) (add1 (cur-depth c))))
@@ -299,28 +330,33 @@
   mi)
 
 ;; Enter the first nonempty region at or after position k in the traversal
-;; order, where the order is front-middle-back going forward and the reverse
-;; going backward.  Skipping empty regions explicitly means the cursor does
-;; not depend on invariant 1 holding at the root, which it need not for an
+;; order, where the order is the regions' numbering going forward and the
+;; reverse going backward.  Skipping empty regions explicitly means the cursor
+;; does not depend on invariant 1 holding at the root, which it need not for an
 ;; ephemeral sequence.
 (define (enter-region! c dir k)
   (define fwd? (eq? dir 'forward))
+  (define (nonempty ch) (and ch (not (chunk-empty? ch)) ch))
   (let try ([k k])
     (cond
-      [(> k 2) (finish! c dir)]
+      [(> k 4) (finish! c dir)]
       [else
        (define r
          (if fwd?
              k
-             (- 2 k)))
-       (define f (cur-front c))
-       (define b (cur-back c))
-       (cond
-         [(and (eqv? r 0) f (not (chunk-empty? f))) (enter-chunk! c dir 'front f 0)]
-         [(and (eqv? r 1) (cur-middle c)) (enter-middle! c dir (fresh-middle-cursor c dir))]
-         [(and (eqv? r 2) b (not (chunk-empty? b)))
-          (enter-chunk! c dir 'back b (+ (wf-of c) (wm-of c)))]
-         [else (try (add1 k))])])))
+             (- 4 k)))
+       (case r
+         [(0) (define f (nonempty (cur-front c)))
+              (if f (enter-chunk! c dir 'front f 0) (try (add1 k)))]
+         [(1) (define fi (nonempty (cur-ifront c)))
+              (if fi (enter-chunk! c dir 'ifront fi (region-base c 1)) (try (add1 k)))]
+         [(2) (if (cur-middle c)
+                  (enter-middle! c dir (fresh-middle-cursor c dir))
+                  (try (add1 k)))]
+         [(3) (define bi (nonempty (cur-iback c)))
+              (if bi (enter-chunk! c dir 'iback bi (region-base c 3)) (try (add1 k)))]
+         [else (define b (nonempty (cur-back c)))
+               (if b (enter-chunk! c dir 'back b (region-base c 4)) (try (add1 k)))])])))
 
 (define (enter-short! c dir)
   (define v (cur-sv c))
@@ -349,19 +385,18 @@
      (if (cur-sv c)
          (enter-short! c dir)
          (enter-region! c dir 0))]
-    [(or (eq? p 'front) (eq? p 'back))
-     ;; leaving a side chunk inwards continues with the middle; leaving it
-     ;; outwards runs off the end of the sequence
-     (if (if (eq? dir 'forward)
-             (eq? p 'front)
-             (eq? p 'back))
-         (enter-region! c dir 1)
-         (finish! c dir))]
+    [(symbol? p)
+     ;; leaving a chunk region continues with the next region in the direction
+     ;; of travel; past the last one lies the sentinel
+     (define r (region-of-path p))
+     (enter-region! c dir (if (eq? dir 'forward) (add1 r) (- 5 r)))]
     [else
-     ;; already inside the middle sequence: step the deeper cursor
+     ;; already inside the middle sequence: step the deeper cursor, and after
+     ;; it the next region is the inner back going forward and the inner front
+     ;; going backward, both at position 3 of their traversal order
      (cur-move! p dir)
      (if (cur-finished? p)
-         (enter-region! c dir 2)
+         (enter-region! c dir 3)
          (enter-middle! c dir p))]))
 
 ;; ------------------------------------------------------------ random access
@@ -412,34 +447,32 @@
 ;; does on the tree itself.
 (define (reach-inside! c target)
   (define d (cur-depth c))
-  (define f (cur-front c))
   (define m (cur-middle c))
-  (define b (cur-back c))
-  (define wf
-    (if f
-        (chunk-weight f)
-        0))
-  (define wm (pt-weight m))
+  (define b1 (region-base c 1))
+  (define b2 (region-base c 2))
+  (define b3 (+ b2 (pt-weight m)))
+  (define b4 (+ b3 (weight-of (cur-iback c))))
+  ;; the item of chunk ch, which starts at weight index base, that covers target
+  (define (in-chunk! path ch base)
+    (define-values (q j) (chunk-item-at ch (- target base) d))
+    (install-chunk! c path ch q (- target j) base))
   (cond
-    [(< target wf)
-     (define-values (q j) (chunk-item-at f target d))
-     (install-chunk! c 'front f q (- target j) 0)]
-    [(>= target (+ wf wm))
-     (define t2 (- target wf wm))
-     (define-values (q j) (chunk-item-at b t2 d))
-     (install-chunk! c 'back b q (- target j) (+ wf wm))]
-    [else
+    [(< target b1) (in-chunk! 'front (cur-front c) 0)]
+    [(< target b2) (in-chunk! 'ifront (cur-ifront c) b1)]
+    [(< target b3)
      (define p (cur-path c))
      (define mi
        (if (cur? p)
            p
            (cur-of-tree m (add1 d))))
-     (define t2 (- target wf))
+     (define t2 (- target b2))
      (cur-reach! mi t2)
      (define ch (cur-get mi))
      (define j (- t2 (cur-index mi)))
      (define-values (q j2) (chunk-item-at ch j d))
-     (install-chunk! c mi ch q (- target j2) (+ wf (cur-index mi)))]))
+     (install-chunk! c mi ch q (- target j2) (+ b2 (cur-index mi)))]
+    [(< target b4) (in-chunk! 'iback (cur-iback c) b3)]
+    [else (in-chunk! 'back (cur-back c) b4)]))
 
 (define (cur-jump! c dir n)
   (unless (eqv? n 0)
@@ -477,10 +510,11 @@
     [(pseq? s)
      (define r (pseq-rep s))
      (cond
-       [(not r) (blank-cur 0 0 #f #f #f #f)]
+       [(not r) (blank-cur 0 0 #f #f #f #f #f #f)]
        [(vector? r) (cur-of-vector r)]
        [else (cur-of-tree r 0)])]
-    [else (cur-of-level (eseq-front s) (eseq-middle s) (eseq-back s) 0 (eseq-length s))]))
+    [else (cur-of-level (eseq-front s) (eseq-ifront s) (eseq-middle s) (eseq-iback s)
+                        (eseq-back s) 0 (eseq-length s))]))
 
 ;; Refresh a cursor from its sequence, discarding any position.
 (define (reload! it)
@@ -489,7 +523,9 @@
   (define fresh (make-cursor s))
   (set-cur-wt! c (cur-wt fresh))
   (set-cur-front! c (cur-front fresh))
+  (set-cur-ifront! c (cur-ifront fresh))
   (set-cur-middle! c (cur-middle fresh))
+  (set-cur-iback! c (cur-iback fresh))
   (set-cur-back! c (cur-back fresh))
   (set-cur-sv! c (cur-sv fresh))
   (goto-sentinel! c 'sf))

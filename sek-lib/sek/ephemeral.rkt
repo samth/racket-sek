@@ -137,69 +137,49 @@
 ;; ------------------------------------------------------- iterator validity
 
 ;; Iterator validity is tracked with a version number, following the OCaml
-;; library.  The sign of the version doubles as a flag: while it is negative
-;; or zero, no iterator is live, so an update need only test the sign.  An
-;; iterator records the version at its birth and is valid exactly while the
-;; sequence still carries that (positive) version.
-;; Nothing here consults `check-iterator-validity?`, even though it governs
-;; whether invalidation happens at all.  It does not need to: the sign of the
-;; version already carries that information.  Only the two functions below --
-;; which run when an iterator is created, not when the sequence is updated --
-;; ever make the version positive, and they decline to when checking is off.
-;; So a mutation tests the sign of a field it has already loaded, and never
-;; reads the setting.  That matters because this runs on every push, pop and
-;; set, and reading a module-level variable from another module is two
-;; dependent loads however it is stored -- an assigned variable, a box, a
-;; vector and a mutable struct field all compile to the same pair.
-;; This runs on every push, pop and write, so it reads the field once and does
-;; its arithmetic in fixnums: with generic `>` and `-` it reloaded the version
-;; after testing it and carried an overflow check on the negation.
+;; library.  Every update advances the version; an iterator records the
+;; version at its birth and is valid exactly while the sequence still carries
+;; it.  Creating an iterator therefore only reads the sequence, which is what
+;; lets several threads iterate over one ephemeral sequence at once.
+;;
+;; An update advances the version whether or not any iterator is live, and
+;; whether or not `check-iterator-validity?` is on: one store to a field the
+;; update has just loaded, and it never reads the setting, which lives in
+;; another module and would cost two dependent loads.  The setting is read only
+;; when an iterator's validity is tested.
 (define (eseq-invalidate-iterators! e)
-  (define v (esq-version e))
-  (when (unsafe-fx> v 0)
-    (set-esq-version! e (unsafe-fx- 0 v))))
+  (set-esq-version! e (unsafe-fx+ (esq-version e) 1)))
 
 ;; Invalidate every iterator, and return a birth date for the one iterator
 ;; that is allowed to survive.
 (define (eseq-invalidate-iterators-except! e)
-  (cond
-    [(check-iterator-validity?)
-     (define v (esq-version e))
-     (set-esq-version! e (if (unsafe-fx> v 0)
-                             (unsafe-fx+ v 1)
-                             (unsafe-fx+ (unsafe-fx- 0 v) 1)))
-     (esq-version e)]
-    ;; with checking off the version stays non-positive, so no iterator is ever
-    ;; considered live and the birth date is not consulted
-    [else (esq-version e)]))
+  (eseq-invalidate-iterators! e)
+  (esq-version e))
 
-;; Prepare the sequence for iteration and return a birth date.  Flushing the
-;; inner chunks is what lets an iterator see the plain front/middle/back shape
-;; of a level.
+;; A birth date for a new iterator.
 (define (eseq-iterator-born! e)
-  (eseq-flush-inner! e)
-  (define v (esq-version e))
-  (when (and (check-iterator-validity?) (unsafe-fx<= v 0))
-    (set-esq-version! e (unsafe-fx+ (unsafe-fx- 0 v) 1)))
   (esq-version e))
 
 (define (eseq-iterator-valid? e birth)
   (or (not (check-iterator-validity?))
-      (let ([v (esq-version e)])
-        (and (unsafe-fx> v 0) (unsafe-fx= birth v)))))
+      (unsafe-fx= birth (esq-version e))))
+
+;; The middle sequence with both inner chunks pushed onto it.  With e's own id
+;; as `owner` the pushes may update e's chunks in place; with `no-owner` they
+;; leave e untouched.
+(define (middle-with-inner e owner)
+  (define ibk (esq-iback e))
+  (define ifr (esq-ifront e))
+  (let* ([m (esq-middle e)]
+         [m (if (chunk-empty? ibk) m (pt-push-back m ibk (chunk-weight ibk) 1 owner))])
+    (if (chunk-empty? ifr) m (pt-push-front m ifr (chunk-weight ifr) 1 owner))))
 
 ;; Push both inner chunks into the middle sequence, so that the sequence is
 ;; exactly a front chunk, a middle sequence and a back chunk.
 (define (eseq-flush-inner! e)
-  (define id (esq-id e))
-  (define ibk (esq-iback e))
-  (unless (chunk-empty? ibk)
-    (set-esq-middle! e (pt-push-back (esq-middle e) ibk (chunk-weight ibk) 1 id))
-    (set-esq-iback! e empty-chunk))
-  (define ifr (esq-ifront e))
-  (unless (chunk-empty? ifr)
-    (set-esq-middle! e (pt-push-front (esq-middle e) ifr (chunk-weight ifr) 1 id))
-    (set-esq-ifront! e empty-chunk)))
+  (set-esq-middle! e (middle-with-inner e (esq-id e)))
+  (set-esq-iback! e empty-chunk)
+  (set-esq-ifront! e empty-chunk))
 
 ;; Every component weight is bounded by the length of the sequence, so these
 ;; sums are fixnum arithmetic.
@@ -415,31 +395,33 @@
 ;; --------------------------------------------------------------- conversions
 
 ;; snapshot (§3.6): install a fresh id, which strips ownership from every
-;; chunk in the structure, then fold the inner chunks into the middle sequence
-;; and restore invariant 1.
+;; chunk in the structure, then build the snapshot's tree from the five parts,
+;; with the inner chunks folded into its middle sequence.
 ;;
-;; This does not invalidate live iterators: an iterator can only be live if no
-;; update has happened since it was born, in which case the inner chunks are
-;; still empty and this leaves the shape of the sequence alone.  Losing
-;; ownership of the chunks is something an iterator tolerates; it only means
-;; that a subsequent write through it takes the copy-on-write path.
+;; A snapshot counts as a read: several threads may take one while others read
+;; the sequence.  So the inner chunks are pushed onto a persistent copy of the
+;; middle sequence, not moved into the sequence's own, and the sequence keeps
+;; its shape.  The one field written is the id, which only updates consult.
+;; Live iterators stay valid, and losing ownership of the chunks only means
+;; that a later write through one of them takes the copy-on-write path.
 (define (eseq-snapshot e)
   (check-eseq 'eseq-snapshot e)
-  ;; Flush first, while the sequence still owns its chunks, so that the push
-  ;; can update them in place; only then hand out a fresh id, which is what
-  ;; makes every chunk immutable and safe to share with the snapshot.
-  (eseq-flush-inner! e)
   (set-esq-id! e (fresh-id!))
   (pseq-of-tree
-   (pt-populate-sides (esq-front e) (esq-middle e) (esq-back e) 0 no-owner)))
+   (pt-populate-sides (esq-front e) (middle-with-inner e no-owner) (esq-back e) 0 no-owner)))
 
 ;; Take the snapshot and empty the sequence.  This avoids leaving the two
 ;; structures sharing chunks, so later updates to the sequence never pay for
 ;; copy-on-write; it is the cheaper operation when the old contents are not
-;; needed.
+;; needed.  Being an update, it may move the inner chunks in place, while the
+;; sequence still owns them.
 (define (eseq-snapshot-and-clear! e)
   (check-eseq 'eseq-snapshot-and-clear! e)
-  (define s (eseq-snapshot e))
+  (eseq-flush-inner! e)
+  (set-esq-id! e (fresh-id!))
+  (define s
+    (pseq-of-tree
+     (pt-populate-sides (esq-front e) (esq-middle e) (esq-back e) 0 no-owner)))
   (eseq-clear! e)
   s)
 

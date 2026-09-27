@@ -5,6 +5,7 @@
 (require rackunit
          racket/list
          sek/config
+         (only-in sek/chunk chunk-empty?)
          sek/persistent
          sek/ephemeral
          sek/iterator
@@ -214,3 +215,53 @@
   (define it7 (sek-iterator-at-sentinel (list->pseq '(1 2)) 'front))
   (check-exn exn:fail? (lambda () (sek-iter-move! it7 'backward)))
   (check-exn exn:fail? (lambda () (sek-iter-get it7))))
+
+;; An ephemeral sequence whose inner chunks are both full.  Iterating it walks
+;; the inner chunks where they are, so creating an iterator, and taking a
+;; snapshot, must leave them there -- that is what lets several threads read
+;; the sequence at once -- and every way of moving must still see them.
+(module+ test
+ (test-case "inner chunks"
+  (define (inner-full)
+    (define e (make-eseq))
+    (for ([i (in-range 300)]) (eseq-push-front! e (- -1 i)))
+    (for ([i (in-range 300)]) (eseq-push-back! e i))
+    e)
+  (define e (inner-full))
+  (define l (eseq->list e))
+  (define ifront (eseq-ifront e))
+  (define iback (eseq-iback e))
+  (check-false (chunk-empty? ifront))
+  (check-false (chunk-empty? iback))
+  (check-equal? (walk (sek-iterator e 'forward) 'forward) l)
+  (check-equal? (walk (sek-iterator e 'backward) 'backward) (reverse l))
+  (check-equal? (walk-by-segments (sek-iterator e 'forward) 'forward) l)
+  (check-equal? (walk-by-segments (sek-iterator e 'backward) 'backward) (reverse l))
+  (define it (sek-iterator e 'forward))
+  (for ([i (in-range (length l))])
+    (sek-iter-reach! it i)
+    (check-equal? (sek-iter-get it) (list-ref l i)))
+  (for ([i (in-range (sub1 (length l)) -1 -7)])
+    (sek-iter-reach! it i)
+    (check-equal? (sek-iter-index it) i)
+    (check-equal? (sek-iter-get it) (list-ref l i)))
+  (check-eq? (eseq-ifront e) ifront)
+  (check-eq? (eseq-iback e) iback)
+  ;; a snapshot is a read too
+  (define s (eseq-snapshot e))
+  (check-equal? (pseq->list s) l)
+  (check-eq? (eseq-ifront e) ifront)
+  (check-eq? (eseq-iback e) iback)
+  (check-true (sek-iter-valid? it))
+  ;; writing through an iterator into each inner chunk
+  (define e2 (inner-full))
+  (define n (eseq-length e2))
+  (define it2 (sek-iterator e2 'forward))
+  (define targets (list 130 (- n 131)))
+  (for ([i (in-list targets)])
+    (sek-iter-reach! it2 i)
+    (sek-iter-set! it2 'x))
+  (check-equal? (eseq->list e2)
+                (for/list ([x (in-list l)] [i (in-naturals)])
+                  (if (memv i targets) 'x x)))
+  (check-equal? (pseq->list s) l)))

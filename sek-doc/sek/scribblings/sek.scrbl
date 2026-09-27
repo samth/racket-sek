@@ -252,8 +252,11 @@ also @racket[in-eseq].  It is @racket[serializable?], and two ephemeral
 sequences are @racket[equal?] when their elements are.  It is not a
 @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream}.
 
-Using an ephemeral sequence from several threads at once requires
-synchronization, even when none of them updates it.
+Several threads may use an ephemeral sequence at once as long as none of them
+updates it; an update needs exclusive access.  The operations that update a
+sequence are those whose names end in @litchar{!}, and writing through an
+iterator; taking a snapshot and @racket[eseq-copy] do not.  An iterator
+itself belongs to one thread at a time.
 
 @defproc[(eseq? [v any/c]) boolean?]{
 

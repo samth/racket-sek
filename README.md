@@ -349,9 +349,11 @@ checked. The remaining differences:
   only at the top of the structure, as in the authors' implementation.
 * `pseq-edit` shares the front and back chunks instead of copying them, so it
   is O(1) rather than O(K); the copy happens on the first write, if any.
-* `eseq-snapshot` folds the inner chunks into the middle sequence, as the
-  OCaml library does, so it is O(K log_K n) in the worst case rather than the
-  O(1) of Figure 16.
+* `eseq-snapshot` folds the inner chunks into the snapshot's middle sequence,
+  so it is O(K log_K n) in the worst case rather than the O(1) of Figure 16.
+  The OCaml library folds them into the sequence's own middle sequence, and so
+  does creating an iterator there; here neither changes the sequence, so that
+  several threads may read one ephemeral sequence at once.
 * A `#:short-threshold` of 0 works here and not there.
 * A persistent sequence may be shared between threads.  A monotonic in-place
   update claims its slot with a compare-and-swap on the support's head and

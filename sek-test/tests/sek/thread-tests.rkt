@@ -30,7 +30,9 @@
     (for ([i (in-range n)])
       (vector-set! arrived me (add1 i))
       (let spin () (when (< (vector-ref arrived other) (add1 i)) (spin)))
-      (vector-set! out i (work me i))))
+      ;; an exception is a result, so that the other thread is not left
+      ;; waiting forever for this one
+      (vector-set! out i (with-handlers ([exn:fail? values]) (work me i)))))
   (define ts (for/list ([me (in-range 2)])
                (parallel-thread (lambda () (worker me)))))
   (for-each thread-wait ts)
@@ -71,6 +73,30 @@
       (sek-validate-pseq b)
       (check-equal? (pseq->list f) (expected base 'f))
       (check-equal? (pseq->list b) (expected base 'b))))
+
+  (test-case "two readers of one ephemeral sequence, with no writer"
+    ;; Each sequence has full inner chunks, and the two threads start reading
+    ;; it at the same moment -- one iterating, one taking a snapshot -- so a
+    ;; read that moved the inner chunks would race with the other.
+    (define M 5000)
+    (define (inner-full k)
+      (define e (make-eseq))
+      (for ([i (in-range (+ 130 k))]) (eseq-push-front! e (- -1 i)))
+      (for ([i (in-range (+ 130 k))]) (eseq-push-back! e i))
+      e)
+    (define es (for/vector ([i (in-range M)]) (inner-full (modulo i 200))))
+    (define ls (for/vector ([e (in-vector es)]) (eseq->list e)))
+    (define-values (walked snapped)
+      (lockstep M (lambda (me i)
+                    (define e (vector-ref es i))
+                    (if (= me 0)
+                        (for/list ([x (in-sek e)]) x)
+                        (pseq->list (eseq-snapshot e))))))
+    (for ([e (in-vector es)] [l (in-vector ls)] [w (in-vector walked)] [s (in-vector snapped)])
+      (check-equal? w l)
+      (check-equal? s l)
+      (sek-validate-eseq e)
+      (check-equal? (eseq->list e) l)))
 
   (test-case "an ephemeral sequence and its snapshot, extended by two threads"
     ;; after a snapshot the two share their chunks, so the ephemeral
