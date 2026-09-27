@@ -15,7 +15,7 @@
          racket/serialize
          racket/stream
          racket/performance-hint
-         (only-in racket/unsafe/ops
+         (only-in "unchecked.rkt"
                   unsafe-vector*-ref unsafe-vector*-length
                   unsafe-fx>= unsafe-fx<= unsafe-fx<)
          "config.rkt"

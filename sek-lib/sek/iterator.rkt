@@ -36,7 +36,7 @@
 ;; iterator raises an error rather than quietly reading stale memory.
 
 (require "unchecked.rkt"
-         (only-in racket/unsafe/ops
+         (only-in "unchecked.rkt"
                   unsafe-vector*-ref unsafe-vector*-set!
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>)
          "config.rkt"
@@ -513,8 +513,17 @@
        [(not r) (blank-cur 0 0 #f #f #f #f #f #f)]
        [(vector? r) (cur-of-vector r)]
        [else (cur-of-tree r 0)])]
-    [else (cur-of-level (eseq-front s) (eseq-ifront s) (eseq-middle s) (eseq-iback s)
-                        (eseq-back s) 0 (eseq-length s))]))
+    [else
+     ;; read the five parts one at a time, so that a jitter build can pause
+     ;; between them
+     (define f (eseq-front s))
+     (jitter!)
+     (define fi (eseq-ifront s))
+     (define m (eseq-middle s))
+     (jitter!)
+     (define bi (eseq-iback s))
+     (define b (eseq-back s))
+     (cur-of-level f fi m bi b 0 (eseq-length s))]))
 
 ;; Refresh a cursor from its sequence, discarding any position.
 (define (reload! it)

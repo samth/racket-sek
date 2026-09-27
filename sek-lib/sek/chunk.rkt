@@ -18,7 +18,7 @@
 
 (require racket/vector
          racket/performance-hint
-         (only-in racket/unsafe/ops
+         (only-in "unchecked.rkt"
                   unsafe-vector*-ref unsafe-vector*-set! unsafe-vector*-length
                   unsafe-vector*-set/copy
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>= unsafe-fx=)
@@ -384,7 +384,9 @@
   (unsafe-vector*-set! (support-data s)
                        (checked-index (wrap+ (unsafe-fx+ (chunk-head c) (chunk-size c)) k) k)
                        x)
+  (jitter!)
   (set-support-size! s (unsafe-fx+ (support-size s) 1))
+  (jitter!)
   (set-chunk-size! c (unsafe-fx+ (chunk-size c) 1))
   (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) w))
   c)
@@ -394,8 +396,10 @@
   (define k (chunk-capacity c))
   (define i (checked-index (wrap- (unsafe-fx- (chunk-head c) 1) k) k))
   (unsafe-vector*-set! (support-data s) i x)
+  (jitter!)
   (set-support-head! s i)
   (set-support-size! s (unsafe-fx+ (support-size s) 1))
+  (jitter!)
   (set-chunk-head! c i)
   (set-chunk-size! c (unsafe-fx+ (chunk-size c) 1))
   (set-chunk-weight! c (unsafe-fx+ (chunk-weight c) w))
@@ -418,10 +422,12 @@
   (define size (extent-size e))
   (define view-back (wrap+ (fx+ (chunk-head c) n) k))
   (define support-back (wrap+ (fx+ (extent-head e) size) k))
+  (jitter!)
   (cond
     [(and (fx< size k)
           (fx= view-back support-back)
           (support-extent-cas! s e (extent (extent-head e) (fx+ size 1))))
+     (jitter!)
      (vector-set! (support-data s) support-back x)
      (chunk s (chunk-head c) (fx+ n 1) (fx+ (chunk-weight c) w) (chunk-id c))]
     [else
@@ -438,10 +444,12 @@
   (define e (support-extent s))
   (define size (extent-size e))
   (define i (wrap- (fx- (extent-head e) 1) k))
+  (jitter!)
   (cond
     [(and (fx< size k)
           (fx= (chunk-head c) (extent-head e))
           (support-extent-cas! s e (extent i (fx+ size 1))))
+     (jitter!)
      (vector-set! (support-data s) i x)
      (chunk s i (fx+ n 1) (fx+ (chunk-weight c) w) (chunk-id c))]
     [else
@@ -482,7 +490,9 @@
        (unsafe-vector*-set! (support-data s)
                             (checked-index (wrap+ (unsafe-fx+ (chunk-head c) (unsafe-fx- n 1)) k) k)
                             none))
+     (jitter!)
      (set-support-size! s (unsafe-fx- (support-size s) 1))
+     (jitter!)
      (set-chunk-size! c (unsafe-fx- n 1))
      (set-chunk-weight! c (unsafe-fx- (chunk-weight c) w))
      (values x c)]
@@ -499,8 +509,10 @@
      (define s (chunk-support c))
      (when (overwrite-empty-slots?)
        (unsafe-vector*-set! (support-data s) (checked-index (chunk-head c) k) none))
+     (jitter!)
      (set-support-head! s (wrap+ (unsafe-fx+ (chunk-head c) 1) k))
      (set-support-size! s (unsafe-fx- (support-size s) 1))
+     (jitter!)
      (set-chunk-head! c (wrap+ (unsafe-fx+ (chunk-head c) 1) k))
      (set-chunk-size! c (unsafe-fx- (chunk-size c) 1))
      (set-chunk-weight! c (unsafe-fx- (chunk-weight c) w))

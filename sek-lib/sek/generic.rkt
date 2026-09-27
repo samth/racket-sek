@@ -12,7 +12,7 @@
 ;; friends close to the speed of the same loop over an array.
 
 (require (for-syntax racket/base)
-         (only-in racket/unsafe/ops
+         (only-in "unchecked.rkt"
                   unsafe-vector*-ref unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx> unsafe-fx=)
          racket/vector
          (only-in "unchecked.rkt" in-fx-range)

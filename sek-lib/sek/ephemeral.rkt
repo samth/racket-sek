@@ -19,7 +19,7 @@
 (require "unchecked.rkt"
          racket/performance-hint
          racket/serialize
-         (only-in racket/unsafe/ops
+         (only-in "unchecked.rkt"
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx<=
                   unsafe-fx> unsafe-fx>= unsafe-fx= unsafe-fxabs)
          "config.rkt"
@@ -175,6 +175,7 @@
 ;; have adopted it first.
 (define (adopt-fold! e v)
   (set-esq-middle! e (esq-folded e))
+  (jitter!)
   (set-esq-ifront! e empty-chunk)
   (set-esq-iback! e empty-chunk)
   (set-esq-folded! e #f)
@@ -254,6 +255,7 @@
      (define ifr (esq-ifront e))
      (unless (chunk-empty? ifr)
        (set-esq-middle! e (pt-push-front (esq-middle e) ifr (chunk-weight ifr) 1 id)))
+     (jitter!)
      (set-esq-ifront! e f)
      (set-esq-front! e (chunk-singleton x 1 (capacity-at 0) id))]))
 
@@ -270,6 +272,7 @@
      (define ibk (esq-iback e))
      (unless (chunk-empty? ibk)
        (set-esq-middle! e (pt-push-back (esq-middle e) ibk (chunk-weight ibk) 1 id)))
+     (jitter!)
      (set-esq-iback! e b)
      (set-esq-back! e (chunk-singleton x 1 (capacity-at 0) id))]))
 
@@ -455,7 +458,9 @@
       [(and (chunk-empty? (esq-ifront e)) (chunk-empty? (esq-iback e))) (esq-middle e)]
       [else
        (define m (middle-with-inner e no-owner))
+       (jitter!)
        (set-esq-folded! e m)
+       (jitter!)
        (set-esq-version! e (unsafe-fx- 0 (unsafe-fxabs v)))
        m]))
   (pseq-of-tree (pt-populate-sides (esq-front e) m (esq-back e) 0 no-owner)))

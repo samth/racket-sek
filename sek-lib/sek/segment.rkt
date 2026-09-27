@@ -12,7 +12,7 @@
 ;; iterator that produced it does.
 
 (require racket/vector
-         (only-in racket/unsafe/ops unsafe-vector*-ref unsafe-fx+ unsafe-fx-)
+         (only-in "unchecked.rkt" unsafe-vector*-ref unsafe-fx+ unsafe-fx-)
          (only-in "unchecked.rkt" in-fx-range))
 
 ;; Every function here that a caller outside the library can reach checks its
