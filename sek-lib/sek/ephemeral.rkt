@@ -295,6 +295,10 @@
      (eseq-pop-front! e)]
     [(esq-middle e)
      (define-values (c m) (pt-pop-front (esq-middle e) 1 id))
+     ;; a chunk from the middle sequence is never empty (invariant 2) unless
+     ;; a data race has broken the structure; recurring on one could go on
+     ;; forever
+     (when (chunk-empty? c) (inconsistent-structure))
      (set-esq-middle! e m)
      (set-esq-front! e c)
      (eseq-pop-front! e)]
@@ -324,6 +328,8 @@
      (eseq-pop-back! e)]
     [(esq-middle e)
      (define-values (c m) (pt-pop-back (esq-middle e) 1 id))
+     ;; as in eseq-pop-front!
+     (when (chunk-empty? c) (inconsistent-structure))
      (set-esq-middle! e m)
      (set-esq-back! e c)
      (eseq-pop-back! e)]

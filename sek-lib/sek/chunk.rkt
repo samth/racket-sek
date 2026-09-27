@@ -180,8 +180,11 @@
     (support-cap (chunk-support c)))
   (define (chunk-length c)
     (chunk-size c))
+  ;; A size below zero is impossible in correct use, but two threads popping
+  ;; one owned chunk at once can each see it at 1 and decrement it.  Calling
+  ;; such a chunk empty keeps loops that pop until a chunk is empty finite.
   (define (chunk-empty? c)
-    (unsafe-fx= 0 (chunk-size c)))
+    (unsafe-fx<= (chunk-size c) 0))
   (define (chunk-full? c)
     (unsafe-fx= (chunk-size c) (chunk-capacity c)))
 
