@@ -6,6 +6,7 @@
          racket/list
          sek/config
          (only-in sek/chunk chunk-empty?)
+         (only-in sek/check check-eseq)
          sek/persistent
          sek/ephemeral
          sek/iterator
@@ -253,6 +254,22 @@
   (check-eq? (eseq-ifront e) ifront)
   (check-eq? (eseq-iback e) iback)
   (check-true (sek-iter-valid? it))
+  ;; a second snapshot reuses the first one's fold; the next update adopts it,
+  ;; emptying the inner chunks, and neither snapshot notices
+  (define s2 (eseq-snapshot e))
+  (check-equal? (pseq->list s2) l)
+  (check-true (sek-iter-valid? it))
+  (eseq-push-back! e 'end)
+  (check-false (sek-iter-valid? it))
+  (check-true (chunk-empty? (eseq-ifront e)))
+  (check-true (chunk-empty? (eseq-iback e)))
+  (check-eseq e)
+  (check-equal? (eseq->list e) (append l '(end)))
+  (check-equal? (pseq->list s) l)
+  (check-equal? (pseq->list s2) l)
+  (check-equal? (pseq->list (eseq-snapshot e)) (append l '(end)))
+  (eseq-pop-back! e)
+  (check-equal? (eseq->list e) l)
   ;; writing through an iterator into each inner chunk
   (define e2 (inner-full))
   (define n (eseq-length e2))

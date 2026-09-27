@@ -20,7 +20,7 @@
          racket/serialize
          (only-in racket/unsafe/ops
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx<=
-                  unsafe-fx> unsafe-fx>= unsafe-fx=)
+                  unsafe-fx> unsafe-fx>= unsafe-fx= unsafe-fxabs)
          "config.rkt"
          "chunk.rkt"
          "ptree.rkt"
@@ -85,7 +85,12 @@
                         [middle #:mutable]
                         [iback #:mutable]
                         [back #:mutable]
-                        [version #:mutable])
+                        ;; see "iterator validity" below: its magnitude counts
+                        ;; updates, and its sign says whether `folded` is set
+                        [version #:mutable]
+                        ;; the middle sequence with the inner chunks folded in,
+                        ;; left by a snapshot for the next update to adopt
+                        [folded #:mutable])
   #:authentic #:sealed
   #:property prop:sequence
   (lambda (e) (in-eseq e))
@@ -127,7 +132,7 @@
 
 (define (make-eseq [n 0] [v #f])
   (define id (fresh-id!))
-  (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 0))
+  (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 1 #f))
   (for ([_ (in-range n)]) (eseq-add! e v))
   e)
 
@@ -142,13 +147,32 @@
 ;; it.  Creating an iterator therefore only reads the sequence, which is what
 ;; lets several threads iterate over one ephemeral sequence at once.
 ;;
-;; An update advances the version whether or not any iterator is live, and
-;; whether or not `check-iterator-validity?` is on: one store to a field the
-;; update has just loaded, and it never reads the setting, which lives in
-;; another module and would cost two dependent loads.  The setting is read only
-;; when an iterator's validity is tested.
+;; The field holds the version's magnitude, which starts at 1, and its sign
+;; says whether a snapshot has left a fold for the next update to adopt (see
+;; `eseq-snapshot`): negative means it has.  Every update runs
+;; `eseq-invalidate-iterators!` before it looks at the structure, so that is
+;; where the fold is adopted, and an update without one pays a sign test on the
+;; value it has loaded anyway.  It advances the version whether or not any
+;; iterator is live, and whether or not `check-iterator-validity?` is on, and
+;; never reads the setting, which lives in another module and would cost two
+;; dependent loads.  The setting is read only when an iterator's validity is
+;; tested.
 (define (eseq-invalidate-iterators! e)
-  (set-esq-version! e (unsafe-fx+ (esq-version e) 1)))
+  (define v (esq-version e))
+  (if (unsafe-fx< v 0)
+      (adopt-fold! e v)
+      (set-esq-version! e (unsafe-fx+ v 1))))
+
+;; An update has exclusive access, so it may install the fold -- several
+;; fields at once -- where a snapshot, which may run beside readers, could
+;; not.  Nothing has changed since the fold was made, because any update would
+;; have adopted it first.
+(define (adopt-fold! e v)
+  (set-esq-middle! e (esq-folded e))
+  (set-esq-ifront! e empty-chunk)
+  (set-esq-iback! e empty-chunk)
+  (set-esq-folded! e #f)
+  (set-esq-version! e (unsafe-fx+ (unsafe-fx- 0 v) 1)))
 
 ;; Invalidate every iterator, and return a birth date for the one iterator
 ;; that is allowed to survive.
@@ -158,11 +182,11 @@
 
 ;; A birth date for a new iterator.
 (define (eseq-iterator-born! e)
-  (esq-version e))
+  (unsafe-fxabs (esq-version e)))
 
 (define (eseq-iterator-valid? e birth)
   (or (not (check-iterator-validity?))
-      (unsafe-fx= birth (esq-version e))))
+      (unsafe-fx= birth (unsafe-fxabs (esq-version e)))))
 
 ;; The middle sequence with both inner chunks pushed onto it.  With e's own id
 ;; as `owner` the pushes may update e's chunks in place; with `no-owner` they
@@ -177,6 +201,7 @@
 ;; Push both inner chunks into the middle sequence, so that the sequence is
 ;; exactly a front chunk, a middle sequence and a back chunk.
 (define (eseq-flush-inner! e)
+  (eseq-invalidate-iterators! e)
   (set-esq-middle! e (middle-with-inner e (esq-id e)))
   (set-esq-iback! e empty-chunk)
   (set-esq-ifront! e empty-chunk))
@@ -401,14 +426,33 @@
 ;; A snapshot counts as a read: several threads may take one while others read
 ;; the sequence.  So the inner chunks are pushed onto a persistent copy of the
 ;; middle sequence, not moved into the sequence's own, and the sequence keeps
-;; its shape.  The one field written is the id, which only updates consult.
-;; Live iterators stay valid, and losing ownership of the chunks only means
-;; that a later write through one of them takes the copy-on-write path.
+;; its shape.  Live iterators stay valid, and losing ownership of the chunks
+;; only means that a later write through one of them takes the copy-on-write
+;; path.
+;;
+;; The copy is left in `folded`, and the version made negative, so that the
+;; next update adopts it (see `eseq-invalidate-iterators!`); until then, a
+;; further snapshot reuses it.  Without that, a sequence snapshotted after
+;; every few updates would fold the same inner chunks again each time.  The
+;; fields written -- the id, `folded` and the sign of the version -- are ones
+;; that reads do not consult, or consult only through the version's magnitude.
+;; Two snapshots taken at once may each make a fold; either will do.  A
+;; snapshot that sees the version negative but `folded` not yet set, as one
+;; racing another may, folds for itself.
 (define (eseq-snapshot e)
   (check-eseq 'eseq-snapshot e)
   (set-esq-id! e (fresh-id!))
-  (pseq-of-tree
-   (pt-populate-sides (esq-front e) (middle-with-inner e no-owner) (esq-back e) 0 no-owner)))
+  (define v (esq-version e))
+  (define m
+    (cond
+      [(and (unsafe-fx< v 0) (esq-folded e))]
+      [(and (chunk-empty? (esq-ifront e)) (chunk-empty? (esq-iback e))) (esq-middle e)]
+      [else
+       (define m (middle-with-inner e no-owner))
+       (set-esq-folded! e m)
+       (set-esq-version! e (unsafe-fx- 0 (unsafe-fxabs v)))
+       m]))
+  (pseq-of-tree (pt-populate-sides (esq-front e) m (esq-back e) 0 no-owner)))
 
 ;; Take the snapshot and empty the sequence.  This avoids leaving the two
 ;; structures sharing chunks, so later updates to the sequence never pay for
@@ -435,9 +479,9 @@
     [(not r) (make-eseq)]
     [(vector? r)
      (esq id (chunk-of-vector r k unit-measure id) empty-chunk #f empty-chunk
-          empty-chunk 0)]
+          empty-chunk 1 #f)]
     [else
-     (esq id (lvl-front r) empty-chunk (lvl-middle r) empty-chunk (lvl-back r) 0)]))
+     (esq id (lvl-front r) empty-chunk (lvl-middle r) empty-chunk (lvl-back r) 1 #f)]))
 
 ;; mode 'copy, the default, walks the elements, which costs O(n) but leaves
 ;; both structures with their own chunks.  Mode 'share leaves the copy sharing
@@ -455,7 +499,7 @@
      ;; that makes the copy itself O(1).
      (set-esq-id! e (fresh-id!))
      (esq (fresh-id!) (esq-front e) (esq-ifront e) (esq-middle e)
-          (esq-iback e) (esq-back e) 0)]
+          (esq-iback e) (esq-back e) 1 #f)]
     [(copy) (list->eseq (eseq->list e))]
     [else (raise-argument-error 'eseq-copy "(or/c 'share 'copy)" mode)]))
 
