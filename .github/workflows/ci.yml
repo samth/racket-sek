@@ -21,11 +21,6 @@ jobs:
         # breakage from in-development Racket before it reaches a release.
         racket-version: ["9.2", "9.3", "current"]
         racket-variant: ["CS"]
-        include:
-          # BC has no `current` snapshot for setup-racket to fetch, so pin a
-          # release rather than leaving the job permanently red
-          - racket-version: "8.17"
-            racket-variant: "BC"
     steps:
       - uses: actions/checkout@v5
 
