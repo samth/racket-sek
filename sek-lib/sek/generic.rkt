@@ -15,6 +15,7 @@
          (only-in racket/unsafe/ops
                   unsafe-vector*-ref unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx> unsafe-fx=)
          racket/vector
+         (only-in "unchecked.rkt" in-fx-range)
          "config.rkt"
          "persistent.rkt"
          "ephemeral.rkt"
@@ -216,7 +217,7 @@
        ;; walk the support indices directly rather than an offset plus a
        ;; counter, which costs a generic addition per element
        (loop (for/fold ([acc acc])
-                       ([j (in-range o (unsafe-fx+ o (segment-length sg)))])
+                       ([j (in-fx-range o (unsafe-fx+ o (segment-length sg)))])
                (proc acc (unsafe-vector*-ref v j))))])))
 
 (define (sek-fold-right s proc init)
@@ -230,7 +231,7 @@
        (define v (segment-vector sg))
        (define o (segment-start sg))
        (loop (for/fold ([acc acc])
-                       ([j (in-range (unsafe-fx+ o (unsafe-fx- (segment-length sg) 1))
+                       ([j (in-fx-range (unsafe-fx+ o (unsafe-fx- (segment-length sg) 1))
                                      (unsafe-fx- o 1)
                                      -1)])
                (proc (unsafe-vector*-ref v j) acc)))])))

@@ -12,7 +12,8 @@
 ;; iterator that produced it does.
 
 (require racket/vector
-         (only-in racket/unsafe/ops unsafe-vector*-ref unsafe-fx+ unsafe-fx-))
+         (only-in racket/unsafe/ops unsafe-vector*-ref unsafe-fx+ unsafe-fx-)
+         (only-in "unchecked.rkt" in-fx-range))
 
 ;; Every function here that a caller outside the library can reach checks its
 ;; arguments explicitly, with `unless`, so that an error names the operation
@@ -100,9 +101,9 @@
   (define i (seg-start s))
   (define n (seg-length s))
   (if (eq? dir 'forward)
-      (for ([j (in-range i (unsafe-fx+ i n))])
+      (for ([j (in-fx-range i (unsafe-fx+ i n))])
         (proc (unsafe-vector*-ref v j)))
-      (for ([j (in-range (unsafe-fx- (unsafe-fx+ i n) 1) (unsafe-fx- i 1) -1)])
+      (for ([j (in-fx-range (unsafe-fx- (unsafe-fx+ i n) 1) (unsafe-fx- i 1) -1)])
         (proc (unsafe-vector*-ref v j)))))
 
 (define (segment-for-each2 s1 s2 proc [dir 'forward])

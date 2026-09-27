@@ -17,6 +17,7 @@
 ;; point every chunk in the structure silently becomes immutable.
 
 (require "unchecked.rkt"
+         racket/performance-hint
          racket/serialize
          (only-in racket/unsafe/ops
                   unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx<=
@@ -157,11 +158,16 @@
 ;; never reads the setting, which lives in another module and would cost two
 ;; dependent loads.  The setting is read only when an iterator's validity is
 ;; tested.
-(define (eseq-invalidate-iterators! e)
-  (define v (esq-version e))
-  (if (unsafe-fx< v 0)
-      (adopt-fold! e v)
-      (set-esq-version! e (unsafe-fx+ v 1))))
+;;
+;; Every push and pop runs this, and with the branch to `adopt-fold!` it is
+;; just past the size that the compiler inlines on its own; left as a call it
+;; cost each push and pop about a nanosecond.
+(begin-encourage-inline
+  (define (eseq-invalidate-iterators! e)
+    (define v (esq-version e))
+    (if (unsafe-fx< v 0)
+        (adopt-fold! e v)
+        (set-esq-version! e (unsafe-fx+ v 1)))))
 
 ;; An update has exclusive access, so it may install the fold -- several
 ;; fields at once -- where a snapshot, which may run beside readers, could
@@ -577,7 +583,7 @@
 (define (eseq-for-each e proc)
   (check-eseq 'eseq-for-each e)
   (define (chunk-elems c)
-    (for ([j (in-range (chunk-length c))])
+    (for ([j (in-fx-range (chunk-length c))])
       (proc (chunk-ref c j))))
   (chunk-elems (esq-front e))
   (chunk-elems (esq-ifront e))

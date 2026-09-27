@@ -615,7 +615,7 @@
 
 ;; c holds items of depth d.
 (define (chunk-for-each c d proc)
-  (for ([i (in-range (chunk-length c))])
+  (for ([i (in-fx-range (chunk-length c))])
     (item-for-each (chunk-ref c i) d proc)))
 
 (define (pt-for-each t d proc)
@@ -628,15 +628,15 @@
 (define (pt-items-for-each t d proc)
   (when t
     (define f (lvl-front t))
-    (for ([i (in-range (chunk-length f))])
+    (for ([i (in-fx-range (chunk-length f))])
       (proc (chunk-ref f i)))
     (pt-items-for-each (lvl-middle t)
                        (fx+ d 1)
                        (lambda (c)
-                         (for ([i (in-range (chunk-length c))])
+                         (for ([i (in-fx-range (chunk-length c))])
                            (proc (chunk-ref c i)))))
     (define b (lvl-back t))
-    (for ([i (in-range (chunk-length b))])
+    (for ([i (in-fx-range (chunk-length b))])
       (proc (chunk-ref b i)))))
 
 (define (pt-of-list xs owner)

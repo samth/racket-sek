@@ -22,6 +22,7 @@
          racket/unsafe/ops)
 
 (provide struct/unchecked
+         in-fx-range
          (except-out (all-from-out racket/fixnum)
                      fx+ fx- fx* fx= fx< fx<= fx> fx>= fxand fxior fxxor
                      fxlshift fxrshift fxquotient fxremainder fxmodulo fxmin fxmax)
@@ -33,6 +34,41 @@
                      [unsafe-fxquotient fxquotient] [unsafe-fxremainder fxremainder]
                      [unsafe-fxmodulo fxmodulo]
                      [unsafe-fxmin fxmin] [unsafe-fxmax fxmax]))
+
+;; (in-fx-range end), (in-fx-range start end), (in-fx-range start end -1)
+;;
+;; Like `in-range` over fixnum bounds, in a `for` clause.  `in-range` chooses
+;; unchecked fixnum operations for its loop only in a module compiled in unsafe
+;; mode, so in this library it would test and add generically on every
+;; iteration of the element loops.  The bounds here are lengths and indices
+;; that are fixnums already, and the loops that use this read their elements
+;; through checked indices or from runs checked once, beforehand.
+(define-sequence-syntax in-fx-range
+  (lambda () #'in-range)
+  (lambda (stx)
+    (syntax-case stx ()
+      [[(id) (_ end)]
+       #'[(id) (in-fx-range 0 end)]]
+      [[(id) (_ start end)]
+       #'[(id) (:do-in ([(s) start] [(e) end])
+                       #t
+                       ([i s])
+                       (unsafe-fx< i e)
+                       ([(id) i])
+                       #t
+                       #t
+                       [(unsafe-fx+ i 1)])]]
+      [[(id) (_ start end step)]
+       (eqv? (syntax-e #'step) -1)
+       #'[(id) (:do-in ([(s) start] [(e) end])
+                       #t
+                       ([i s])
+                       (unsafe-fx> i e)
+                       ([(id) i])
+                       #t
+                       #t
+                       [(unsafe-fx- i 1)])]]
+      [_ #f])))
 
 ;; (struct/unchecked name (field ...) option ...)
 ;;
