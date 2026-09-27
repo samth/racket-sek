@@ -108,7 +108,7 @@ also be used as a @tech[#:doc '(lib
 their elements are.
 
 Several threads may use a persistent sequence at once, including adding
-elements to it, without synchronization.
+elements to it, without synchronization; see @secref["threads"].
 
 @defproc[(pseq? [v any/c]) boolean?]{
 
@@ -253,10 +253,8 @@ sequences are @racket[equal?] when their elements are.  It is not a
 @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream}.
 
 Several threads may use an ephemeral sequence at once as long as none of them
-updates it; an update needs exclusive access.  The operations that update a
-sequence are those whose names end in @litchar{!}, and writing through an
-iterator; taking a snapshot and @racket[eseq-copy] do not.  An iterator
-itself belongs to one thread at a time.
+updates it; an update needs exclusive access.  @Secref["threads"] lists the
+operations that count as updates.
 
 @defproc[(eseq? [v any/c]) boolean?]{
 
@@ -490,6 +488,60 @@ items
  costs @math{O(1)} but makes later updates to either sequence more expensive,
  @racket[e] included.}
 
+@subsection[#:tag "threads"]{Threads}
+
+These rules apply to Racket threads, whether or not they run in parallel, and
+to futures.
+
+Any number of threads may use a @tech{persistent sequence} at once, with any
+operations, and without synchronization.
+
+Any number of threads may use an @tech{ephemeral sequence} at once as long as
+none of them updates it.  An update needs exclusive access: while it runs, no
+other thread may use the sequence, an @tech{iterator} over it, or a
+@tech{segment} of it.  These operations update an ephemeral sequence:
+
+@itemlist[
+ @item{every operation whose name begins with @racketidfont{eseq-} and ends
+       in @litchar{!}, on the sequence it modifies.
+       @racket[eseq-append!], @racket[eseq-assign!] and @racket[eseq-concat!]
+       also update the ephemeral sequence that they empty; the source of
+       @racket[eseq-copy!] is only read;}
+ @item{@racket[sek-iter-set!], @racket[sek-iter-set-and-move!] and the four
+       @racket[sek-iter-writable-segment] operations, on an iterator over the
+       sequence;}
+ @item{@racket[segment-set!], on a segment of the sequence; and}
+ @item{@racket[sek-append*], which updates an ephemeral sequence it is given
+       and every ephemeral sequence in it, since it empties them.}]
+
+Every other operation only reads the sequences it is given.  In particular,
+iterating over a sequence, @racket[eseq-snapshot], @racket[eseq-copy],
+@racket[equal?], and the operations on either flavor that build a new
+sequence are all reads.
+
+The two flavors can share structure -- a snapshot shares with the ephemeral
+sequence it was taken from, and @racket[pseq-edit] returns an ephemeral
+sequence that shares with its argument -- but the sharing needs no
+synchronization: one thread may update an ephemeral sequence while others use
+a persistent sequence that shares with it.
+
+The operations whose names begin with @racketidfont{sek-iter-} and end in
+@litchar{!} change the iterator, so one iterator may be used by only one
+thread at a time.  Each of several threads may have its own iterator over one
+sequence, subject to the rules above.
+
+A program that breaks these rules gets unspecified results: an operation may
+return a wrong answer or raise @racket[exn:fail:sek], and the sequence may be
+left inconsistent.  The program's memory is not corrupted, however; no use of
+this library, correct or not, corrupts memory.
+
+@racket[sek-configure!] changes settings for the whole program, and must not
+run while another thread is using a sequence.
+
+These rules assume that a sequence reaches another thread through an
+operation that synchronizes the two threads, such as a channel, a semaphore,
+or @racket[thread-wait].
+
 @section{Iterators}
 
 An @deftech{iterator} is a cursor into a sequence.  Its position is an integer
@@ -504,8 +556,8 @@ worst case, so a full traversal costs @math{O(N)}, where repeated
 Iterating an ephemeral sequence is checked: any update to the sequence
 invalidates every iterator on it, and using an invalidated iterator raises an
 exception.  @racket[sek-configure!] turns the check off, after which using an
-invalidated iterator is undefined.  Iterators on persistent sequences are
-never invalidated.
+invalidated iterator gives unspecified results, though it does not corrupt
+memory.  Iterators on persistent sequences are never invalidated.
 
 @defproc[(sek-iterator [s (or/c pseq? eseq?)]
                        [dir (or/c 'forward 'backward) 'forward]) sek-iter?]{
@@ -852,7 +904,8 @@ Those that build a new sequence return the same flavor they were given.
  @racket[k0] and @racket[k1] are the chunk capacities used at the leaves and
  at internal nodes, and @racket[t] is the length up to which a persistent
  sequence is represented by a plain vector.  The defaults are 128, 16
- and 32.
+ and 32.  A capacity must be less than @math{2^30}, or @math{2^14} on a
+ platform whose fixnums are 30 bits wide.
 
  @racket[overwrite?] controls whether popping from an ephemeral sequence
  overwrites the slot it empties. Leaving it alone saves one write per pop but
@@ -863,12 +916,15 @@ Those that build a new sequence return the same flavor they were given.
 
  @racket[check?] controls whether the library detects the use of an
  invalidated iterator at runtime.  The check is on by default; with it off,
- using an invalidated iterator is undefined rather than an error.
+ using an invalidated iterator gives unspecified results rather than an
+ error.
 
  Set the capacities and the threshold before building any sequences: a
  sequence built under other settings fails @racket[sek-validate-pseq] and does
  not meet the bounds given here.  Small capacities are useful mainly for
- testing.}
+ testing.  The settings apply to the whole program, so
+ @racket[sek-configure!] must not run while another thread is using a
+ sequence.}
 
 @section{Validation}
 
