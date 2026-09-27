@@ -129,10 +129,18 @@
       (unsafe-fx+ (cur-w c) (unsafe-fx- (cur-icur c) (cur-ishd c)))
       (cur-w c)))
 
-;; icur always indexes inside the current segment, which is a range of the
-;; support vector, so the bound check is redundant here.
+;; A cursor is private to one thread, and it keeps ishd <= icur < istl <= the
+;; length of its support, except at a sentinel, where the support is empty and
+;; icur = istl = 0.  So the one test icur < istl is all an unchecked read
+;; needs.  Correct code never reads at a sentinel, but a data race can: an
+;; ephemeral sequence updated during iteration can leave an empty chunk in a
+;; middle sequence, or weights that send a descent past the end, and a cursor
+;; that expects to land on an item lands on a sentinel instead.
 (define (cur-get c)
-  (unsafe-vector*-ref (cur-support c) (cur-icur c)))
+  (define i (cur-icur c))
+  (if (unsafe-fx< i (cur-istl c))
+      (unsafe-vector*-ref (cur-support c) i)
+      (inconsistent-structure)))
 
 (define (cur-item-weight c)
   (if (eqv? (cur-depth c) 0)
@@ -741,7 +749,11 @@
   (check-writable it 'sek-iter-set!)
   (ensure-owned! it 'sek-iter-set!)
   (define c (siter-cursor it))
-  (unsafe-vector*-set! (cur-support c) (cur-icur c) x))
+  ;; the same guard as `cur-get`: ensure-owned! may have moved the cursor
+  (define i (cur-icur c))
+  (if (unsafe-fx< i (cur-istl c))
+      (unsafe-vector*-set! (cur-support c) i x)
+      (inconsistent-structure)))
 
 (define (sek-iter-set-and-move! it x [dir 'forward])
   (check-iter 'sek-iter-set-and-move! it)
