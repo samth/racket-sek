@@ -1,6 +1,6 @@
 # Threads and memory safety
 
-This note explains six commits that change what sek promises when threads
+This note explains the commits that change what sek promises when threads
 share its sequences, and why we believe the new promises hold.
 
 | Commit | Change |
@@ -11,6 +11,11 @@ share its sequences, and why we believe the new promises hold.
 | `acc3780` | Let several threads read an ephemeral sequence at once |
 | `5ae61e2` | Let the next update adopt a snapshot's fold of the inner chunks |
 | `b4d0b02` | Win back what safe compilation cost the element loops and the push path |
+| `ede8a0c` | Say precisely what threads may do with a sequence |
+| `9def697` | Build sek with every unchecked operation checked, or with races widened |
+| `16a40e1` | Add a fuzzer that races threads on shared sequences |
+| `1c55da4` | Keep an iterator from reading at a sentinel after a race |
+| `8b556ee` | Keep a pop finite when a race leaves a chunk's size negative |
 
 ## What changed for a user
 
@@ -240,43 +245,127 @@ All of it was run on Racket 9.3.0.8 CS, x86-64, on a 36-core Xeon.
   the last two rows vary the two settings that the version scheme and the
   empty-slot marker depend on.
 * **Fuzzing with threads**: 400 trials per mode, each on a sequence of random
-  size up to 30,000, for the original code and the final code.  In every mode
+  size up to 30,000, for the original code and for the code at `b4d0b02`,
+  before the stress testing described next.  In every mode
   two parallel threads start together; afterwards one thread checks what they
   returned, validates the structure, keeps using the sequences, and checks that
   snapshots taken earlier have not changed.
 
-  | Mode | Original code | Final code |
+  | Mode | Original code | `b4d0b02` |
   |---|---|---|
   | Two threads push onto the same persistent sequences, then keep using their results | 20 results with the other thread's elements; 2 malformed chunks | Nothing |
   | Two threads read one ephemeral sequence -- iterate, fold, snapshot, `for` -- then one thread updates it | 486 readings with wrong contents; 120 crashes; 70 trials in which the sequence changed, and 70 in which an earlier snapshot did | Nothing |
   | One thread updates an ephemeral sequence while another reads it *(unsupported)* | 388 crashes | No crashes; the reader's iterator is invalidated, as specified, and in 22 trials the reader saw an internal object |
   | Two threads update one ephemeral sequence *(unsupported)* | 3 of 10 processes aborted; 12 more crashes | No crashes; 21 `exn:fail:sek`, and wrong contents and broken invariants as before |
 
+### Testing the argument directly
+
+Fuzzing tells us about memory safety only when a race happens to corrupt
+memory visibly, and only when the race happens at all; both are rare.  Two
+builds of the library, chosen by environment variables when it is compiled
+(see `sek/unchecked`), remove both limits:
+
+* **The checked build** (`SEK_CHECKED=1`).  `unchecked.rkt` is the only
+  module that uses `racket/unsafe/ops`, and in this build every unchecked
+  operation it provides -- structure accessors and mutators, fixnum
+  operations, vector operations, loop bounds -- first checks the precondition
+  that makes it safe, and raises an error naming the operation if it does not
+  hold.  A race that would corrupt memory in a normal build is then reported,
+  every time, at the operation it reached.
+* **The jitter build** (`SEK_JITTER=1`).  Random pauses at the points where
+  concurrent operations interleave -- between the steps of an in-place push or
+  pop, between reading a support's extent and claiming a slot, between
+  building a snapshot's fold and publishing it, during adoption, between the
+  reads that start an iterator -- make races far more frequent.
+
+`stress/race-fuzz.rkt` runs N parallel threads that start together on shared
+sequences.  Three modes exercise what the documentation promises -- persistent
+sequences used by many threads, an ephemeral sequence read by many threads by
+every route (iterators that jump, segments, folds, snapshots, copies), and
+snapshots handed over channels from a thread that goes on updating to threads
+that check, extend and edit them -- and must find nothing.  Two exercise what
+it does not promise -- one writer with readers, and several writers -- where
+only memory safety and termination are at stake.  A watchdog interrupts any
+thread still running after a minute and reports where it was.
+
+**It found two bugs**, both in unsupported uses, which the earlier fuzzing had
+missed:
+
+* *An out-of-bounds read* (`1c55da4`).  An iterator that steps into a middle
+  sequence trusts that it lands on an item; a concurrent writer could leave an
+  empty chunk there, and the cursor then read its current element from the
+  empty vector a sentinel holds.  The checked build reported it twice in 540
+  runs, at capacity 2; in the jitter build without checks it crashed the
+  process ("invalid memory reference") 30 times, where the build without
+  jitter never did.
+* *A pop that never returned* (`8b556ee`).  Two threads popping one chunk
+  could leave its size at -1, which the emptiness test, looking for exactly 0,
+  never recognized.  Five runs of the first campaign hung, and the watchdog
+  located the hung threads in `eseq-pop-front!`.
+
+**After the fixes**, the campaign ran every combination of the four builds
+(normal, checked, jitter, both), the five modes, 2, 4 and 8 threads, and
+three capacity settings (the defaults; 4 and 3; 2 and 2), ten seeds each:
+1,800 runs and 54,000 trials, on the 36-core machine with 24 runs at a time.
+
+| Mode | Trials | What they found |
+|---|---|---|
+| Persistent sequences shared by N threads | 10,800 | Nothing |
+| N readers of one ephemeral sequence | 10,800 | Nothing |
+| Snapshots handed to N - 1 threads while one updates | 10,800 | Nothing |
+| One writer and N - 1 readers *(unsupported)* | 10,800 | No precondition violations, crashes or hangs; wrong results and `exn:fail:sek`, as documented |
+| N writers *(unsupported)* | 10,800 | No precondition violations, crashes or hangs; wrong results and `exn:fail:sek`, as documented |
+
+The checked build also passes the whole test suite and 30 conformance seeds
+with no precondition violated: correct single-threaded use never reaches an
+unchecked operation with a bad argument.
+
 ### What the evidence does not cover
 
-* **Other hardware.**  We fuzzed only on x86-64, which orders stores strictly.
-  On hardware with weaker ordering, a program that passes a sequence to
-  another thread without synchronizing -- through a plain mutable variable,
-  say -- relies on Racket's guarantees for publishing an object, as it would
-  with any Racket data structure.
-* **Other variants of Racket.**  `thread-tests.rkt` runs only where `thread`
-  accepts `#:pool`, which excludes Racket BC; BC's threads are not parallel.
-  The library compiles on Racket 8.17 BC, the oldest version CI tests, and
-  passes a smoke test of the new paths there, but CI has not yet run these
-  commits.
+* **Other hardware.**  All of it ran on x86-64, which orders stores strictly.
+  Two protocols depend on the order of stores: a persistent push writes its
+  slot after claiming it, and a snapshot stores its fold before it makes the
+  version negative.  Neither has been run on hardware with weaker ordering,
+  such as ARM.
+* **Termination under unsupported races** is tested, not argued.  The
+  watchdog found one loop that a race could make endless, now fixed, and has
+  found none since.
+* **Other versions of Racket.**  The evidence comes from 9.3.0.8; CI also
+  tests 9.2, the oldest version the library supports, and the current
+  snapshot, but has not yet run these commits.
 * **30-bit fixnums.**  The 2^14 capacity limit on such platforms is derived,
   not tested.
 * **Writable segments** hand the caller the sequence's live storage, so a
   write through one is an update like any other and needs exclusive access.
 
+### Further testing
+
+These would add to the evidence, roughly in order of value for the effort:
+
+* **Run the campaign on weakly ordered hardware**, an ARM machine with a
+  parallel-thread Racket.  It is the one gap above that testing can close.
+* **Mutation-test the guards.**  Remove each guard in turn -- `checked-index`,
+  the iterator's run check, the sentinel test in `cur-get`, the
+  compare-and-swap, the chunk used as the empty-slot marker, the tests in the
+  pops -- and confirm that the checked build and the fuzzer report each
+  removal.  That measures how sensitive the fuzzer is, rather than assuming it.
+* **Model-check the two lock-free protocols** -- claiming a slot through the
+  extent, and publishing and adopting a fold -- over every interleaving of
+  their steps for two and three threads, in a small model of just those
+  fields.
+* **Run longer.**  The campaign above took about five minutes of the
+  machine; hours cost nothing but time.
+
 ## What it costs
 
-Measured against the original code (`2662e1b`) on the same machine: the
-benchmark scenarios (`bench/main.rkt`, 81 cells of the two sek flavors, best
-of three rounds) and the whole-program workloads (`bench/workloads.rkt`, best
-of seven).
+Measured at `b4d0b02` against the original code (`2662e1b`) on the same
+machine: the benchmark scenarios (`bench/main.rkt`, 81 cells of the two sek
+flavors, best of three rounds) and the whole-program workloads
+(`bench/workloads.rkt`, best of seven).  The commits after `b4d0b02` cost
+nothing measurable: over traversal, stack, queue, hops and random access, the
+head runs at 1.00 times `b4d0b02`.
 
-| | Final ÷ original |
+| | `b4d0b02` ÷ original |
 |---|---|
 | All scenario cells, geometric mean | 1.025 |
 | Persistent sequences only | 1.004 |
