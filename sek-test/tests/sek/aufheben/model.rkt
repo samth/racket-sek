@@ -600,6 +600,7 @@
         (make-aufheben-settings #:test-cases test-cases #:seed seed #:database #f)
         (make-aufheben-settings #:test-cases test-cases #:database #f)))
   (define r (run-aufheben-test machine #:settings settings))
+  (printf "model: ~a test cases, ~a valid\n" (hash-ref r "test-cases") (hash-ref r "valid-test-cases"))
   (unless (hash-ref r "passed")
     (eprintf "model: FAILED: ~a\n" (hash-ref r "error-message" "")))
   (hash-ref r "passed"))
