@@ -10,9 +10,10 @@
 ;; their snapshots and iterators with *corruptions*, each of which stores a
 ;; wrong value of the right kind in one field: a chunk's head, size or weight,
 ;; a support's extent or a slot above depth 0, or a field of the sequence
-;; itself.  Afterwards an operation may give a wrong answer or raise, but it
-;; must not violate the precondition of an unchecked operation, and it must
-;; finish.
+;; itself.  It also tears iterators' cursors, field by field, as a second
+;; thread using the same iterator could.  Afterwards an operation may give a
+;; wrong answer or raise, but it must not violate the precondition of an
+;; unchecked operation, and it must finish.
 ;;
 ;; The values stay in the ranges a race can produce: every value a field ever
 ;; holds is one that some operation wrote there, so a head lies in [0, K), a
@@ -30,6 +31,7 @@
          (only-in sek/chunk fresh-id! chunk-capacity chunk-weight)
          (submod sek/chunk testing)
          (submod sek/ephemeral testing)
+         (submod sek/iterator testing)
          (submod sek/unchecked testing)
          aufheben
          aufheben/runner)
@@ -67,8 +69,8 @@
 
 ;; ----------------------------------------------------------- the structure
 
-;; The chunks of depth 0 and the trees of depth 1 reachable from the eseqs,
-;; which are what the fields that hold them can be set to.
+;; The chunks and trees reachable from an eseq, each with its depth, which are
+;; what the fields that hold them can be set to.
 (define (walk-eseq e on-chunk on-tree)
   (define (walk-chunk c d)
     (unless (eqv? (chunk-capacity c) 0)
@@ -78,14 +80,19 @@
           (when (chunk? x) (walk-chunk x (sub1 d)))))))
   (define (walk-tree t d)
     (when (lvl? t)
+      (on-tree t d)
       (walk-chunk (lvl-front t) d)
       (walk-tree (lvl-middle t) (add1 d))
       (walk-chunk (lvl-back t) d)))
   (for ([c (list (esq-front e) (esq-ifront e) (esq-iback e) (esq-back e))])
     (walk-chunk c 0))
   (for ([t (list (esq-middle e) (esq-folded e))])
-    (when (lvl? t) (on-tree t))
     (walk-tree t 1)))
+
+;; A cursor and the cursors on its path, one level deeper each.
+(define (cursor-chain c)
+  (define p (cur-path c))
+  (cons c (if (cur? p) (cursor-chain p) '())))
 
 ;; A target is a field that one corruption sets:
 ;;   (esq e field)          a field of the eseq
@@ -122,7 +129,11 @@
       (set! all-e (cons e all-e))
       (variables-add! es e)))
   (define (add-p! p) (when (pseq? p) (variables-add! ps p)))
-  (define (add-i! i) (when (sek-iter? i) (variables-add! is i)))
+  (define all-i '())
+  (define (add-i! i)
+    (when (sek-iter? i)
+      (set! all-i (cons i all-i))
+      (variables-add! is i)))
   (define (draw gen name) (aufheben-draw gen name))
   (define (draw-int lo hi name) (draw (gen:integer-in lo hi) name))
   (define (draw-of xs name) (draw (gen:sampled-from xs) name))
@@ -131,24 +142,21 @@
 
   ;; ---- corruption
   (define (chunks-and-trees)
-    (define by-depth (make-hasheqv))
-    (define trees '())
+    (define chunks (make-hasheqv))
+    (define trees (make-hasheqv))
     (for ([e (in-list all-e)])
       (walk-eseq e
-                 (lambda (c d) (hash-update! by-depth d (lambda (l) (cons c l)) '()))
-                 (lambda (t) (set! trees (cons t trees)))))
-    (values by-depth trees))
+                 (lambda (c d) (hash-update! chunks d (lambda (l) (cons c l)) '()))
+                 (lambda (t d) (hash-update! trees d (lambda (l) (cons t l)) '()))))
+    (values chunks trees))
+  (define (pick xs name) (list-ref xs (draw-int 0 (sub1 (length xs)) name)))
   (define (corrupt!)
     (define e (variables-draw es))
     (define ts (targets e))
     (define t (vector-ref ts (draw-int 0 (sub1 (vector-length ts)) "target")))
-    (define-values (by-depth trees) (chunks-and-trees))
-    (define (a-chunk d)
-      (define cs (cons none (hash-ref by-depth d '())))
-      (list-ref cs (draw-int 0 (sub1 (length cs)) "chunk")))
-    (define (a-tree)
-      (define ts (cons #f trees))
-      (list-ref ts (draw-int 0 (sub1 (length ts)) "tree")))
+    (define-values (chunks trees) (chunks-and-trees))
+    (define (a-chunk d) (pick (cons none (hash-ref chunks d '())) "chunk"))
+    (define (a-tree) (pick (cons #f (hash-ref trees 1 '())) "tree"))
     (aufheben-note (format "corrupt ~a" (if (eq? (car t) 'esq) (caddr t) (car t))))
     (case (car t)
       [(esq)
@@ -182,6 +190,49 @@
        (define v (support-data (chunk-support c)))
        (vector-set! v (draw-int 0 (sub1 (vector-length v)) "slot") (a-chunk (sub1 (caddr t))))]))
 
+  ;; Tear one field of an iterator's cursor, or of a cursor on its path, as a
+  ;; second thread using the same iterator could.  A cursor at depth d holds
+  ;; chunks and supports of depth d and a middle tree and path cursor of depth
+  ;; d + 1; its indices are small fixnums.
+  (define (tear-iterator!)
+    (define it (variables-draw is))
+    (define c (pick (cursor-chain (siter-cursor it)) "cursor"))
+    (define d (cur-depth c))
+    (define-values (chunks trees) (chunks-and-trees))
+    (define (a-chunk-or-#f)
+      (if (draw gen:boolean "#f?") #f (pick (cons none (hash-ref chunks d '())) "chunk")))
+    (define (an-index name) (draw-int -1 140 name))
+    (define field
+      (draw-of '(path chunk support icur ishd istl ishd-sch w wbase wt front ifront middle iback back)
+               "field"))
+    (aufheben-note (format "tear the ~a of a cursor at depth ~a" field d))
+    (case field
+      [(path)
+       (define deeper
+         (for*/list ([i (in-list all-i)]
+                     [x (in-list (cursor-chain (siter-cursor i)))]
+                     #:when (eqv? (cur-depth x) (add1 d)))
+           x))
+       (set-cur-path! c (pick (append '(sf sb front ifront iback back) deeper) "path"))]
+      [(chunk) (set-cur-chunk! c (a-chunk-or-#f))]
+      [(support)
+       (set-cur-support! c (if (draw gen:boolean "empty?")
+                               (vector)
+                               (support-data (chunk-support (pick (cons none (hash-ref chunks d '()))
+                                                                  "chunk")))))]
+      [(icur) (set-cur-icur! c (an-index "icur"))]
+      [(ishd) (set-cur-ishd! c (an-index "ishd"))]
+      [(istl) (set-cur-istl! c (an-index "istl"))]
+      [(ishd-sch) (set-cur-ishd-sch! c (an-index "ishd-sch"))]
+      [(w) (set-cur-w! c (an-index "w"))]
+      [(wbase) (set-cur-wbase! c (an-index "wbase"))]
+      [(wt) (set-cur-wt! c (draw-int 0 200 "wt"))]
+      [(front) (set-cur-front! c (a-chunk-or-#f))]
+      [(ifront) (set-cur-ifront! c (a-chunk-or-#f))]
+      [(iback) (set-cur-iback! c (a-chunk-or-#f))]
+      [(back) (set-cur-back! c (a-chunk-or-#f))]
+      [(middle) (set-cur-middle! c (pick (cons #f (hash-ref trees (add1 d) '())) "tree"))]))
+
   ;; ---- operations
   (define-syntax op
     (syntax-rules ()
@@ -190,6 +241,7 @@
   (define rules
     (list
      (rule 'corrupt #:weight 4 corrupt!)
+     (rule 'tear-iterator #:weight 3 tear-iterator!)
      (op make
          (define xs (for/list ([_ (in-range (draw-int 0 80 "n"))]) (fresh!)))
          (add-e! (list->eseq xs)))
