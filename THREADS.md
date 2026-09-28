@@ -16,6 +16,12 @@ share its sequences, and why we believe the new promises hold.
 | `16a40e1` | Add a fuzzer that races threads on shared sequences |
 | `1c55da4` | Keep an iterator from reading at a sentinel after a race |
 | `8b556ee` | Keep a pop finite when a race leaves a chunk's size negative |
+| `6466427` | Test a snapshot that sees the version's sign before the fold |
+| `7d17354` | Add model-based and torn-state tests driven by aufheben |
+| `3d60d53` | Read the middle sequence once where a race could empty it |
+| `f97a0a5` | Add a fuzz mode in which threads share one iterator |
+| `95c3be6` | Keep an iterator memory-safe when two threads use it at once |
+| `b4ed1f8` | Tear iterators' cursors in the torn-state test |
 
 ## What changed for a user
 
@@ -24,6 +30,7 @@ share its sequences, and why we believe the new promises hold.
 | A persistent sequence, used by any number of threads, including pushes | Two threads extending sequences that share storage could get each other's elements, and could leave chunks malformed | Safe, with no synchronization |
 | An ephemeral sequence read by several threads at once, including iterating it, snapshotting it and copying it | The readers could corrupt the sequence and crash the process | Safe, with no synchronization |
 | An ephemeral sequence updated by one thread while others use it | Could crash the process | Still unsupported: an update needs exclusive access. A program that breaks this gets wrong results or an `exn:fail:sek`, but memory is never corrupted |
+| One iterator used by two threads at once | Could crash the process | Still unsupported: an iterator belongs to one thread at a time. A program that breaks this gets wrong results or an `exn:fail:sek`, but memory is never corrupted |
 | A segment built by a caller with a run that does not fit its vector | Read past the end of the vector | Raises `exn:fail:contract` |
 
 The documentation's "Threads" section states the contract precisely.  In
@@ -97,7 +104,8 @@ The remaining unchecked operations are vector accesses, and each is guarded:
   is in range anyway; when a race has broken them, the check raises
   `exn:fail:sek` instead of reaching memory.
 * An iterator checks a run of storage once, when it installs it, and its inner
-  loops then read the run unchecked.
+  loops then read the run unchecked.  (Since `95c3be6` it also tests each read
+  of its current element against the vector read; see below.)
 * The value written into an empty slot is now an empty chunk, not a symbol.
   In a support at depth greater than zero every slot then holds a chunk,
   occupied or not, so a stray read of an empty slot -- which only a race can
@@ -173,27 +181,65 @@ runs, had outgrown the compiler's inlining threshold when it gained the branch
 to `adopt-fold!`; encouraging the inliner took about a nanosecond off each
 push and pop.
 
+### Test the value that is used (`3d60d53`, `95c3be6`)
+
+The testing described below found two more holes, both in unsupported uses,
+and both of one kind: a field that holds either a structure or `#f` was
+tested on one read and used on another.
+
+* **The middle sequence.**  `eseq-pop-front!` and `eseq-pop-back!` tested
+  the middle field and then read it again to pop from it, and `eseq-ref`,
+  `eseq-set!` and `eseq-own-at!` read it again after locating the index
+  there.  A second writer can store `#f` in between, and the tree
+  accessors then read a field of `#f`.  Each now reads the field once and
+  tests what it read.
+* **The iterator's cursor.**  A cursor was written as though it belonged to
+  one thread, which is true of correct programs but not of every program.
+  Two threads that use one iterator at once can each find its fields half
+  rewritten by the other, and the cursor read its current element at an
+  index from one run in the vector of another, or at -1, and applied chunk
+  accessors to a chunk field that the other thread had just cleared.  Now
+  `cur-get` and `sek-iter-set!` test the index against the length of the
+  vector they read, a backward step reads the index once, and every place
+  that reads a chunk, a middle tree or a short vector from the cursor tests
+  the value it then uses.  A torn cursor can still return the empty-slot
+  marker as an element, which is a wrong answer.
+
+The scan that finds the item covering a weight index now also stops at the
+end of its chunk: with weights a race has made wrong, it could otherwise
+wrap around the chunk forever.
+
 ## Why we believe it
 
 ### The arguments
 
 **Memory safety** needs every unchecked operation's precondition to hold
-whatever the threads do.  The preconditions are of three kinds, and each has
-its own guard:
+whatever the threads do.  The threads may break every rule the documentation
+states, so the argument may not assume them either: an iterator is private to
+one thread in a correct program, but its fields are held to the same standard
+as a sequence's.  The preconditions are of three kinds, and each has its own
+guard:
 
 * *The argument of an unchecked accessor is a structure of its type.*  Inside
   the library, a value reaches an accessor from a field of known type, from a
   chunk's storage (which at depth greater than zero holds only chunks, the
-  empty-slot marker included), or from a caller.  A caller's value is checked
-  by the entry point: `argument-check-tests.rkt` calls every export except
-  predicates, constructors and aliases with bad first arguments and requires
-  the error to name the export, and `error-tests.rkt` covers the other
-  arguments case by case.
+  empty-slot marker included), or from a caller.  Some fields hold either a
+  structure or `#f` -- an ephemeral sequence's middle sequence and fold, and
+  several of a cursor's fields -- and for those the test for `#f` has to be
+  made on the value the accessor then receives, since a second read of the
+  field can see another thread's write.  The first version of this argument
+  missed that, and so did the code, in five places in `ephemeral.rkt`
+  (`3d60d53`) and throughout the cursor (`95c3be6`).  A caller's value is
+  checked by the entry point: `argument-check-tests.rkt` calls every export
+  except predicates, constructors and aliases with bad first arguments and
+  requires the error to name the export, and `error-tests.rkt` covers the
+  other arguments case by case.
 * *An unchecked vector index is in range.*  Every such index goes through
-  `checked-index`, lies in a run the iterator checked when it installed it, lies
-  in a run `segment` checked when it built it, or indexes a vector the same
-  function just allocated.  A chunk's storage never changes length, so a run
-  checked once stays in range whatever happens to the sequence afterwards.
+  `checked-index`, is tested against the length of the vector it indexes (an
+  iterator's current element), lies in a run `segment` checked when it built
+  it, or indexes a vector the same function just allocated.  A chunk's storage
+  never changes length, so a run checked once stays in range whatever happens
+  to the sequence afterwards.
 * *An unchecked fixnum operation's operands are fixnums.*  They come from
   fields that are only ever assigned fixnums, or from indices the entry points
   checked with `fixnum?`.
@@ -216,7 +262,8 @@ itself rather than using a stale value.
 
 ### The evidence
 
-All of it was run on Racket 9.3.0.8 CS, x86-64, on a 36-core Xeon.
+All of it was run on Racket 9.3.0.8 CS, x86-64, on a 36-core Xeon, except
+the runs under "Weakly ordered hardware".
 
 * **The test suite**: all 5,924 tests pass (a 5,925th, which checks that
   every export is documented, needs the documentation installed), including
@@ -285,7 +332,8 @@ every route (iterators that jump, segments, folds, snapshots, copies), and
 snapshots handed over channels from a thread that goes on updating to threads
 that check, extend and edit them -- and must find nothing.  Two exercise what
 it does not promise -- one writer with readers, and several writers -- where
-only memory safety and termination are at stake.  A watchdog interrupts any
+only memory safety and termination are at stake; a third such mode, added
+later (`f97a0a5`), has several threads share one iterator.  A watchdog interrupts any
 thread still running after a minute and reports where it was.
 
 **It found two bugs**, both in unsupported uses, which the earlier fuzzing had
@@ -320,16 +368,143 @@ The checked build also passes the whole test suite and 30 conformance seeds
 with no precondition violated: correct single-threaded use never reaches an
 unchecked operation with a bad argument.
 
+### Mutation testing
+
+To measure how sensitive the tests are, rather than assume it, fifteen
+mutants each removed or weakened one guard.  Each ran against the test
+suite, and against the fuzzer on a normal build and a checked build with
+jitter: five modes, 2 and 4 threads, capacities 4 and 3 and capacities 2 and
+2, three seeds, 2,400 trials a mutant.  The unmutated code passed everything.
+
+| Mutant | Caught by |
+|---|---|
+| `checked-index` compares nothing | Fuzzer (checked build: violated preconditions; normal build: crashes, and 3 aborted processes); torn-state test |
+| No run check when an iterator installs a run | Torn-state test only |
+| No sentinel test in `cur-get` | Fuzzer (checked build only); torn-state test |
+| A plain write instead of the compare-and-swap, back push | Test suite (`thread-tests.rkt`); fuzzer, on x86-64 and on ARM |
+| A plain write instead of the compare-and-swap, front push | The same |
+| A symbol as the empty-slot marker | Fuzzer (both builds); torn-state test |
+| No emptiness tests in the pops | Fuzzer: the watchdog found threads hung in `eseq-pop-front!` |
+| No range check in `segment` | Test suite (`error-tests.rkt`) |
+| No argument check in a validator | Test suite (`argument-check-tests.rkt`); fuzzer (one crash) |
+| No argument check in `eseq-ref` | Test suite |
+| `eseq-snapshot` flushes the inner chunks again | Test suite; fuzzer (readers); model test |
+| Creating an iterator flushes them again | Test suite; fuzzer; model test |
+| Adopting a fold leaves it in place | Test suite; fuzzer; model test |
+| Updates leave the version alone | Test suite; model test |
+| A snapshot uses the stored fold without testing it | Unit test (`6466427`); the long campaign on ARM (3 wrong readings in 17,280 trials) |
+
+The fuzzer caught 10 of the 15 in this campaign.  Two of the rest need
+states that races rarely produce.  Without the run check, a traversal by
+segments of a sequence with one wrong chunk weight never ends; the fuzzer
+never built such a sequence, and the torn-state test, below, builds one in
+three steps.  Without the test on the stored fold, a snapshot that sees the
+version's sign before another snapshot's fold takes the missing fold for an
+empty middle sequence.  Only reordered stores or loads produce that state:
+x86-64 never did, and ARM did three times in ten hours (below).  A unit test
+now plants it.
+
+### Two tests driven by aufheben
+
+[aufheben](https://github.com/samth/aufheben) is a Racket front end for
+the Hegel property-based testing engine.  Its state machines choose a series
+of operations, and shrink a failing series to a short one.  Two tests in
+`sek-test/tests/sek/aufheben/` use it.  sek-test does not depend on aufheben,
+so these run by hand.
+
+* **`model.rkt`** checks operations on persistent sequences, ephemeral
+  sequences and iterators against a list model.  For each ephemeral sequence
+  the model counts updates, so it predicts exactly which iterators are valid,
+  and it holds sek to the rule that snapshots, copies and other reads leave
+  every iterator valid.  It caught each mutant of that rule and of fold
+  adoption with a few steps; for a snapshot that writes, the shortest is to
+  make an empty sequence, make an iterator on it, and take a snapshot, after
+  which the iterator is invalid.
+* **`torn.rkt`** builds the states that races reach rarely.  Between
+  operations it stores a wrong value of the right kind in one field: a
+  chunk's head, size or weight, a support's extent or a slot above depth 0, a
+  field of an ephemeral sequence, or a field of an iterator's cursor.  On the
+  checked build, no operation may then violate a precondition or run for
+  more than ten seconds.
+
+For six hours on the final code, 24 processes at a time ran both tests with a
+fresh seed each, at the three capacity settings: 39,254 runs of the model test
+on each of the normal and checked builds and 39,253 runs of the torn-state
+test on the checked build, 1,000 cases each, about 118 million cases in all.
+None failed.
+
+### Longer runs, and what they found
+
+The campaign above took about five minutes of the machine.  Longer runs found
+the two holes described under "Test the value that is used":
+
+* **The middle sequence.**  An eight-hour campaign on gh, stopped after ten
+  rounds, reported a violated precondition once in 131,050 trials -- `lvl`
+  applied to `#f` -- and five crashes, all in writers mode with 8 threads.  A
+  hunt in that mode, 404 runs of 50 trials on the checked builds, found 7
+  violations before `3d60d53` and none after.
+* **A shared iterator.**  A new mode, in which N threads move and read through
+  one iterator (`f97a0a5`), crashed the normal build within 20 trials and
+  reported violated preconditions by the dozen on the checked one.  After
+  `95c3be6`, 5,400 trials found none.
+
+The final code then ran for eight hours on gh, 20 processes at a time, round
+after round with a fresh seed: every combination of the four builds, the six
+modes, 2, 4 and 8 threads, and the three capacity settings -- 253 rounds,
+54,467 processes, and 4,085,050 trials.  Every process exited normally.
+
+| Mode | Trials | What they found |
+|---|---|---|
+| Persistent sequences shared by N threads | 681,050 | Nothing |
+| N readers of one ephemeral sequence | 681,100 | Nothing |
+| Snapshots handed to N - 1 threads while one updates | 680,900 | Nothing |
+| One writer and N - 1 readers *(unsupported)* | 680,800 | No violated preconditions, crashes or hangs; invalidated iterators, `exn:fail:sek`, and readers that saw internal objects |
+| N writers *(unsupported)* | 680,600 | No violated preconditions, crashes or hangs; `exn:fail:sek`, broken invariants, and wrong contents |
+| N threads sharing one iterator *(unsupported)* | 680,600 | No violated preconditions, crashes or hangs; the empty-slot marker returned as an element |
+
+### Weakly ordered hardware
+
+The rest of the evidence comes from x86-64, which keeps each thread's stores
+in order.  Racket does not promise that order.  The reference's "Machine
+Memory Order" says that parallel threads can expose a weakly ordered
+machine's memory model, and promises only that no thread sees a primitive
+value half built.  On arm64, Racket CS keeps that promise with a store--store
+fence before each store of a pointer into an object; a store of a fixnum gets
+no fence, and no load does.  A message-passing litmus test -- one thread
+writes a slot and then a flag, another waits for the flag and then reads the
+slot -- saw the flag without the slot 38 times in 40 million reads on an ARM
+machine, and never on x86-64.
+
+That machine, a two-core Neoverse-N1, passes the test suite on the normal and
+checked builds.  It ran the campaign for ten hours, one process at a time,
+with 2 and 4 threads: 73 rounds, 13,899 processes and 555,960 trials, of the
+four builds in the six modes and of three mutants.
+
+| What ran | Trials | What they found |
+|---|---|---|
+| The final code, supported modes | 209,000 | Nothing |
+| The final code, unsupported modes | 208,720 | No violated preconditions, crashes or hangs |
+| A plain write instead of the compare-and-swap, either push | 69,120 | 699 results with the other thread's elements |
+| A snapshot uses the stored fold without testing it | 69,120 | 3 readers that saw wrong contents, all in the normal build |
+
+The last row is the reordering the fold's fallback exists for: a snapshot
+saw the version's sign before another snapshot's fold, and, without the
+fallback, used the missing fold as an empty middle sequence.  With the
+fallback, the same modes found nothing.  The persistent push's order -- claim
+the slot, then write it -- needs no fence, since another thread reaches the
+new slot only through a sequence handed over with synchronization.
+
 ### What the evidence does not cover
 
-* **Other hardware.**  All of it ran on x86-64, which orders stores strictly.
-  Two protocols depend on the order of stores: a persistent push writes its
-  slot after claiming it, and a snapshot stores its fold before it makes the
-  version negative.  Neither has been run on hardware with weaker ordering,
-  such as ARM.
+* **Weak ordering, beyond two cores.**  The ARM machine had two cores, and
+  it reordered the fold protocol visibly three times in ten hours.  A
+  machine with more cores would reorder more often; the unit test that
+  plants the reordered state covers the fallback meanwhile.
 * **Termination under unsupported races** is tested, not argued.  The
-  watchdog found one loop that a race could make endless, now fixed, and has
-  found none since.
+  watchdog found one loop that a race could make endless, now fixed; the
+  torn-state test found that the iterator's run check also keeps traversals
+  by segments finite; and the scan for the item under a weight index now
+  stops at the end of its chunk.  Neither test has found a hang since.
 * **Other versions of Racket.**  The evidence comes from 9.3.0.8; CI also
   tests 9.2, the oldest version the library supports, and the current
   snapshot, but has not yet run these commits.
@@ -342,19 +517,16 @@ unchecked operation with a bad argument.
 
 These would add to the evidence, roughly in order of value for the effort:
 
-* **Run the campaign on weakly ordered hardware**, an ARM machine with a
-  parallel-thread Racket.  It is the one gap above that testing can close.
-* **Mutation-test the guards.**  Remove each guard in turn -- `checked-index`,
-  the iterator's run check, the sentinel test in `cur-get`, the
-  compare-and-swap, the chunk used as the empty-slot marker, the tests in the
-  pops -- and confirm that the checked build and the fuzzer report each
-  removal.  That measures how sensitive the fuzzer is, rather than assuming it.
 * **Model-check the two lock-free protocols** -- claiming a slot through the
   extent, and publishing and adopting a fold -- over every interleaving of
   their steps for two and three threads, in a small model of just those
   fields.
-* **Run longer.**  The campaign above took about five minutes of the
-  machine; hours cost nothing but time.
+* **Let the testing engine choose the schedule.**  With green threads that
+  may switch only at the jitter points, aufheben could choose which thread
+  runs next, so that a failing interleaving shrinks and replays like any
+  other counterexample.
+* **Run on an ARM machine with more cores**, where reordering is likelier
+  to show.
 
 ## What it costs
 
@@ -363,7 +535,10 @@ machine: the benchmark scenarios (`bench/main.rkt`, 81 cells of the two sek
 flavors, best of three rounds) and the whole-program workloads
 (`bench/workloads.rkt`, best of seven).  The commits after `b4d0b02` cost
 nothing measurable: over traversal, stack, queue, hops and random access, the
-head runs at 1.00 times `b4d0b02`.
+head runs at 1.00 times `b4d0b02`.  Nor does hardening the cursor
+(`95c3be6`): best of five rounds on a second machine, a traversal by
+`sek-iter-get-and-move!` runs at 1.00 times its time before, and hops by
+`sek-iter-reach!` at 0.98 to 1.02.
 
 | | `b4d0b02` ÷ original |
 |---|---|
