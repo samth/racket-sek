@@ -24,6 +24,7 @@
 ;; but must never corrupt memory:
 ;;   writer    one thread updates an ephemeral sequence while N - 1 read it
 ;;   writers   N threads update one ephemeral sequence
+;;   iterator  N threads move and read through one iterator
 ;;
 ;; Run these against a build of sek-lib compiled with SEK_CHECKED=1 (see
 ;; sek/unchecked) to have every unchecked operation check its precondition: an
@@ -389,6 +390,55 @@
                          (for ([i (in-range 300)]) (eseq-push-back! e i) (eseq-pop-front! e))
                          #f)))
 
+;; Unsupported: N threads share one iterator, over a sequence nobody updates.
+;; Only memory safety is at stake.
+(define (make-iterator-script n len)
+  (define (dir) (if (zero? (random 2)) 'forward 'backward))
+  (for/list ([_ (in-range len)])
+    (case (random 7)
+      [(0) (list 'move (dir))]
+      [(1) (list 'get)]
+      [(2) (list 'get-and-move (dir))]
+      [(3) (list 'reach (sub1 (random (+ n 2))))]
+      [(4) (list 'segment (dir))]
+      [(5) (list 'segment-and-jump (dir))]
+      [else (list 'reset (dir))])))
+
+(define (run-iterator-script! it sc)
+  (for ([op (in-list sc)])
+    ;; moving off a sentinel and the like raise, as they would in one thread
+    (with-handlers ([(lambda (x)
+                       (and (exn:fail? x)
+                            (not (regexp-match? #rx"precondition|invalid memory|overflowed"
+                                                (exn-message x)))))
+                     void])
+      (define (seen x) (unless (or (not x) (fixnum? x)) (note! 'foreign-value)))
+      (case (car op)
+        [(move) (sek-iter-move! it (cadr op))]
+        [(get) (seen (sek-iter-get* it))]
+        [(get-and-move) (seen (sek-iter-get-and-move*! it (cadr op)))]
+        [(reach) (sek-iter-reach! it (cadr op))]
+        [(segment) (let ([s (sek-iter-segment* it (cadr op))]) (when s (for-each seen (segment->list s))))]
+        [(segment-and-jump)
+         (let ([s (sek-iter-segment-and-jump*! it (cadr op))]) (when s (for-each seen (segment->list s))))]
+        [(reset) (sek-iter-reset! it (cadr op))]))))
+
+(define (iterator-trial)
+  (define n (random-size))
+  (define s (if (zero? (random 2)) (build-pseq-by-pushes n) (build-eseq n)))
+  (define l (sek->list s))
+  (define it (sek-iterator s))
+  (define scripts (for/list ([t (in-range nthreads)])
+                    (make-iterator-script n (add1 (random 3000)))))
+  (race "race" (for/list ([sc (in-list scripts)])
+                 (lambda () (run-iterator-script! it sc))))
+  ;; a reset puts the iterator back together
+  (check! "after reset"
+          (lambda ()
+            (sek-iter-reset! it)
+            (and (not (equal? (for/list ([_ (in-range (length l))]) (sek-iter-get-and-move! it)) l))
+                 'iterator-wrong-after-reset))))
+
 ;; ------------------------------------------------------------ main
 
 (module+ main
@@ -422,6 +472,7 @@
       [(handoff) handoff-trial]
       [(writer) writer-trial]
       [(writers) writers-trial]
+      [(iterator) iterator-trial]
       [else (error 'race-fuzz "unknown mode ~a" mode)]))
   (for ([_ (in-range trials)])
     (note! 'trials)
