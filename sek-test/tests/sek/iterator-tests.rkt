@@ -9,6 +9,7 @@
          (only-in sek/check check-eseq)
          sek/persistent
          sek/ephemeral
+         (only-in (submod sek/ephemeral testing) esq-version set-esq-version! set-esq-folded!)
          sek/iterator
          sek/segment)
 
@@ -222,12 +223,12 @@
 ;; snapshot, must leave them there -- that is what lets several threads read
 ;; the sequence at once -- and every way of moving must still see them.
 (module+ test
+ (define (inner-full)
+   (define e (make-eseq))
+   (for ([i (in-range 300)]) (eseq-push-front! e (- -1 i)))
+   (for ([i (in-range 300)]) (eseq-push-back! e i))
+   e)
  (test-case "inner chunks"
-  (define (inner-full)
-    (define e (make-eseq))
-    (for ([i (in-range 300)]) (eseq-push-front! e (- -1 i)))
-    (for ([i (in-range 300)]) (eseq-push-back! e i))
-    e)
   (define e (inner-full))
   (define l (eseq->list e))
   (define ifront (eseq-ifront e))
@@ -282,3 +283,18 @@
                 (for/list ([x (in-list l)] [i (in-naturals)])
                   (if (memv i targets) 'x x)))
   (check-equal? (pseq->list s) l)))
+
+;; Two snapshots that race may each fold: the first stores its fold and then
+;; makes the version negative, and the second, on hardware that reorders
+;; those stores or its own loads, may see the sign without the fold.  It must
+;; fold for itself rather than take the missing fold for an empty middle.
+(module+ test
+ (test-case "a snapshot that sees the version's sign before the fold"
+  (define e (inner-full))
+  (define l (eseq->list e))
+  (set-esq-version! e (- (abs (esq-version e))))
+  (set-esq-folded! e #f)
+  (check-equal? (pseq->list (eseq-snapshot e)) l)
+  (eseq-push-back! e 'end)
+  (check-eseq e)
+  (check-equal? (eseq->list e) (append l '(end)))))

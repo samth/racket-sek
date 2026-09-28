@@ -645,3 +645,10 @@
 ;; kept so that code written against either goes on working.
 (define eseq-push-front! eseq-cons!)
 (define eseq-push-back! eseq-add!)
+
+;; For tests that store wrong values in the structure on purpose, as a race can
+;; (sek-test/tests/sek/iterator-tests.rkt and aufheben/torn.rkt).
+(module+ testing
+  (provide esq-id esq-front esq-ifront esq-middle esq-iback esq-back esq-version esq-folded
+           set-esq-id! set-esq-front! set-esq-ifront! set-esq-middle! set-esq-iback!
+           set-esq-back! set-esq-version! set-esq-folded!))

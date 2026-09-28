@@ -288,3 +288,10 @@
              (begin-encourage-inline
                accessor ...
                mutator ...))))]))
+
+;; Whether this is the checked build, for tests that mean something only there.
+(define-syntax (build-is-checked stx)
+  (if checked-build? #'#t #'#f))
+(module+ testing
+  (provide checked-build?)
+  (define checked-build? (build-is-checked)))

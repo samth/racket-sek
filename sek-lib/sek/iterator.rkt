@@ -206,8 +206,9 @@
   (define ch (cur-chunk c))
   (define-values (start len shd) (chunk-segment-at ch i))
   ;; The loops that walk the run read it unchecked, so the run must lie inside
-  ;; the vector.  While the invariants hold it does; a data race on an
-  ;; ephemeral sequence can break them.
+  ;; the vector; and a traversal by segments advances by the length of each,
+  ;; so the run must hold the item.  While the invariants hold both are true;
+  ;; a data race on an ephemeral sequence can break them.
   (let ([offset (- i shd)])
     (unless (and (<= 0 start) (<= 0 offset) (< offset len)
                  (<= (+ start len) (vector-length (chunk-data ch))))

@@ -670,3 +670,11 @@
      (if (eq? inner inner*)
          c
          (chunk-set c q inner* (chunk-weight inner) (chunk-weight inner*) owner))]))
+
+;; For a test that stores wrong values in the structure on purpose, as a race
+;; can (sek-test/tests/sek/aufheben/torn.rkt).
+(module+ testing
+  (provide chunk? chunk-support chunk-head chunk-size chunk-id
+           set-chunk-head! set-chunk-size! set-chunk-weight!
+           support-data support-extent set-support-extent! extent
+           none))
