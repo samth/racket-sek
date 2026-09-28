@@ -613,8 +613,12 @@
 (define (chunk-item-at/from c i d q0 acc0)
   (define n (chunk-size c))
   (define mw (max-item-weight d))
+  ;; While the weights are right, the item is found before q reaches n; a data
+  ;; race can leave them wrong, and chunk-ref wraps around, so without the
+  ;; test the scan could go on forever
   (define (scan q acc)
     (let loop ([q q] [acc acc])
+      (when (fx>= q n) (inconsistent-structure))
       (define w (chunk-weight (chunk-ref c q)))
       (if (fx< i (fx+ acc w))
           (values q (fx- i acc))

@@ -129,17 +129,20 @@
       (unsafe-fx+ (cur-w c) (unsafe-fx- (cur-icur c) (cur-ishd c)))
       (cur-w c)))
 
-;; A cursor is private to one thread, and it keeps ishd <= icur < istl <= the
-;; length of its support, except at a sentinel, where the support is empty and
-;; icur = istl = 0.  So the one test icur < istl is all an unchecked read
-;; needs.  Correct code never reads at a sentinel, but a data race can: an
-;; ephemeral sequence updated during iteration can leave an empty chunk in a
-;; middle sequence, or weights that send a descent past the end, and a cursor
-;; that expects to land on an item lands on a sentinel instead.
+;; A cursor keeps ishd <= icur < istl <= the length of its support, except at
+;; a sentinel, where the support is empty and icur = istl = 0.  Correct code
+;; never reads at a sentinel, but a data race can: an ephemeral sequence
+;; updated during iteration can leave an empty chunk in a middle sequence, or
+;; weights that send a descent past the end, and a cursor that expects to land
+;; on an item lands on a sentinel instead.  And two threads that use one
+;; iterator at once, which is not allowed, can each find the cursor's fields
+;; half rewritten by the other: icur from one run and support from another.
+;; So the test is against the vector actually read.
 (define (cur-get c)
+  (define v (cur-support c))
   (define i (cur-icur c))
-  (if (unsafe-fx< i (cur-istl c))
-      (unsafe-vector*-ref (cur-support c) i)
+  (if (and (unsafe-fx>= i 0) (unsafe-fx< i (unsafe-vector*-length v)))
+      (unsafe-vector*-ref v i)
       (inconsistent-structure)))
 
 (define (cur-item-weight c)
@@ -200,10 +203,11 @@
                   -1
                   (cur-wt c))))
 
-;; Install the segment of the current chunk that covers item i; wcur is the
-;; weight index of that item within the level.
-(define (install-in-chunk! c i wcur)
-  (define ch (cur-chunk c))
+;; Install the segment of chunk ch, the current chunk, that covers item i; wcur
+;; is the weight index of that item within the level.  The caller passes the
+;; chunk rather than this reading it back, since another thread using the same
+;; iterator could have replaced it, perhaps with #f.
+(define (install-in-chunk! c ch i wcur)
   (define-values (start len shd) (chunk-segment-at ch i))
   ;; The loops that walk the run read it unchecked, so the run must lie inside
   ;; the vector; and a traversal by segments advances by the length of each,
@@ -228,7 +232,7 @@
   (set-cur-path! c path)
   (set-cur-chunk! c ch)
   (set-cur-wbase! c base)
-  (install-in-chunk! c i wcur))
+  (install-in-chunk! c ch i wcur))
 
 ;; The index of the current item within its chunk.
 (define (icur-sch c)
@@ -275,9 +279,11 @@
         (set-cur-icur! c i)]
        [else (move-next-segment! c dir)])]
     [else
+     ;; icur is read once, so what is written back is at least ishd, never -1
+     (define i (cur-icur c))
      (cond
-       [(unsafe-fx> (cur-icur c) (cur-ishd c))
-        (set-cur-icur! c (unsafe-fx- (cur-icur c) 1))
+       [(unsafe-fx> i (cur-ishd c))
+        (set-cur-icur! c (unsafe-fx- i 1))
         (unless (eqv? (cur-depth c) 0)
           (set-cur-w! c (unsafe-fx- (cur-w c) (cur-item-weight c))))]
        [else (move-next-segment! c dir)])]))
@@ -303,7 +309,7 @@
                  (if (eqv? (cur-depth c) 0)
                      1
                      (chunk-weight (chunk-ref ch i))))))
-        (install-in-chunk! c i w)]
+        (install-in-chunk! c ch i w)]
        [else (move-next-chunk! c dir)])]))
 
 (define (finish! c dir)
@@ -332,8 +338,8 @@
 (define (enter-middle! c dir mi)
   (enter-chunk! c dir mi (cur-get mi) (+ (region-base c 2) (cur-index mi))))
 
-(define (fresh-middle-cursor c dir)
-  (define mi (cur-of-tree (cur-middle c) (add1 (cur-depth c))))
+(define (fresh-middle-cursor c m dir)
+  (define mi (cur-of-tree m (add1 (cur-depth c))))
   (goto-sentinel! mi (if (eq? dir 'forward) 'sf 'sb))
   (cur-move! mi dir)
   mi)
@@ -359,16 +365,16 @@
               (if f (enter-chunk! c dir 'front f 0) (try (add1 k)))]
          [(1) (define fi (nonempty (cur-ifront c)))
               (if fi (enter-chunk! c dir 'ifront fi (region-base c 1)) (try (add1 k)))]
-         [(2) (if (cur-middle c)
-                  (enter-middle! c dir (fresh-middle-cursor c dir))
+         [(2) (define m (cur-middle c))
+              (if m
+                  (enter-middle! c dir (fresh-middle-cursor c m dir))
                   (try (add1 k)))]
          [(3) (define bi (nonempty (cur-iback c)))
               (if bi (enter-chunk! c dir 'iback bi (region-base c 3)) (try (add1 k)))]
          [else (define b (nonempty (cur-back c)))
                (if b (enter-chunk! c dir 'back b (region-base c 4)) (try (add1 k)))])])))
 
-(define (enter-short! c dir)
-  (define v (cur-sv c))
+(define (enter-short! c dir v)
   (cond
     [(eqv? (vector-length v) 0) (finish! c dir)]
     [else
@@ -391,8 +397,9 @@
     [(or (eq? p 'sf) (eq? p 'sb))
      (unless (eq? (eq? p 'sf) (eq? dir 'forward))
        (raise-arguments-error 'sek-iter-move! "cannot move past the sentinel"))
-     (if (cur-sv c)
-         (enter-short! c dir)
+     (define v (cur-sv c))
+     (if v
+         (enter-short! c dir v)
          (enter-region! c dir 0))]
     [(symbol? p)
      ;; leaving a chunk region continues with the next region in the direction
@@ -415,15 +422,15 @@
     [(< target 0) (goto-sentinel! c 'sf)]
     [(>= target (cur-wt c)) (goto-sentinel! c 'sb)]
     [(cur-sv c)
-     (define v (cur-sv c))
-     (set-cur-path! c 'short)
-     (set-cur-chunk! c #f)
-     (set-cur-support! c v)
-     (set-cur-ishd! c 0)
-     (set-cur-istl! c (vector-length v))
-     (set-cur-icur! c target)
-     (set-cur-ishd-sch! c 0)
-     (set-cur-w! c 0)]
+     => (lambda (v)
+          (set-cur-path! c 'short)
+          (set-cur-chunk! c #f)
+          (set-cur-support! c v)
+          (set-cur-ishd! c 0)
+          (set-cur-istl! c (vector-length v))
+          (set-cur-icur! c target)
+          (set-cur-ishd-sch! c 0)
+          (set-cur-w! c 0))]
     ;; Still inside the run of storage the cursor is on: one write.  At depth
     ;; 0 the items weigh one each, so the offset within the segment is just
     ;; the difference of the weight indices.
@@ -449,7 +456,7 @@
           (if (>= off cur-off)
               (chunk-item-at/from ch off (cur-depth c) (icur-sch c) cur-off)
               (chunk-item-at ch off (cur-depth c))))
-        (install-in-chunk! c q (- target j))]
+        (install-in-chunk! c ch q (- target j))]
        [else (reach-inside! c target)])]))
 
 ;; Descend to the item that covers weight index `target`, exactly as `get`
@@ -461,8 +468,10 @@
   (define b2 (region-base c 2))
   (define b3 (+ b2 (pt-weight m)))
   (define b4 (+ b3 (weight-of (cur-iback c))))
-  ;; the item of chunk ch, which starts at weight index base, that covers target
+  ;; the item of chunk ch, which starts at weight index base, that covers
+  ;; target; ch is #f only where another thread has rewritten the cursor
   (define (in-chunk! path ch base)
+    (unless ch (inconsistent-structure))
     (define-values (q j) (chunk-item-at ch (- target base) d))
     (install-chunk! c path ch q (- target j) base))
   (cond
@@ -729,8 +738,9 @@
 (define (ensure-owned! it who)
   (define e (siter-seq it))
   (define c (siter-cursor it))
+  (define ch (cur-chunk c))
   (cond
-    [(chunk-owned? (cur-chunk c) (eseq-id e))
+    [(and ch (chunk-owned? ch (eseq-id e)))
      (set-siter-birth! it (eseq-invalidate-iterators-except! e))]
     [else
      (define i (cur-index c))
@@ -751,9 +761,10 @@
   (ensure-owned! it 'sek-iter-set!)
   (define c (siter-cursor it))
   ;; the same guard as `cur-get`: ensure-owned! may have moved the cursor
+  (define v (cur-support c))
   (define i (cur-icur c))
-  (if (unsafe-fx< i (cur-istl c))
-      (unsafe-vector*-set! (cur-support c) i x)
+  (if (and (unsafe-fx>= i 0) (unsafe-fx< i (unsafe-vector*-length v)))
+      (unsafe-vector*-set! v i x)
       (inconsistent-structure)))
 
 (define (sek-iter-set-and-move! it x [dir 'forward])
@@ -806,13 +817,22 @@
        (unless (<= (cur-istl c) (vector-length (cur-support c)))
          (raise (exn:fail:sek "sek iterator: segment outside its support"
                               (current-continuation-marks))))
-       (when (cur-chunk c)
-         (unless (eq? (cur-support c) (chunk-data (cur-chunk c)))
+       (define ch (cur-chunk c))
+       (when ch
+         (unless (eq? (cur-support c) (chunk-data ch))
            (raise (exn:fail:sek "sek iterator: segment is not part of its chunk"
                                 (current-continuation-marks))))
-         (unless (< (icur-sch c) (chunk-length (cur-chunk c)))
+         (unless (< (icur-sch c) (chunk-length ch))
            (raise (exn:fail:sek "sek iterator: index outside its chunk"
                                 (current-continuation-marks)))))
        (when (cur? p)
          (loop p))]))
   it)
+
+;; For a test that stores wrong values in a cursor on purpose, as another
+;; thread using the same iterator can (sek-test/tests/sek/aufheben/torn.rkt).
+(module+ testing
+  (provide siter-cursor cur? cur-depth cur-path cur-chunk cur-support cur-wt
+           set-cur-wt! set-cur-front! set-cur-ifront! set-cur-middle! set-cur-iback!
+           set-cur-back! set-cur-path! set-cur-chunk! set-cur-support! set-cur-icur!
+           set-cur-ishd! set-cur-istl! set-cur-ishd-sch! set-cur-w! set-cur-wbase!))
