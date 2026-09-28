@@ -54,7 +54,16 @@
   (regexp-replace* #rx"[0-9]+" (if (> (string-length l) 100) (substring l 0 100) l) "N"))
 
 (define (note-exn! where e)
-  (note! (string->symbol (format "~a raised: ~a" where (first-line e)))))
+  (define line (first-line e))
+  ;; the tally keeps one line; a memory-safety event deserves the stack too
+  (when (and (exn? e) (regexp-match? #rx"precondition|invalid memory" line))
+    (eprintf "~a raised: ~a\n~a\n" where (exn-message e)
+             (for/list ([f (in-list (continuation-mark-set->context (exn-continuation-marks e)))]
+                        [_ (in-range 16)])
+               (format "  ~a ~a" (or (car f) "?")
+                       (let ([s (cdr f)])
+                         (if s (format "~a:~a" (srcloc-source s) (srcloc-line s)) ""))))))
+  (note! (string->symbol (format "~a raised: ~a" where line))))
 
 ;; Run a check that returns #f when all is well, or a symbol naming the fault.
 (define (check! where thunk)

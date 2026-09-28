@@ -293,15 +293,18 @@
      (set-esq-front! e (esq-ifront e))
      (set-esq-ifront! e empty-chunk)
      (eseq-pop-front! e)]
+    ;; the tree that was tested is the one popped: a racing writer could empty
+    ;; the field between two reads, and the tree accessors take no #f
     [(esq-middle e)
-     (define-values (c m) (pt-pop-front (esq-middle e) 1 id))
-     ;; a chunk from the middle sequence is never empty (invariant 2) unless
-     ;; a data race has broken the structure; recurring on one could go on
-     ;; forever
-     (when (chunk-empty? c) (inconsistent-structure))
-     (set-esq-middle! e m)
-     (set-esq-front! e c)
-     (eseq-pop-front! e)]
+     => (lambda (t)
+          (define-values (c m) (pt-pop-front t 1 id))
+          ;; a chunk from the middle sequence is never empty (invariant 2)
+          ;; unless a data race has broken the structure; recurring on one
+          ;; could go on forever
+          (when (chunk-empty? c) (inconsistent-structure))
+          (set-esq-middle! e m)
+          (set-esq-front! e c)
+          (eseq-pop-front! e))]
     [(not (chunk-empty? (esq-iback e)))
      (set-esq-front! e (esq-iback e))
      (set-esq-iback! e empty-chunk)
@@ -326,13 +329,14 @@
      (set-esq-back! e (esq-iback e))
      (set-esq-iback! e empty-chunk)
      (eseq-pop-back! e)]
+    ;; as in eseq-pop-front!
     [(esq-middle e)
-     (define-values (c m) (pt-pop-back (esq-middle e) 1 id))
-     ;; as in eseq-pop-front!
-     (when (chunk-empty? c) (inconsistent-structure))
-     (set-esq-middle! e m)
-     (set-esq-back! e c)
-     (eseq-pop-back! e)]
+     => (lambda (t)
+          (define-values (c m) (pt-pop-back t 1 id))
+          (when (chunk-empty? c) (inconsistent-structure))
+          (set-esq-middle! e m)
+          (set-esq-back! e c)
+          (eseq-pop-back! e))]
     [(not (chunk-empty? (esq-ifront e)))
      (set-esq-back! e (esq-ifront e))
      (set-esq-ifront! e empty-chunk)
@@ -364,6 +368,12 @@
     [else (raise-arguments-error who "index out of range"
                                  "index" i "length" (eseq-length e))]))
 
+;; The middle sequence, where `eseq-locate` has just found the index.  Only a
+;; data race can have emptied the field since, but the tree accessors take no
+;; #f, so read it once and test what was read.
+(define (located-middle e)
+  (or (esq-middle e) (inconsistent-structure)))
+
 ;; The index guard on the operations below is `fixnum?` and not the wider
 ;; `exact-nonnegative-integer?`, because `eseq-locate` indexes with `unsafe-fx`
 ;; operations and those are undefined on a bignum.  Nothing is given up: a
@@ -385,7 +395,7 @@
   (case where
     [(front) (chunk-ref (esq-front e) j)]
     [(ifront) (chunk-ref (esq-ifront e) j)]
-    [(middle) (pt-ref (esq-middle e) j 1)]
+    [(middle) (pt-ref (located-middle e) j 1)]
     [(iback) (chunk-ref (esq-iback e) j)]
     [else (chunk-ref (esq-back e) j)]))
 
@@ -401,7 +411,7 @@
   (case where
     [(front) (set-esq-front! e (chunk-set (esq-front e) j x 1 1 id))]
     [(ifront) (set-esq-ifront! e (chunk-set (esq-ifront e) j x 1 1 id))]
-    [(middle) (set-esq-middle! e (pt-set (esq-middle e) j x 1 id))]
+    [(middle) (set-esq-middle! e (pt-set (located-middle e) j x 1 id))]
     [(iback) (set-esq-iback! e (chunk-set (esq-iback e) j x 1 1 id))]
     [else (set-esq-back! e (chunk-set (esq-back e) j x 1 1 id))]))
 
@@ -416,7 +426,7 @@
   (case where
     [(front) (set-esq-front! e (chunk-own (esq-front e) id))]
     [(ifront) (set-esq-ifront! e (chunk-own (esq-ifront e) id))]
-    [(middle) (set-esq-middle! e (pt-own (esq-middle e) j 1 id))]
+    [(middle) (set-esq-middle! e (pt-own (located-middle e) j 1 id))]
     [(iback) (set-esq-iback! e (chunk-own (esq-iback e) id))]
     [else (set-esq-back! e (chunk-own (esq-back e) id))]))
 
