@@ -113,7 +113,7 @@ let stack_like title side_push side_pop total =
   in
   let sizes = sizes_s () in
   table title (show_ints sizes)
-    [ row "eseq" e_run sizes; row "pseq" p_run sizes; row_opt "list" l_run sizes ]
+    [ row "esek" e_run sizes; row "psek" p_run sizes; row_opt "list" l_run sizes ]
 
 let scenario_stack () =
   stack_like "stack: push-back / pop-back, ns per operation"
@@ -144,8 +144,8 @@ let scenario_traversal () =
   let a_run n = let a = a_of n in measure n (fun () -> ignore (Array.fold_left ( + ) 0 a)) in
   let l_run n = let l = l_of n in measure n (fun () -> ignore (List.fold_left ( + ) 0 l)) in
   table "traversal: fold over the whole sequence, ns per element" (show_ints sizes)
-    [ row "eseq" e_run sizes; row "pseq" p_run sizes;
-      row "  pseq via iter" it_run sizes;
+    [ row "esek" e_run sizes; row "psek" p_run sizes;
+      row "  psek via iter" it_run sizes;
       row "  array" a_run sizes; row "  list" l_run sizes ]
 
 let random_indices n k = Array.init k (fun _ -> Random.int n)
@@ -175,7 +175,7 @@ let scenario_random_access () =
         ignore !acc)
   in
   table "random access: get at random indices, ns per read" (show_ints sizes)
-    [ row "eseq" e_run sizes; row "pseq" p_run sizes; row "  array" a_run sizes ]
+    [ row "esek" e_run sizes; row "psek" p_run sizes; row "  array" a_run sizes ]
 
 let scenario_hops () =
   let n = big_n () in
@@ -222,8 +222,8 @@ let scenario_hops () =
   table
     (Printf.sprintf "hops over %d elements: get at a fixed stride, ns per read" n)
     (List.map (fun d -> "+" ^ string_of_int d) strides)
-    [ row "eseq" e_run ixs; row "pseq" p_run ixs;
-      row "pseq iterator" it_run ixs; row "  array" a_run ixs ]
+    [ row "esek" e_run ixs; row "psek" p_run ixs;
+      row "psek iterator" it_run ixs; row "  array" a_run ixs ]
 
 let scenario_update () =
   let sizes = sizes_m () in
@@ -247,13 +247,13 @@ let scenario_update () =
     measure k (fun () -> Array.iteri (fun c j -> a.(j) <- c) ix)
   in
   table "update: set at random indices, ns per write" (show_ints sizes)
-    [ row "eseq" e_run sizes; row "pseq" p_run sizes; row "  array" a_run sizes ]
+    [ row "esek" e_run sizes; row "psek" p_run sizes; row "  array" a_run sizes ]
 
 let scenario_construction () =
   let sizes = sizes_m () in
   table "construction: n elements from scratch, ns per element" (show_ints sizes)
-    [ row "eseq" (fun n -> measure n (fun () -> ignore (E.init default n (fun i -> i)))) sizes;
-      row "pseq" (fun n -> measure n (fun () -> ignore (P.init default n (fun i -> i)))) sizes;
+    [ row "esek" (fun n -> measure n (fun () -> ignore (E.init default n (fun i -> i)))) sizes;
+      row "psek" (fun n -> measure n (fun () -> ignore (P.init default n (fun i -> i)))) sizes;
       row "  array" (fun n -> measure n (fun () -> ignore (Array.init n (fun i -> i)))) sizes;
       row "  list" (fun n -> measure n (fun () -> ignore (List.init n (fun i -> i)))) sizes ]
 
@@ -269,7 +269,7 @@ let scenario_concat () =
   in
   table "concat: append two sequences of n/2 elements, ns per concatenation"
     (show_ints sizes)
-    [ row "pseq" p_run sizes; row "  list" l_run sizes ]
+    [ row "psek" p_run sizes; row "  list" l_run sizes ]
 
 let scenario_split () =
   let sizes = sizes_m () in
@@ -279,7 +279,7 @@ let scenario_split () =
     measure k (fun () -> Array.iter (fun j -> ignore (P.split s j)) ix)
   in
   table "split: split at a random index, ns per split" (show_ints sizes)
-    [ row "pseq" p_run sizes ]
+    [ row "psek" p_run sizes ]
 
 let scenario_snapshot () =
   let sizes = sizes_m () in
@@ -291,7 +291,7 @@ let scenario_snapshot () =
         keep := Sek.snapshot e)
   in
   table "snapshot: one change plus one snapshot of an n-element sequence, ns"
-    (show_ints sizes) [ row "eseq" snap_run sizes ];
+    (show_ints sizes) [ row "esek" snap_run sizes ];
   let n = scale 100000 in
   let periods = [ 1; 10; 1000; 100000 ] in
   let e_run m =
@@ -312,7 +312,7 @@ let scenario_snapshot () =
   table
     (Printf.sprintf "snapshot: %d pushes, taking a snapshot every m of them, ns per push" n)
     (List.map (fun m -> "m=" ^ string_of_int m) periods)
-    [ row "eseq" e_run periods; row "pseq (persistent)" p_run periods ]
+    [ row "esek" e_run periods; row "psek (persistent)" p_run periods ]
 
 let scenario_fill () =
   let n = big_n () in
@@ -329,7 +329,7 @@ let scenario_fill () =
   table
     (Printf.sprintf "fill: overwrite k consecutive elements of %d, ns per element" n)
     (show_ints ks)
-    [ row "eseq (fill)" fill_run ks; row "eseq (set loop)" set_run ks;
+    [ row "esek (fill)" fill_run ks; row "esek (set loop)" set_run ks;
       row "  array" a_run ks ]
 
 let scenario_transient () =
@@ -366,7 +366,7 @@ let scenario_filter () =
   let e_run n = let s = e_of n in measure n (fun () -> ignore (E.filter keep s)) in
   let l_run n = let l = l_of n in measure n (fun () -> ignore (List.filter keep l)) in
   table "filter: keep one element in three, ns per input element" (show_ints sizes)
-    [ row "pseq" p_run sizes; row "eseq" e_run sizes; row "  list" l_run sizes ]
+    [ row "psek" p_run sizes; row "esek" e_run sizes; row "  list" l_run sizes ]
 
 let scenarios =
   [ "stack", scenario_stack;

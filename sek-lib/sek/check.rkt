@@ -12,8 +12,8 @@
 
 (provide check-tree
          check-chunk
-         check-pseq
-         check-eseq
+         check-psek
+         check-esek
          sek-check-failure)
 
 (define (sek-check-failure fmt . args)
@@ -85,9 +85,9 @@
                        (set! total (+ total (chunk-weight c)))))
   total)
 
-(define (check-pseq s)
-  (unless (pseq? s) (raise-argument-error 'sek-validate-pseq "pseq?" s))
-  (define r (pseq-rep s))
+(define (check-psek s)
+  (unless (psek? s) (raise-argument-error 'sek-validate-psek "psek?" s))
+  (define r (psek-rep s))
   (cond
     [(not r) (void)]
     [(vector? r)
@@ -106,19 +106,19 @@
 ;; is a persistent tree, so most of the work is the same; what is specific is
 ;; that each inner chunk must be either empty or full, and that a chunk
 ;; carrying this sequence's id really is aligned with its support.
-(define (check-eseq e)
-  (unless (eseq? e) (raise-argument-error 'sek-validate-eseq "eseq?" e))
-  (define id (eseq-id e))
+(define (check-esek e)
+  (unless (esek? e) (raise-argument-error 'sek-validate-esek "esek?" e))
+  (define id (esek-id e))
   ;; a side that has never been pushed to carries the shared stand-in
-  (define f (eseq-front e))
-  (define b (eseq-back e))
+  (define f (esek-front e))
+  (define b (esek-back e))
   (unless (eq? f empty-chunk) (check-chunk f 0 id))
   (unless (eq? b empty-chunk) (check-chunk b 0 id))
-  (for ([c (in-list (list (eseq-ifront e) (eseq-iback e)))]
+  (for ([c (in-list (list (esek-ifront e) (esek-iback e)))]
         [name (in-list '(ifront iback))])
     (unless (eq? c empty-chunk)
       (check-chunk c 0 id)
       (want (chunk-full? c) "~a is neither empty nor full: ~a of ~a"
             name (chunk-length c) (chunk-capacity c))))
-  (check-middle (eseq-middle e) 0 id)
+  (check-middle (esek-middle e) 0 id)
   e)

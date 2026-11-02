@@ -36,7 +36,7 @@ share its sequences, and why we believe the new promises hold.
 The documentation's "Threads" section states the contract precisely.  In
 short: any number of threads may use a persistent sequence at once; any
 number may use an ephemeral sequence at once as long as none of them updates
-it; an update -- an `eseq-...!` operation, a write through an iterator or a
+it; an update -- an `esek-...!` operation, a write through an iterator or a
 segment, or `sek-append*` of an ephemeral sequence -- needs exclusive access;
 sharing between the flavors, as between a snapshot and the sequence it came
 from, needs no synchronization; one iterator belongs to one thread at a time;
@@ -70,7 +70,7 @@ the same persistent sequence race.
 
 **Some reads wrote.**  Creating an iterator -- which every `in-sek` loop,
 fold and `sek-for-each` does -- moved the inner chunks of an ephemeral
-sequence into its middle sequence, and so did `eseq-snapshot`.  Two threads
+sequence into its middle sequence, and so did `esek-snapshot`.  Two threads
 that only read one ephemeral sequence could therefore race on those writes.
 
 Separately from threads, the exported `segment` constructor accepted any start
@@ -111,7 +111,7 @@ The remaining unchecked operations are vector accesses, and each is guarded:
   occupied or not, so a stray read of an empty slot -- which only a race can
   cause -- still gives the chunk accessors a chunk.
 
-The two validators, `sek-validate-pseq` and `sek-validate-eseq`, used to rely
+The two validators, `sek-validate-psek` and `sek-validate-esek`, used to rely
 on safe mode to reject a non-sequence; they now check their argument.
 
 ### Claim a slot with a compare-and-swap (`ae37c96`)
@@ -145,10 +145,10 @@ Three reads no longer write anything a read depends on:
   iterator is valid while the version is the one it was born with, so creating
   an iterator only reads the version.  Before, creating one marked the
   version as having a live iterator.
-* **Snapshots.**  `eseq-snapshot` folds the inner chunks into a persistent
+* **Snapshots.**  `esek-snapshot` folds the inner chunks into a persistent
   copy of the middle sequence rather than into the sequence's own.  It writes
   one field of the ephemeral sequence, its ownership id, which only updates
-  consult.  `eseq-copy` in `'share` mode likewise writes only ids.
+  consult.  `esek-copy` in `'share` mode likewise writes only ids.
 
 ### Let the next update adopt the fold (`5ae61e2`)
 
@@ -157,14 +157,14 @@ stay full, so a sequence that is snapshotted after every few updates folds
 them again at every snapshot.  Keeping a snapshot after every push cost about
 three times as much as before (905 ns a push against 302), and one change
 plus a snapshot about twice as much (173 ns against 71).  A round trip from a
-persistent sequence -- `pseq-edit`, some updates, `eseq-snapshot` -- was not
-affected, since `pseq-edit` starts with empty inner chunks.
+persistent sequence -- `psek-edit`, some updates, `esek-snapshot` -- was not
+affected, since `psek-edit` starts with empty inner chunks.
 
 A snapshot now leaves its fold in a field and makes the version negative.  The
 next update installs the fold and empties the inner chunks; a snapshot taken
 before then reuses it.  An update has exclusive access, so it may rewrite
 several fields at once, which a snapshot, running beside readers, may not.
-Every update already runs `eseq-invalidate-iterators!` before it looks at the
+Every update already runs `esek-invalidate-iterators!` before it looks at the
 structure, and already loads the version there, so an update with nothing to
 adopt pays one sign test.  Iterator validity uses the version's magnitude, so a
 snapshot does not invalidate live iterators.
@@ -176,7 +176,7 @@ Traversal had become about 20% slower: the element loops are `for` loops over
 `in-range`, and `in-range` uses unchecked fixnum arithmetic only in a module
 compiled in unsafe mode.  A new clause, `in-fx-range`, always does, and the
 loops that use it read their elements through checked indices or from runs
-checked once.  And `eseq-invalidate-iterators!`, which every push and pop
+checked once.  And `esek-invalidate-iterators!`, which every push and pop
 runs, had outgrown the compiler's inlining threshold when it gained the branch
 to `adopt-fold!`; encouraging the inliner took about a nanosecond off each
 push and pop.
@@ -187,9 +187,9 @@ The testing described below found two more holes, both in unsupported uses,
 and both of one kind: a field that holds either a structure or `#f` was
 tested on one read and used on another.
 
-* **The middle sequence.**  `eseq-pop-front!` and `eseq-pop-back!` tested
-  the middle field and then read it again to pop from it, and `eseq-ref`,
-  `eseq-set!` and `eseq-own-at!` read it again after locating the index
+* **The middle sequence.**  `esek-pop-front!` and `esek-pop-back!` tested
+  the middle field and then read it again to pop from it, and `esek-ref`,
+  `esek-set!` and `esek-own-at!` read it again after locating the index
   there.  A second writer can store `#f` in between, and the tree
   accessors then read a field of `#f`.  Each now reads the field once and
   tests what it read.
@@ -349,7 +349,7 @@ missed:
 * *A pop that never returned* (`8b556ee`).  Two threads popping one chunk
   could leave its size at -1, which the emptiness test, looking for exactly 0,
   never recognized.  Five runs of the first campaign hung, and the watchdog
-  located the hung threads in `eseq-pop-front!`.
+  located the hung threads in `esek-pop-front!`.
 
 **After the fixes**, the campaign ran every combination of the four builds
 (normal, checked, jitter, both), the five modes, 2, 4 and 8 threads, and
@@ -384,11 +384,11 @@ jitter: five modes, 2 and 4 threads, capacities 4 and 3 and capacities 2 and
 | A plain write instead of the compare-and-swap, back push | Test suite (`thread-tests.rkt`); fuzzer, on x86-64 and on ARM |
 | A plain write instead of the compare-and-swap, front push | The same |
 | A symbol as the empty-slot marker | Fuzzer (both builds); torn-state test |
-| No emptiness tests in the pops | Fuzzer: the watchdog found threads hung in `eseq-pop-front!` |
+| No emptiness tests in the pops | Fuzzer: the watchdog found threads hung in `esek-pop-front!` |
 | No range check in `segment` | Test suite (`error-tests.rkt`) |
 | No argument check in a validator | Test suite (`argument-check-tests.rkt`); fuzzer (one crash) |
-| No argument check in `eseq-ref` | Test suite |
-| `eseq-snapshot` flushes the inner chunks again | Test suite; fuzzer (readers); model test |
+| No argument check in `esek-ref` | Test suite |
+| `esek-snapshot` flushes the inner chunks again | Test suite; fuzzer (readers); model test |
 | Creating an iterator flushes them again | Test suite; fuzzer; model test |
 | Adopting a fold leaves it in place | Test suite; fuzzer; model test |
 | Updates leave the version alone | Test suite; model test |
@@ -564,7 +564,7 @@ now pays.
 
 ### When to use a transient
 
-A transient -- `pseq-edit`, m in-place updates, `eseq-snapshot` -- beats m
+A transient -- `psek-edit`, m in-place updates, `esek-snapshot` -- beats m
 persistent updates from these batch sizes on, in the original code and the
 final code alike:
 

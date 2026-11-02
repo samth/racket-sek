@@ -8,13 +8,13 @@
 ;; line but `trials` is absent found nothing.
 ;;
 ;; Supported uses -- these must find nothing:
-;;   pseq      N threads push, pop and set on the same persistent sequences,
+;;   psek      N threads push, pop and set on the same persistent sequences,
 ;;             starting together, and keep using their results; each result
 ;;             must hold what its own operations put there, and sequences
 ;;             derived before the race must not change.
 ;;   readers   N threads read one ephemeral sequence at once by every route --
 ;;             in-sek, folds, iterators that jump, segments, `for`, snapshots,
-;;             copies, eseq-ref -- and then one thread updates it.
+;;             copies, esek-ref -- and then one thread updates it.
 ;;   handoff   one thread updates an ephemeral sequence and hands snapshots of
 ;;             it, over a channel, to N - 1 threads, which check them, extend
 ;;             them persistently and edit them into ephemeral sequences of
@@ -37,7 +37,7 @@
          racket/async-channel
          sek)
 
-(define mode 'pseq)
+(define mode 'psek)
 (define nthreads 2)
 (define trials 40)
 (define seed 1)
@@ -138,23 +138,23 @@
           [else (loop (add1 i) (sub1 n)
                       (cons (list (if (zero? (random 2)) 'pop-front 'pop-back)) acc))]))))
 
-(define (run-pseq-script s script)
+(define (run-psek-script s script)
   (for/fold ([s s]) ([op (in-list script)])
     (case (car op)
-      [(front) (pseq-push-front s (cadr op))]
-      [(back) (pseq-push-back s (cadr op))]
-      [(set) (pseq-set s (cadr op) (caddr op))]
-      [(pop-front) (let-values ([(x r) (pseq-pop-front s)]) r)]
-      [(pop-back) (let-values ([(x r) (pseq-pop-back s)]) r)])))
+      [(front) (psek-push-front s (cadr op))]
+      [(back) (psek-push-back s (cadr op))]
+      [(set) (psek-set s (cadr op) (caddr op))]
+      [(pop-front) (let-values ([(x r) (psek-pop-front s)]) r)]
+      [(pop-back) (let-values ([(x r) (psek-pop-back s)]) r)])))
 
-(define (run-eseq-script! e script)
+(define (run-esek-script! e script)
   (for ([op (in-list script)])
     (case (car op)
-      [(front) (eseq-push-front! e (cadr op))]
-      [(back) (eseq-push-back! e (cadr op))]
-      [(set) (eseq-set! e (cadr op) (caddr op))]
-      [(pop-front) (eseq-pop-front! e)]
-      [(pop-back) (eseq-pop-back! e)])))
+      [(front) (esek-push-front! e (cadr op))]
+      [(back) (esek-push-back! e (cadr op))]
+      [(set) (esek-set! e (cadr op) (caddr op))]
+      [(pop-front) (esek-pop-front! e)]
+      [(pop-back) (esek-pop-back! e)])))
 
 (define (run-list-script l script)
   (for/fold ([l l]) ([op (in-list script)])
@@ -165,86 +165,86 @@
       [(pop-front) (cdr l)]
       [(pop-back) (drop-right l 1)])))
 
-(define (build-pseq-by-pushes n)
-  (for/fold ([s empty-pseq]) ([i (in-range n)])
-    (if (zero? (random 3)) (pseq-push-front s i) (pseq-push-back s i))))
+(define (build-psek-by-pushes n)
+  (for/fold ([s empty-psek]) ([i (in-range n)])
+    (if (zero? (random 3)) (psek-push-front s i) (psek-push-back s i))))
 
-(define (build-eseq n)
-  (define e (make-eseq))
+(define (build-esek n)
+  (define e (make-esek))
   (for ([i (in-range n)])
-    (if (zero? (random 3)) (eseq-push-front! e i) (eseq-push-back! e i)))
+    (if (zero? (random 3)) (esek-push-front! e i) (esek-push-back! e i)))
   e)
 
 ;; What a persistent result must be; checks and returns its list.
-(define (examine-pseq where s expected)
+(define (examine-psek where s expected)
   (define lst #f)
-  (check! where (lambda () (sek-validate-pseq s) #f))
-  (check! where (lambda () (set! lst (pseq->list s)) #f))
+  (check! where (lambda () (sek-validate-psek s) #f))
+  (check! where (lambda () (set! lst (psek->list s)) #f))
   (when lst
     (check! where (lambda () (and (foreign? lst) 'foreign-value)))
     (check! where (lambda () (and expected (not (equal? lst expected)) 'wrong-contents)))
-    (check! where (lambda () (and (not (= (pseq-length s) (length lst))) 'length-disagrees)))
+    (check! where (lambda () (and (not (= (psek-length s) (length lst))) 'length-disagrees)))
     (define v (list->vector lst))
     (check! where
             (lambda ()
               (and (for/or ([_ (in-range 30)])
                      (and (> (vector-length v) 0)
                           (let ([i (random (vector-length v))])
-                            (not (eqv? (pseq-ref s i) (vector-ref v i))))))
+                            (not (eqv? (psek-ref s i) (vector-ref v i))))))
                    'ref-disagrees))))
   lst)
 
 ;; ------------------------------------------------------------ modes
 
-(define (pseq-trial)
+(define (psek-trial)
   (define n (random-size))
-  (define base (build-pseq-by-pushes n))
-  (define base-list (pseq->list base))
+  (define base (build-psek-by-pushes n))
+  (define base-list (psek->list base))
   (define bystanders
     (for/list ([j (in-range (random 3))])
-      (define b (run-pseq-script base (make-script n (random 30) (* 90000000 (add1 j)))))
-      (cons b (pseq->list b))))
+      (define b (run-psek-script base (make-script n (random 30) (* 90000000 (add1 j)))))
+      (cons b (psek->list b))))
   (define scripts (for/list ([t (in-range nthreads)])
                     (make-script n (add1 (random 300)) (* 1000000 (add1 t)))))
   (define results (race "race" (for/list ([sc (in-list scripts)])
-                                 (lambda () (run-pseq-script base sc)))))
+                                 (lambda () (run-psek-script base sc)))))
   (define (bystanders-intact? where)
     (check! where (lambda ()
-                    (and (not (and (equal? (pseq->list base) base-list)
+                    (and (not (and (equal? (psek->list base) base-list)
                                    (for/and ([b (in-list bystanders)])
-                                     (equal? (pseq->list (car b)) (cdr b)))))
+                                     (equal? (psek->list (car b)) (cdr b)))))
                          'bystander-changed))))
   (bystanders-intact? "after race")
   (define lists (for/list ([r (in-list results)] [sc (in-list scripts)])
-                  (and r (examine-pseq "result" r (run-list-script base-list sc)))))
+                  (and r (examine-psek "result" r (run-list-script base-list sc)))))
   ;; keep using each result from one thread, and edit it into an ephemeral
   ;; sequence as well
   (for ([r (in-list results)] [l (in-list lists)] #:when (and r l))
     (define script (make-script (length l) 200 50000000))
     (check! "continuing" (lambda ()
-                           (examine-pseq "continuing" (run-pseq-script r script)
+                           (examine-psek "continuing" (run-psek-script r script)
                                          (run-list-script l script))
                            #f))
     (check! "editing" (lambda ()
-                        (define e (pseq-edit r))
-                        (run-eseq-script! e script)
-                        (sek-validate-eseq e)
-                        (and (not (equal? (eseq->list e) (run-list-script l script)))
+                        (define e (psek-edit r))
+                        (run-esek-script! e script)
+                        (sek-validate-esek e)
+                        (and (not (equal? (esek->list e) (run-list-script l script)))
                              'wrong-after-edit)))
-    (check! "continuing" (lambda () (and (not (equal? (pseq->list r) l)) 'value-changed-after-race))))
+    (check! "continuing" (lambda () (and (not (equal? (psek->list r) l)) 'value-changed-after-race))))
   (bystanders-intact? "after continuing"))
 
 ;; Every way of reading an ephemeral sequence, each returning its elements as a
-;; list (or, for eseq-ref, a list of samples to compare).
+;; list (or, for esek-ref, a list of samples to compare).
 (define (reads e idx)
   (list
    (lambda () (for/list ([x (in-sek e)]) x))
    (lambda () (reverse (sek-fold-left e (lambda (acc x) (cons x acc)) '())))
    (lambda () (sek-fold-right e cons '()))
    (lambda () (for/list ([x e]) x))
-   (lambda () (pseq->list (eseq-snapshot e)))
-   (lambda () (eseq->list (eseq-copy e)))
-   (lambda () (eseq->list (eseq-copy e #:mode 'share)))
+   (lambda () (psek->list (esek-snapshot e)))
+   (lambda () (esek->list (esek-copy e)))
+   (lambda () (esek->list (esek-copy e #:mode 'share)))
    (lambda () (let ([acc '()])
                 (sek-segments-for-each e (lambda (sg) (set! acc (append (reverse (segment->list sg)) acc))))
                 (reverse acc)))
@@ -252,14 +252,14 @@
                 (let loop ([acc '()])
                   (if (sek-iter-finished? it) acc
                       (loop (cons (sek-iter-get-and-move! it 'backward) acc))))))
-   (lambda () (let ([it (sek-iterator e)] [n (eseq-length e)])
+   (lambda () (let ([it (sek-iterator e)] [n (esek-length e)])
                 ;; jump around, then report the samples in index order
                 (sort (for/list ([i (in-list idx)] #:when (< i n))
                         (sek-iter-reach! it i)
                         (cons i (sek-iter-get it)))
                       < #:key car)))
-   (lambda () (let ([n (eseq-length e)])
-                (sort (for/list ([i (in-list idx)] #:when (< i n)) (cons i (eseq-ref e i)))
+   (lambda () (let ([n (esek-length e)])
+                (sort (for/list ([i (in-list idx)] #:when (< i n)) (cons i (esek-ref e i)))
                       < #:key car)))))
 
 (define (expected-reads l idx)
@@ -271,9 +271,9 @@
 
 (define (readers-trial)
   (define n (random-size))
-  (define e (build-eseq n))
-  (run-eseq-script! e (make-script n (random 400) 3000000)) ; pops too, so inner chunks vary
-  (define before (eseq->list e))
+  (define e (build-esek n))
+  (run-esek-script! e (make-script n (random 400) 3000000)) ; pops too, so inner chunks vary
+  (define before (esek->list e))
   (define idx (remove-duplicates (for/list ([_ (in-range 40)]) (random (max 1 (length before))))))
   (define want (expected-reads before idx))
   (define results
@@ -285,25 +285,25 @@
       (cond
         [(exn? got) (note-exn! "reader" got)]
         [(not (equal? got w)) (note! 'reader-saw-wrong-contents)])))
-  (check! "after" (lambda () (sek-validate-eseq e) #f))
-  (check! "after" (lambda () (and (not (equal? (eseq->list e) before)) 'sequence-changed)))
+  (check! "after" (lambda () (sek-validate-esek e) #f))
+  (check! "after" (lambda () (and (not (equal? (esek->list e) before)) 'sequence-changed)))
   ;; then update it from one thread: the first update adopts whatever fold the
   ;; readers' snapshots left
-  (define snap (eseq-snapshot e))
+  (define snap (esek-snapshot e))
   (define script (make-script (length before) 300 4000000))
   (check! "updating after"
           (lambda ()
-            (run-eseq-script! e script)
-            (sek-validate-eseq e)
-            (and (not (equal? (eseq->list e) (run-list-script before script)))
+            (run-esek-script! e script)
+            (sek-validate-esek e)
+            (and (not (equal? (esek->list e) (run-list-script before script)))
                  'wrong-after-updates)))
-  (check! "updating after" (lambda () (and (not (equal? (pseq->list snap) before)) 'snapshot-changed))))
+  (check! "updating after" (lambda () (and (not (equal? (psek->list snap) before)) 'snapshot-changed))))
 
 (define (handoff-trial)
   (define n (random-size))
-  (define e (build-eseq n))
+  (define e (build-esek n))
   (define rounds (add1 (random 20)))
-  (define start-list (eseq->list e))
+  (define start-list (esek->list e))
   ;; the owner's scripts, made against the model lengths it will have
   (define owner-scripts
     (let loop ([r 0] [len (length start-list)] [acc '()])
@@ -324,9 +324,9 @@
                        (for ([ch (in-list chans)]) (async-channel-put ch 'failed))
                        (raise x))])
       (for/fold ([l start-list]) ([sc (in-list owner-scripts)])
-        (run-eseq-script! e sc)
+        (run-esek-script! e sc)
         (define l* (run-list-script l sc))
-        (define s (eseq-snapshot e))
+        (define s (esek-snapshot e))
         (for ([ch (in-list chans)]) (async-channel-put ch (cons s l*)))
         l*)))
   (define (receiver t)
@@ -340,27 +340,27 @@
       (define s (car got))
       (define l (cdr got))
       ;; the snapshot, while the owner goes on updating
-      (examine-pseq "receiver" s l)
+      (examine-psek "receiver" s l)
       ;; extend it persistently, twice from the same point, and edit it
       (define script (make-script (length l) 50 (+ 60000000 (* 100000 t))))
-      (examine-pseq "receiver" (run-pseq-script s script) (run-list-script l script))
-      (examine-pseq "receiver" (run-pseq-script s script) (run-list-script l script))
-      (define mine (pseq-edit s))
-      (run-eseq-script! mine script)
-      (check! "receiver" (lambda () (and (not (equal? (eseq->list mine) (run-list-script l script)))
+      (examine-psek "receiver" (run-psek-script s script) (run-list-script l script))
+      (examine-psek "receiver" (run-psek-script s script) (run-list-script l script))
+      (define mine (psek-edit s))
+      (run-esek-script! mine script)
+      (check! "receiver" (lambda () (and (not (equal? (esek->list mine) (run-list-script l script)))
                                          'wrong-after-edit)))
-      (check! "receiver" (lambda () (and (not (equal? (pseq->list s) l)) 'snapshot-changed))))))
+      (check! "receiver" (lambda () (and (not (equal? (psek->list s) l)) 'snapshot-changed))))))
   (define results (race "race" (cons owner (for/list ([t (in-range (sub1 nthreads))])
                                              (lambda () (receiver t))))))
   (define final (car results))
   (when final
-    (check! "after" (lambda () (sek-validate-eseq e) #f))
-    (check! "after" (lambda () (and (not (equal? (eseq->list e) final)) 'wrong-contents)))))
+    (check! "after" (lambda () (sek-validate-esek e) #f))
+    (check! "after" (lambda () (and (not (equal? (esek->list e) final)) 'wrong-contents)))))
 
 ;; Unsupported: one writer and N - 1 readers.  Only memory safety is at stake.
 (define (writer-trial)
   (define n (random-size))
-  (define e (build-eseq n))
+  (define e (build-esek n))
   (define writes (make-script n (add1 (random 2000)) 5000000))
   (define idx (for/list ([_ (in-range 100)]) (random 1000000)))
   (define (reader)
@@ -370,24 +370,24 @@
           (define got (r))
           (when (and (list? got) (foreign? (filter (lambda (x) (not (pair? x))) got)))
             (note! 'reader-saw-foreign-value))))))
-  (race "race" (cons (lambda () (run-eseq-script! e writes))
+  (race "race" (cons (lambda () (run-esek-script! e writes))
                      (for/list ([t (in-range (sub1 nthreads))]) reader)))
-  (check! "after" (lambda () (sek-validate-eseq e) #f)))
+  (check! "after" (lambda () (sek-validate-esek e) #f)))
 
 ;; Unsupported: N writers.  Only memory safety is at stake.
 (define (writers-trial)
   (define n (random-size))
-  (define e (build-eseq n))
+  (define e (build-esek n))
   (define scripts (for/list ([t (in-range nthreads)])
                     (make-script (max n 1000) (add1 (random 2000)) (* 1000000 (add1 t)))))
   (race "race" (for/list ([sc (in-list scripts)])
-                 (lambda () (run-eseq-script! e sc))))
-  (check! "after" (lambda () (sek-validate-eseq e) #f))
+                 (lambda () (run-esek-script! e sc))))
+  (check! "after" (lambda () (sek-validate-esek e) #f))
   (check! "after" (lambda ()
-                    (define l (eseq->list e))
+                    (define l (esek->list e))
                     (and (foreign? l) 'foreign-value)))
   (check! "continuing" (lambda ()
-                         (for ([i (in-range 300)]) (eseq-push-back! e i) (eseq-pop-front! e))
+                         (for ([i (in-range 300)]) (esek-push-back! e i) (esek-pop-front! e))
                          #f)))
 
 ;; Unsupported: N threads share one iterator, over a sequence nobody updates.
@@ -425,7 +425,7 @@
 
 (define (iterator-trial)
   (define n (random-size))
-  (define s (if (zero? (random 2)) (build-pseq-by-pushes n) (build-eseq n)))
+  (define s (if (zero? (random 2)) (build-psek-by-pushes n) (build-esek n)))
   (define l (sek->list s))
   (define it (sek-iterator s))
   (define scripts (for/list ([t (in-range nthreads)])
@@ -467,7 +467,7 @@
   (random-seed seed)
   (define trial
     (case mode
-      [(pseq) pseq-trial]
+      [(psek) psek-trial]
       [(readers) readers-trial]
       [(handoff) handoff-trial]
       [(writer) writer-trial]

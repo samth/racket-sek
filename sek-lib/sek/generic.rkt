@@ -34,8 +34,8 @@
          sek-first
          sek-last
          in-sek
-         in-pseq
-         in-eseq
+         in-psek
+         in-esek
          sek-segments-for-each
          sek-for-each
          sek-for-each/index
@@ -81,31 +81,31 @@
          sek-delete
          sek-index-of
          sek-copy
-         eseq-fill!
-         eseq-copy!
-         make-pseq
-         build-pseq
-         build-eseq
-         sequence->pseq
-         sequence->eseq
-         for/eseq
-         for*/eseq
-         for/pseq
-         for*/pseq)
+         esek-fill!
+         esek-copy!
+         make-psek
+         build-psek
+         build-esek
+         sequence->psek
+         sequence->esek
+         for/esek
+         for*/esek
+         for/psek
+         for*/psek)
 
 (define (sek? v)
-  (or (pseq? v) (eseq? v)))
+  (or (psek? v) (esek? v)))
 
 (define (check-sek who v)
   (unless (sek? v)
-    (raise-argument-error who "(or/c pseq? eseq?)" v))
+    (raise-argument-error who "(or/c psek? esek?)" v))
   v)
 
 (define (sek-length s)
   (check-sek 'sek-length s)
-  (if (pseq? s)
-      (pseq-length s)
-      (eseq-length s)))
+  (if (psek? s)
+      (psek-length s)
+      (esek-length s)))
 
 (define (sek-empty? s)
   (check-sek 'sek-empty? s)
@@ -113,20 +113,20 @@
 
 (define (sek-ref s i)
   (check-sek 'sek-ref s)
-  (if (pseq? s)
-      (pseq-ref s i)
-      (eseq-ref s i)))
+  (if (psek? s)
+      (psek-ref s i)
+      (esek-ref s i)))
 
 (define (sek-first s)
   (check-sek 'sek-first s)
-  (if (pseq? s)
-      (pseq-first s)
-      (eseq-first s)))
+  (if (psek? s)
+      (psek-first s)
+      (esek-first s)))
 (define (sek-last s)
   (check-sek 'sek-last s)
-  (if (pseq? s)
-      (pseq-last s)
-      (eseq-last s)))
+  (if (psek? s)
+      (psek-last s)
+      (esek-last s)))
 
 ;; ------------------------------------------------------------- builders
 
@@ -134,10 +134,10 @@
 ;; cheapest thing this structure does -- and frozen at the end if the caller
 ;; started from a persistent sequence.
 (define (open-builder)
-  (make-eseq))
+  (make-esek))
 (define (close-builder b like)
-  (if (pseq? like)
-      (eseq-snapshot-and-clear! b)
+  (if (psek? like)
+      (esek-snapshot-and-clear! b)
       b))
 
 ;; Build a sequence shaped like `like` by walking `s` one segment at a time,
@@ -149,13 +149,13 @@
 ;; segment loop calls the traversal's procedure, that one calls the caller's,
 ;; and the caller calls `emit`.  Here the segment loop is the caller's loop,
 ;; `add!` is a let-bound lambda in operator position, and the hot half of
-;; `pseq-builder-add!` is small enough to inline across the module boundary --
+;; `psek-builder-add!` is small enough to inline across the module boundary --
 ;; so an element that the body drops costs the test and nothing else.
 (define-syntax-rule (build-by-segments like s x add! body ...)
   (let* ([lk like]
          [sq s]
-         [b (make-pseq-builder)]
-         [add! (lambda (y) (pseq-builder-add! b y))])
+         [b (make-psek-builder)]
+         [add! (lambda (y) (psek-builder-add! b y))])
     (sek-segments-for-each
      sq
      (lambda (sg)
@@ -167,17 +167,17 @@
            (let ([x (unsafe-vector*-ref v j)])
              body ...)
            (loop (unsafe-fx+ j 1))))))
-    (let ([r (pseq-builder-close b)])
-      (if (pseq? lk) r (pseq-edit r)))))
+    (let ([r (psek-builder-close b)])
+      (if (psek? lk) r (psek-edit r)))))
 
 ;; The same accumulation, for the operations whose traversal is not a plain
 ;; forward walk of one sequence -- `map/index`, `map2`, `reverse`, `append*`,
 ;; `append-map`.  They pass a thunk that calls `emit`, and pay for the call.
 (define (build-from like xs-thunk)
-  (define b (make-pseq-builder))
-  (xs-thunk (lambda (x) (pseq-builder-add! b x)))
-  (define s (pseq-builder-close b))
-  (if (pseq? like) s (pseq-edit s)))
+  (define b (make-psek-builder))
+  (xs-thunk (lambda (x) (psek-builder-add! b x)))
+  (define s (psek-builder-close b))
+  (if (psek? like) s (psek-edit s)))
 
 ;; ------------------------------------------------------------- traversal
 
@@ -305,20 +305,20 @@
 
 ;; The same loop, restricted to one flavor.  These shadow the plain readers
 ;; that persistent.rkt and ephemeral.rkt define.
-(define (in-pseq/proc s)
-  (unless (pseq? s) (raise-argument-error 'in-pseq "pseq?" s))
+(define (in-psek/proc s)
+  (unless (psek? s) (raise-argument-error 'in-psek "psek?" s))
   (in-sek/proc s 'forward))
 
-(define (in-eseq/proc e)
-  (unless (eseq? e) (raise-argument-error 'in-eseq "eseq?" e))
+(define (in-esek/proc e)
+  (unless (esek? e) (raise-argument-error 'in-esek "esek?" e))
   (in-sek/proc e 'forward))
 
-(define-sequence-syntax in-pseq
-  (lambda () #'in-pseq/proc)
+(define-sequence-syntax in-psek
+  (lambda () #'in-psek/proc)
   sek-for-clause)
 
-(define-sequence-syntax in-eseq
-  (lambda () #'in-eseq/proc)
+(define-sequence-syntax in-esek
+  (lambda () #'in-esek/proc)
   sek-for-clause)
 
 (define (sek->list s [dir 'forward])
@@ -564,7 +564,7 @@
   (check-sek 'sek-partition s)
   (define yes (open-builder))
   (define no (open-builder))
-  (sek-for-each s (lambda (x) (eseq-push-back! (if (pred x) yes no) x)))
+  (sek-for-each s (lambda (x) (esek-push-back! (if (pred x) yes no) x)))
   (values (close-builder yes s) (close-builder no s)))
 
 (define (sek-reverse s)
@@ -582,24 +582,24 @@
   (define bs (open-builder))
   (sek-for-each s
                 (lambda (p)
-                  (eseq-push-back! as (car p))
-                  (eseq-push-back! bs (cdr p))))
+                  (esek-push-back! as (car p))
+                  (esek-push-back! bs (cdr p))))
   (values (close-builder as s) (close-builder bs s)))
 
 ;; Concatenate a sequence of sequences.  On the ephemeral side this is a fold
-;; of eseq-append!, exactly as in the reference library, so -- as there -- it
+;; of esek-append!, exactly as in the reference library, so -- as there -- it
 ;; empties every sequence it is given, including the outer one.  Handing over
 ;; each sequence's representation rather than copying its elements is also the
 ;; faster way to do it.  On the persistent side nothing is consumed.
 (define (sek-append* s)
   (check-sek 'sek-append* s)
   (cond
-    [(pseq? s)
+    [(psek? s)
      (build-from s (lambda (emit) (sek-for-each s (lambda (t) (sek-for-each t emit)))))]
     [else
-     (define acc (make-eseq))
-     (sek-for-each s (lambda (t) (unless (eq? t acc) (eseq-append! acc t))))
-     (eseq-clear! s)
+     (define acc (make-esek))
+     (sek-for-each s (lambda (t) (unless (eq? t acc) (esek-append! acc t))))
+     (esek-clear! s)
      acc]))
 
 (define (sek-append-map s proc)
@@ -628,7 +628,7 @@
   (sek-for-each s
                 (lambda (x)
                   (when (or first? (not (same? previous x)))
-                    (eseq-push-back! b x))
+                    (esek-push-back! b x))
                   (set! first? #f)
                   (set! previous x)))
   (close-builder b s))
@@ -645,18 +645,18 @@
       [(sek-iter-finished? it1)
        (let drain ()
          (unless (sek-iter-finished? it2)
-           (eseq-push-back! b (sek-iter-get-and-move! it2 'forward))
+           (esek-push-back! b (sek-iter-get-and-move! it2 'forward))
            (drain)))]
       [(sek-iter-finished? it2)
        (let drain ()
          (unless (sek-iter-finished? it1)
-           (eseq-push-back! b (sek-iter-get-and-move! it1 'forward))
+           (esek-push-back! b (sek-iter-get-and-move! it1 'forward))
            (drain)))]
       [else
        ;; take from the left on a tie, which is what makes the merge stable
        (if (less? (sek-iter-get it2) (sek-iter-get it1))
-           (eseq-push-back! b (sek-iter-get-and-move! it2 'forward))
-           (eseq-push-back! b (sek-iter-get-and-move! it1 'forward)))
+           (esek-push-back! b (sek-iter-get-and-move! it2 'forward))
+           (esek-push-back! b (sek-iter-get-and-move! it1 'forward)))
        (loop)]))
   (close-builder b s1))
 
@@ -667,7 +667,7 @@
 ;; A persistent sequence is sliced by splitting, which shares its chunks and
 ;; costs O(K.log n + log^2 n) whatever the size -- faster than copying even at
 ;; sixteen elements, and three orders of magnitude faster at half a million.
-;; The OCaml library shares only above the threshold T; below it, `pseq-take`
+;; The OCaml library shares only above the threshold T; below it, `psek-take`
 ;; normalizes the result into the compact vector anyway.
 ;;
 ;; An ephemeral sequence is copied instead, at O(size + K.log n): splitting it
@@ -687,8 +687,8 @@
                            size
                            "length"
                            n))
-  (if (pseq? s)
-      (pseq-take (pseq-drop s start) size)
+  (if (psek? s)
+      (psek-take (psek-drop s start) size)
       (copy-slice s start size)))
 
 (define (copy-slice s start size)
@@ -703,41 +703,41 @@
         (define v (segment-vector sg))
         (define o (segment-start sg))
         (for ([j (in-range k)])
-          (eseq-push-back! b (vector-ref v (+ o j))))
+          (esek-push-back! b (vector-ref v (+ o j))))
         (sek-iter-jump! it 'forward k)
         (loop (- remaining k)))))
   (close-builder b s))
 
-;; Neither of these modifies s; the in-place versions are eseq-take! and
-;; eseq-drop!.
+;; Neither of these modifies s; the in-place versions are esek-take! and
+;; esek-drop!.
 ;; Insert, delete, index-of and the right-hand take and drop, which
 ;; racket/treelist has and this did not.  Insert and delete go through split
 ;; and append rather than rebuilding, so they cost a split and a concatenation
 ;; rather than O(N).
-(define (pseq-insert-at s i v)
-  (define-values (before after) (pseq-split s i))
-  (pseq-append (pseq-add before v) after))
+(define (psek-insert-at s i v)
+  (define-values (before after) (psek-split s i))
+  (psek-append (psek-add before v) after))
 
 (define (sek-insert s i v)
   (check-sek 'sek-insert s)
   (define n (sek-length s))
   (unless (and (exact-nonnegative-integer? i) (<= i n))
     (raise-arguments-error 'sek-insert "index out of range" "index" i "length" n))
-  (if (pseq? s)
-      (pseq-insert-at s i v)
-      (pseq-edit (pseq-insert-at (eseq-snapshot s) i v))))
+  (if (psek? s)
+      (psek-insert-at s i v)
+      (psek-edit (psek-insert-at (esek-snapshot s) i v))))
 
-(define (pseq-delete-at s i)
-  (pseq-append (pseq-take s i) (pseq-drop s (add1 i))))
+(define (psek-delete-at s i)
+  (psek-append (psek-take s i) (psek-drop s (add1 i))))
 
 (define (sek-delete s i)
   (check-sek 'sek-delete s)
   (define n (sek-length s))
   (unless (and (exact-nonnegative-integer? i) (< i n))
     (raise-arguments-error 'sek-delete "index out of range" "index" i "length" n))
-  (if (pseq? s)
-      (pseq-delete-at s i)
-      (pseq-edit (pseq-delete-at (eseq-snapshot s) i))))
+  (if (psek? s)
+      (psek-delete-at s i)
+      (psek-edit (psek-delete-at (esek-snapshot s) i))))
 
 ;; `same?` receives the value being searched for first, as
 ;; `treelist-index-of` calls its `eql?`.
@@ -761,21 +761,21 @@
 
 (define (sek-take s n)
   (check-sek 'sek-take s)
-  (if (pseq? s)
-      (pseq-take s n)
-      (pseq-edit (pseq-take (eseq-snapshot s) n))))
+  (if (psek? s)
+      (psek-take s n)
+      (psek-edit (psek-take (esek-snapshot s) n))))
 
 (define (sek-drop s n)
   (check-sek 'sek-drop s)
-  (if (pseq? s)
-      (pseq-drop s n)
-      (pseq-edit (pseq-drop (eseq-snapshot s) n))))
+  (if (psek? s)
+      (psek-drop s n)
+      (psek-edit (psek-drop (esek-snapshot s) n))))
 
 (define (sek-copy s #:mode [mode 'copy])
   (check-sek 'sek-copy s)
-  (if (pseq? s)
+  (if (psek? s)
       s
-      (eseq-copy s #:mode mode)))
+      (esek-copy s #:mode mode)))
 
 ;; ------------------------------------------------------- bulk writes
 
@@ -783,15 +783,15 @@
 ;; segments, so the cost is O(size + K.log n) rather than one tree descent
 ;; per element -- plus, for each chunk in the range shared with a snapshot,
 ;; the cost of taking ownership of it.
-(define (eseq-fill! e x [start 0] [end #f])
-  (unless (eseq? e)
-    (raise-argument-error 'eseq-fill! "eseq?" e))
-  (define n (eseq-length e))
+(define (esek-fill! e x [start 0] [end #f])
+  (unless (esek? e)
+    (raise-argument-error 'esek-fill! "esek?" e))
+  (define n (esek-length e))
   (define stop (or end n))
   (unless (and (exact-nonnegative-integer? start)
                (exact-nonnegative-integer? stop)
                (<= start stop n))
-    (raise-arguments-error 'eseq-fill!
+    (raise-arguments-error 'esek-fill!
                            "range outside the sequence"
                            "start"
                            start
@@ -814,17 +814,17 @@
 
 ;; Shaped like `vector-copy!`: the destination and its start, then the source
 ;; and the range of it to take.
-(define (eseq-copy! dst dst-start src [src-start 0] [src-end #f])
-  (unless (eseq? dst)
-    (raise-argument-error 'eseq-copy! "eseq?" dst))
-  (check-sek 'eseq-copy! src)
+(define (esek-copy! dst dst-start src [src-start 0] [src-end #f])
+  (unless (esek? dst)
+    (raise-argument-error 'esek-copy! "esek?" dst))
+  (check-sek 'esek-copy! src)
   (define src-stop (or src-end (sek-length src)))
   (unless (and (exact-nonnegative-integer? src-start)
                (exact-nonnegative-integer? dst-start)
                (exact-nonnegative-integer? src-stop)
                (<= src-start src-stop (sek-length src))
-               (<= (+ dst-start (- src-stop src-start)) (eseq-length dst)))
-    (raise-arguments-error 'eseq-copy!
+               (<= (+ dst-start (- src-stop src-start)) (esek-length dst)))
+    (raise-arguments-error 'esek-copy!
                            "range outside a sequence"
                            "dst-start"
                            dst-start
@@ -838,7 +838,7 @@
     ;; overlapping ranges behave as if the source were read first
     (define source
       (if (eq? src dst)
-          (eseq-snapshot dst)
+          (esek-snapshot dst)
           src))
     (define si (sek-iterator-at-sentinel source 'front))
     (sek-iter-reach! si src-start)
@@ -860,52 +860,52 @@
 ;; ------------------------------------------------------------ construction
 
 ;; Build from any Racket sequence -- the OCaml library's of_seq.
-(define (sequence->eseq seq [n #f])
-  (define b (make-pseq-builder))
+(define (sequence->esek seq [n #f])
+  (define b (make-psek-builder))
   (if n
-      (for ([x seq] [_ (in-range n)]) (pseq-builder-add! b x))
-      (for ([x seq]) (pseq-builder-add! b x)))
-  (pseq-edit (pseq-builder-close b)))
+      (for ([x seq] [_ (in-range n)]) (psek-builder-add! b x))
+      (for ([x seq]) (psek-builder-add! b x)))
+  (psek-edit (psek-builder-close b)))
 
-(define (sequence->pseq seq [n #f])
-  (eseq-snapshot-and-clear! (sequence->eseq seq n)))
+(define (sequence->psek seq [n #f])
+  (esek-snapshot-and-clear! (sequence->esek seq n)))
 
-(define (build-pseq n proc)
+(define (build-psek n proc)
   (unless (exact-nonnegative-integer? n)
-    (raise-argument-error 'build-pseq "exact-nonnegative-integer?" n))
-  (pseq-build n proc))
+    (raise-argument-error 'build-psek "exact-nonnegative-integer?" n))
+  (psek-build n proc))
 
-(define (build-eseq n proc)
+(define (build-esek n proc)
   (unless (exact-nonnegative-integer? n)
-    (raise-argument-error 'build-eseq "exact-nonnegative-integer?" n))
-  (pseq-edit (pseq-build n proc)))
+    (raise-argument-error 'build-esek "exact-nonnegative-integer?" n))
+  (psek-edit (psek-build n proc)))
 
-(define (make-pseq n [v #f])
-  (build-pseq n (lambda (_) v)))
+(define (make-psek n [v #f])
+  (build-psek n (lambda (_) v)))
 
 ;; Comprehensions, in the shape of for/gvector and for/mutable-treelist.
-(define-syntax (for/eseq stx)
+(define-syntax (for/esek stx)
   (syntax-case stx ()
     [(_ clauses body ... tail-expr)
      (quasisyntax/loc stx
-       (let ([acc (make-pseq-builder)])
-         (for/fold/derived #,stx () clauses body ... (pseq-builder-add! acc tail-expr) (values))
-         (pseq-edit (pseq-builder-close acc))))]))
+       (let ([acc (make-psek-builder)])
+         (for/fold/derived #,stx () clauses body ... (psek-builder-add! acc tail-expr) (values))
+         (psek-edit (psek-builder-close acc))))]))
 
-(define-syntax (for*/eseq stx)
+(define-syntax (for*/esek stx)
   (syntax-case stx ()
     [(_ clauses body ... tail-expr)
      (quasisyntax/loc stx
-       (let ([acc (make-pseq-builder)])
-         (for*/fold/derived #,stx () clauses body ... (pseq-builder-add! acc tail-expr) (values))
-         (pseq-edit (pseq-builder-close acc))))]))
+       (let ([acc (make-psek-builder)])
+         (for*/fold/derived #,stx () clauses body ... (psek-builder-add! acc tail-expr) (values))
+         (psek-edit (psek-builder-close acc))))]))
 
-(define-syntax (for/pseq stx)
+(define-syntax (for/psek stx)
   (syntax-case stx ()
     [(_ clauses body ... tail-expr)
-     (quasisyntax/loc stx (eseq-snapshot-and-clear! (for/eseq clauses body ... tail-expr)))]))
+     (quasisyntax/loc stx (esek-snapshot-and-clear! (for/esek clauses body ... tail-expr)))]))
 
-(define-syntax (for*/pseq stx)
+(define-syntax (for*/psek stx)
   (syntax-case stx ()
     [(_ clauses body ... tail-expr)
-     (quasisyntax/loc stx (eseq-snapshot-and-clear! (for*/eseq clauses body ... tail-expr)))]))
+     (quasisyntax/loc stx (esek-snapshot-and-clear! (for*/esek clauses body ... tail-expr)))]))

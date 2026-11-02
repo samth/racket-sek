@@ -7,11 +7,11 @@
 ;;
 ;; The library offers two views of one data structure:
 ;;
-;;   pseq -- a persistent sequence: every operation returns a new version and
+;;   psek -- a persistent sequence: every operation returns a new version and
 ;;           leaves the old one intact, so taking a snapshot is free
-;;   eseq -- an ephemeral sequence: operations update it in place
+;;   esek -- an ephemeral sequence: operations update it in place
 ;;
-;; `eseq-snapshot` and `pseq-edit` convert between them in constant time, and
+;; `esek-snapshot` and `psek-edit` convert between them in constant time, and
 ;; the two flavors share their internal representation.
 ;;
 ;; On top of the core there are first-class iterators, segments -- the runs of
@@ -21,8 +21,8 @@
 
 (require "config.rkt"
          ;; generic.rkt provides faster for-clause versions of these two
-         (except-in "persistent.rkt" in-pseq)
-         (except-in "ephemeral.rkt" in-eseq)
+         (except-in "persistent.rkt" in-psek)
+         (except-in "ephemeral.rkt" in-esek)
          "iterator.rkt"
          "segment.rkt"
          "generic.rkt"
@@ -32,68 +32,68 @@
 (provide sek-configure!
 
          ;; ---- persistent sequences (§3.1-3.5)
-         pseq?
-         pseq
-         empty-pseq
-         pseq-empty?
-         pseq-length
-         pseq-cons
-         pseq-add
-         pseq-push-front
-         pseq-push-back
-         pseq-pop-front
-         pseq-pop-back
-         pseq-first
-         pseq-last
-         pseq-ref
-         pseq-set
-         pseq-append
-         pseq-split
-         pseq-take
-         pseq-drop
-         pseq->list
-         list->pseq
-         pseq->vector
-         vector->pseq
-         pseq-for-each
-         pseq-map
-         in-pseq
+         psek?
+         psek
+         empty-psek
+         psek-empty?
+         psek-length
+         psek-cons
+         psek-add
+         psek-push-front
+         psek-push-back
+         psek-pop-front
+         psek-pop-back
+         psek-first
+         psek-last
+         psek-ref
+         psek-set
+         psek-append
+         psek-split
+         psek-take
+         psek-drop
+         psek->list
+         list->psek
+         psek->vector
+         vector->psek
+         psek-for-each
+         psek-map
+         in-psek
 
          ;; ---- ephemeral sequences (§3.6)
-         eseq?
-         eseq
-         make-eseq
-         eseq-empty?
-         eseq-length
-         eseq-cons!
-         eseq-add!
-         eseq-push-front!
-         eseq-push-back!
-         eseq-pop-front!
-         eseq-pop-back!
-         eseq-first
-         eseq-last
-         eseq-ref
-         eseq-set!
-         eseq-append!
-         eseq-concat!
-         eseq-split!
-         eseq-carve!
-         eseq-take!
-         eseq-drop!
-         eseq-clear!
-         eseq-assign!
-         eseq->list
-         list->eseq
-         eseq->vector
-         eseq-for-each
-         in-eseq
+         esek?
+         esek
+         make-esek
+         esek-empty?
+         esek-length
+         esek-cons!
+         esek-add!
+         esek-push-front!
+         esek-push-back!
+         esek-pop-front!
+         esek-pop-back!
+         esek-first
+         esek-last
+         esek-ref
+         esek-set!
+         esek-append!
+         esek-concat!
+         esek-split!
+         esek-carve!
+         esek-take!
+         esek-drop!
+         esek-clear!
+         esek-assign!
+         esek->list
+         list->esek
+         esek->vector
+         esek-for-each
+         in-esek
 
          ;; ---- conversions between the two flavors (§2.1, §3.6)
-         eseq-snapshot
-         eseq-snapshot-and-clear!
-         pseq-edit
-         eseq-copy
+         esek-snapshot
+         esek-snapshot-and-clear!
+         psek-edit
+         esek-copy
 
          ;; ---- iterators (§5.4)
          sek-iterator
@@ -194,17 +194,17 @@
          sek-delete
          sek-index-of
          sek-copy
-         eseq-fill!
-         eseq-copy!
-         make-pseq
-         build-pseq
-         build-eseq
-         sequence->pseq
-         sequence->eseq
-         for/eseq
-         for*/eseq
-         for/pseq
-         for*/pseq
+         esek-fill!
+         esek-copy!
+         make-psek
+         build-psek
+         build-esek
+         sequence->psek
+         sequence->esek
+         for/esek
+         for*/esek
+         for/psek
+         for*/psek
 
          ;; ---- runtime validation (Appendix A)
-         (rename-out [check-pseq sek-validate-pseq] [check-eseq sek-validate-eseq]))
+         (rename-out [check-psek sek-validate-psek] [check-esek sek-validate-esek]))

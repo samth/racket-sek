@@ -115,7 +115,7 @@
 (define-syntax-rule (check-iter who v)
   (unless (siter? v) (raise-argument-error who "sek-iterator?" v)))
 (define-syntax-rule (check-sek who v)
-  (unless (or (pseq? v) (eseq? v)) (raise-argument-error who "sek?" v)))
+  (unless (or (psek? v) (esek? v)) (raise-argument-error who "sek?" v)))
 
 (define empty-support (vector))
 
@@ -525,8 +525,8 @@
 
 (define (make-cursor s)
   (cond
-    [(pseq? s)
-     (define r (pseq-rep s))
+    [(psek? s)
+     (define r (psek-rep s))
      (cond
        [(not r) (blank-cur 0 0 #f #f #f #f #f #f)]
        [(vector? r) (cur-of-vector r)]
@@ -534,14 +534,14 @@
     [else
      ;; read the five parts one at a time, so that a jitter build can pause
      ;; between them
-     (define f (eseq-front s))
+     (define f (esek-front s))
      (jitter!)
-     (define fi (eseq-ifront s))
-     (define m (eseq-middle s))
+     (define fi (esek-ifront s))
+     (define m (esek-middle s))
      (jitter!)
-     (define bi (eseq-iback s))
-     (define b (eseq-back s))
-     (cur-of-level f fi m bi b 0 (eseq-length s))]))
+     (define bi (esek-iback s))
+     (define b (esek-back s))
+     (cur-of-level f fi m bi b 0 (esek-length s))]))
 
 ;; Refresh a cursor from its sequence, discarding any position.
 (define (reload! it)
@@ -561,22 +561,22 @@
   (unless (memq side '(front back))
     (raise-argument-error 'sek-iterator-at-sentinel "(or/c 'front 'back)" side))
   (cond
-    [(pseq? s)
+    [(psek? s)
      (siter s
             'p
             #f
             (let ([c (make-cursor s)])
               (goto-sentinel! c (if (eq? side 'front) 'sf 'sb))
               c))]
-    [(eseq? s)
-     (define birth (eseq-iterator-born! s))
+    [(esek? s)
+     (define birth (esek-iterator-born! s))
      (siter s
             'e
             birth
             (let ([c (make-cursor s)])
               (goto-sentinel! c (if (eq? side 'front) 'sf 'sb))
               c))]
-    [else (raise-argument-error 'sek-iterator-at-sentinel "(or/c pseq? eseq?)" s)]))
+    [else (raise-argument-error 'sek-iterator-at-sentinel "(or/c psek? esek?)" s)]))
 
 ;; An iterator positioned on the first element (dir 'forward) or the last
 ;; element (dir 'backward).  On an empty sequence it starts out finished.
@@ -591,7 +591,7 @@
 ;; The validity test without the argument check, for the callers below that
 ;; have just made it themselves.
 (define (iter-valid? it)
-  (or (eq? (siter-kind it) 'p) (eseq-iterator-valid? (siter-seq it) (siter-birth it))))
+  (or (eq? (siter-kind it) 'p) (esek-iterator-valid? (siter-seq it) (siter-birth it))))
 
 (define (sek-iter-valid? it)
   (check-iter 'sek-iter-valid? it)
@@ -628,7 +628,7 @@
 (define (sek-iter-reset! it [dir 'forward])
   (check-iter 'sek-iter-reset! it)
   (when (eq? (siter-kind it) 'e)
-    (set-siter-birth! it (eseq-iterator-born! (siter-seq it))))
+    (set-siter-birth! it (esek-iterator-born! (siter-seq it))))
   (reload! it)
   (unless (eq? dir 'sentinel)
     (goto-sentinel! (siter-cursor it) (if (eq? dir 'forward) 'sf 'sb))
@@ -740,12 +740,12 @@
   (define c (siter-cursor it))
   (define ch (cur-chunk c))
   (cond
-    [(and ch (chunk-owned? ch (eseq-id e)))
-     (set-siter-birth! it (eseq-invalidate-iterators-except! e))]
+    [(and ch (chunk-owned? ch (esek-id e)))
+     (set-siter-birth! it (esek-invalidate-iterators-except! e))]
     [else
      (define i (cur-index c))
-     (eseq-own-at! e i)
-     (set-siter-birth! it (eseq-iterator-born! e))
+     (esek-own-at! e i)
+     (set-siter-birth! it (esek-iterator-born! e))
      (reload! it)
      (cur-reach! c i)]))
 

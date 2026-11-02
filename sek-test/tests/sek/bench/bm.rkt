@@ -32,10 +32,10 @@
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (treelist-append l l))))
 
-  (bm sek "+ 1pseq-append"
-      (let ([l (for/pseq ([i (in-range 0 (quotient N 2))]) i)])
+  (bm sek "+ 1psek-append"
+      (let ([l (for/psek ([i (in-range 0 (quotient N 2))]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
-          (pseq-append l l))))
+          (psek-append l l))))
 
   (bm vector "+ 1vector-append"
       (let ([l (for/vector ([i (in-range 0 (quotient N 2))]) i)])
@@ -148,32 +148,32 @@
           (for ([i (in-range 0 N)])
             (gvector-add! gv i)))))
 
-  (bm sek "+ for/eseq"
+  (bm sek "+ for/esek"
       (for/fold ([r #f]) ([i (in-range 0 M)])
-        (for/eseq ([i (in-range 0 N)])
+        (for/esek ([i (in-range 0 N)])
           i)))
 
-  (bm sek "+ eseq-push-back!"
+  (bm sek "+ esek-push-back!"
       (for ([i (in-range 0 M)])
-        (let ([e (make-eseq)])
+        (let ([e (make-esek)])
           (for ([i (in-range 0 N)])
-            (eseq-push-back! e i)))))
+            (esek-push-back! e i)))))
 
-  (bm sek "+ eseq-push-front!"
+  (bm sek "+ esek-push-front!"
       (for ([i (in-range 0 M)])
-        (let ([e (make-eseq)])
+        (let ([e (make-esek)])
           (for ([i (in-range 0 N)])
-            (eseq-push-front! e i)))))
+            (esek-push-front! e i)))))
 
-  (bm sek "+ pseq-push-back"
+  (bm sek "+ psek-push-back"
       (for/fold ([r #f]) ([i (in-range 0 M)])
-        (for/fold ([s empty-pseq]) ([i (in-range 0 N)])
-          (pseq-push-back s i))))
+        (for/fold ([s empty-psek]) ([i (in-range 0 N)])
+          (psek-push-back s i))))
 
-  (bm sek "+ 1list->pseq"
+  (bm sek "+ 1list->psek"
       (let ([lst (for/list ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
-          (list->pseq lst))))
+          (list->psek lst))))
 
   (bm cons "- cdr"
       (let ([l (for/list ([i (in-range 0 N)]) i)])
@@ -193,27 +193,27 @@
           (for/fold ([l l]) ([i (in-range 0 N)])
             (treelist-rest l)))))
 
-  (bm sek "- pseq-pop-front"
-      (let ([l (for/pseq ([i (in-range 0 N)]) i)])
+  (bm sek "- psek-pop-front"
+      (let ([l (for/psek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (for/fold ([l l]) ([i (in-range 0 N)])
-            (let-values ([(x l) (pseq-pop-front l)]) l)))))
+            (let-values ([(x l) (psek-pop-front l)]) l)))))
 
   ;; edit is cheap, so what these measure is the popping, matching the way
   ;; the treelist and list rows above build their sequence once
-  (bm sek "- eseq-pop-front!"
-      (let ([src (for/pseq ([i (in-range 0 N)]) i)])
+  (bm sek "- esek-pop-front!"
+      (let ([src (for/psek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
-          (let ([e (pseq-edit src)])
+          (let ([e (psek-edit src)])
             (for ([i (in-range 0 N)])
-              (eseq-pop-front! e))))))
+              (esek-pop-front! e))))))
 
-  (bm sek "- eseq-pop-back!"
-      (let ([src (for/pseq ([i (in-range 0 N)]) i)])
+  (bm sek "- esek-pop-back!"
+      (let ([src (for/psek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
-          (let ([e (pseq-edit src)])
+          (let ([e (psek-edit src)])
             (for ([i (in-range 0 N)])
-              (eseq-pop-back! e))))))
+              (esek-pop-back! e))))))
 
   (when (N . <= . 1000)
     (bm vector "- vector-copy N-1"
@@ -238,8 +238,8 @@
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (treelist-drop l (quotient N 2)))))
 
-  (bm sek "- 1pseq-drop 1/2"
-      (let ([l (for/pseq ([i (in-range 0 N)]) i)])
+  (bm sek "- 1psek-drop 1/2"
+      (let ([l (for/psek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (sek-drop l (quotient N 2)))))
 
@@ -303,34 +303,34 @@
           (for ([i (in-range 0 N)])
             (mutable-treelist-set! l i "x")))))
 
-  (bm sek "! eseq-set!/fx"
-      (let ([e (for/eseq ([i (in-range 0 N)]) i)])
+  (bm sek "! esek-set!/fx"
+      (let ([e (for/esek ([i (in-range 0 N)]) i)])
         (for ([j (in-range 0 M)])
           (for ([i (in-range 0 N)])
-            (eseq-set! e i (+ i j))))))
+            (esek-set! e i (+ i j))))))
 
-  (bm sek "! eseq-set!/lit"
-      (let ([e (for/eseq ([i (in-range 0 N)]) i)])
+  (bm sek "! esek-set!/lit"
+      (let ([e (for/esek ([i (in-range 0 N)]) i)])
         (for ([j (in-range 0 M)])
           (for ([i (in-range 0 N)])
-            (eseq-set! e i 17)))))
+            (esek-set! e i 17)))))
 
-  (bm sek "! eseq-set!/ptr"
-      (let ([e (for/eseq ([i (in-range 0 N)]) i)])
+  (bm sek "! esek-set!/ptr"
+      (let ([e (for/esek ([i (in-range 0 N)]) i)])
         (for ([j (in-range 0 M)])
           (for ([i (in-range 0 N)])
-            (eseq-set! e i "x")))))
+            (esek-set! e i "x")))))
 
-  (bm sek "! eseq-fill!"
-      (let ([e (for/eseq ([i (in-range 0 N)]) i)])
+  (bm sek "! esek-fill!"
+      (let ([e (for/esek ([i (in-range 0 N)]) i)])
         (for ([j (in-range 0 M)])
-          (eseq-fill! e 17))))
+          (esek-fill! e 17))))
 
-  (bm sek "! pseq-set"
-      (let ([l (for/pseq ([i (in-range 0 N)]) i)])
+  (bm sek "! psek-set"
+      (let ([l (for/psek ([i (in-range 0 N)]) i)])
         (for/fold ([l l]) ([j (in-range 0 M)])
           (for/fold ([l l]) ([i (in-range 0 N)])
-            (pseq-set l i (+ i j))))))
+            (psek-set l i (+ i j))))))
 
   (bm treelist "! treelist-set"
       (let ([l (for/treelist ([i (in-range 0 N)]) i)])
@@ -387,20 +387,20 @@
           (for/fold ([v #f]) ([i (in-gvector l)])
             i))))
 
-  (bm sek "^ in-eseq"
-      (let ([l (for/eseq ([i (in-range 0 N)]) i)])
+  (bm sek "^ in-esek"
+      (let ([l (for/esek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
-          (for/fold ([v #f]) ([i (in-eseq l)])
+          (for/fold ([v #f]) ([i (in-esek l)])
             i))))
 
   (bm sek "^ in-sek"
-      (let ([l (for/eseq ([i (in-range 0 N)]) i)])
+      (let ([l (for/esek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (for/fold ([v #f]) ([i (in-sek l)])
             i))))
 
   (bm sek "^ sek-for-each"
-      (let ([l (for/eseq ([i (in-range 0 N)]) i)])
+      (let ([l (for/esek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (sek-for-each l void))))
 
@@ -459,17 +459,17 @@
           (for/fold ([v #f]) ([i (in-range 0 N)])
             (gvector-ref l i)))))
 
-  (bm sek "^ eseq-ref"
-      (let ([l (for/eseq ([i (in-range 0 N)]) i)])
+  (bm sek "^ esek-ref"
+      (let ([l (for/esek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (for/fold ([v #f]) ([i (in-range 0 N)])
-            (eseq-ref l i)))))
+            (esek-ref l i)))))
 
-  (bm sek "^ pseq-ref"
-      (let ([l (for/pseq ([i (in-range 0 N)]) i)])
+  (bm sek "^ psek-ref"
+      (let ([l (for/psek ([i (in-range 0 N)]) i)])
         (for/fold ([r #f]) ([i (in-range 0 M)])
           (for/fold ([v #f]) ([i (in-range 0 N)])
-            (pseq-ref l i)))))
+            (psek-ref l i)))))
 
   (bm cons "^ dyn in-list"
       (let ([l (for/list ([i (in-range 0 N)]) i)])

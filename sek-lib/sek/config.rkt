@@ -141,8 +141,8 @@
   (for/fold ([h (fxand n hash-mask)]) ([x seq])
     (fxand (fx+ (fx* h 31) (fxand (rec x) hash-mask)) hash-mask)))
 
-;; Print as racket/treelist does: `#<pseq: 1 "a">` for write and display, and
-;; the constructor form `(pseq 1 "a")` for print, so that a printed sequence
+;; Print as racket/treelist does: `#<psek: 1 "a">` for write and display, and
+;; the constructor form `(psek 1 "a")` for print, so that a printed sequence
 ;; reads back as an expression that rebuilds it.  The struct must also carry
 ;; `prop:custom-print-quotable 'never`, or print mode quotes the form.
 ;;

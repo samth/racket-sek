@@ -73,7 +73,7 @@
 ;; A structure that caches the chunk it last touched answers all but one in K
 ;; from cache; one that walks from the root every time does not.  sek has no
 ;; such cache on `ref` -- that is what its first-class iterators are for -- so
-;; the last row of the table shows what the same walk costs through `in-pseq`.
+;; the last row of the table shows what the same walk costs through `in-psek`.
 (define-ext-scenario apply-sequential
   "index in ascending order, Scala's vApplySequential and immer's access_idx"
   (define sizes (sizes-m))
@@ -100,16 +100,16 @@
      (cons "  vector"
            (for/list ([n (in-list sizes)])
              (sweep vector-ref (build-vector n values) n)))
-     (cons "  pseq via iterator"
+     (cons "  psek via iterator"
            (for/list ([n (in-list sizes)])
-             (define s (build-pseq n values))
+             (define s (build-psek n values))
              (measure k
                       (lambda ()
                         (let loop ([j 0] [acc 0])
                           (if (>= j k)
                               acc
                               (loop (+ j n)
-                                    (for/fold ([acc acc]) ([x (in-pseq s)])
+                                    (for/fold ([acc acc]) ([x (in-psek s)])
                                       (+ acc x)))))))))))))
 
 ;; ------------------------------------------------------- Scala: element update
@@ -216,8 +216,8 @@
    "peek: first and last, ns per pair of reads"
    sizes
    (list
-    (peek-row "eseq" (lambda (n) (build-eseq n values)) sek-first sek-last)
-    (peek-row "pseq" (lambda (n) (build-pseq n values)) sek-first sek-last)
+    (peek-row "esek" (lambda (n) (build-esek n values)) sek-first sek-last)
+    (peek-row "psek" (lambda (n) (build-psek n values)) sek-first sek-last)
     (peek-row "treelist" (lambda (n) (sequence->treelist (in-range n)))
               treelist-first treelist-last)
     (peek-row "mutable-treelist" (lambda (n) (list->mutable-treelist (build-list n values)))
@@ -367,14 +367,14 @@
 ;; then shorten *that*, and so on -- as opposed to taking every prefix of the
 ;; original, which never asks the structure to re-split its own output.  immer
 ;; pairs each with a `_mut` variant that does the same through a transient;
-;; here that is eseq against pseq.
+;; here that is esek against psek.
 (define-ext-scenario take-drop
   "repeatedly shorten the result, immer's take_lin and drop_lin"
   (define sizes (sizes-m))
   (define steps 10)
   ;; immer pairs each of these with a `_mut` variant on a transient, which here
   ;; is just the ephemeral row: a destructive split gets a copy of its own, and
-  ;; `eseq-copy` being O(1) is exactly what immer's `_mut` is claiming.
+  ;; `esek-copy` being O(1) is exactly what immer's `_mut` is claiming.
   (define (shrink title one-step vector-step)
     (table
      title sizes
@@ -426,15 +426,15 @@
    "push vs push_move: build n elements, ns per element"
    sizes
    (list
-    (row "pseq push-back"
+    (row "psek push-back"
          (lambda (n) (measure n (lambda ()
-                                  (for/fold ([s empty-pseq]) ([k (in-range n)])
-                                    (pseq-push-back s k))))))
-    (row "eseq push!, snapshot"
+                                  (for/fold ([s empty-psek]) ([k (in-range n)])
+                                    (psek-push-back s k))))))
+    (row "esek push!, snapshot"
          (lambda (n) (measure n (lambda ()
-                                  (define e (make-eseq))
-                                  (for ([k (in-range n)]) (eseq-push-back! e k))
-                                  (eseq-snapshot e)))))
+                                  (define e (make-esek))
+                                  (for ([k (in-range n)]) (esek-push-back! e k))
+                                  (esek-snapshot e)))))
     (row "treelist-add"
          (lambda (n) (measure n (lambda ()
                                   (for/fold ([t empty-treelist]) ([k (in-range n)])

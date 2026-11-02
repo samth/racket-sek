@@ -8,7 +8,7 @@
 ;; result against a list model; a failure shrinks to a short series of steps.
 ;; For each ephemeral sequence the model counts updates, so it predicts
 ;; exactly which iterators are still valid.  In particular it holds sek to
-;; the rule that reads -- `eseq-snapshot`, `eseq-copy`, traversals -- leave
+;; the rule that reads -- `esek-snapshot`, `esek-copy`, traversals -- leave
 ;; every iterator valid, although a snapshot changes the sequence's
 ;; representation, and that the next update then invalidates them.
 ;;
@@ -105,7 +105,7 @@
     (variables-add! es e)
     e)
   (define (add-p! seq model)
-    (same! "a new persistent sequence" (pseq->list seq) model)
+    (same! "a new persistent sequence" (psek->list seq) model)
     (define p (P seq model))
     (set! all-p (cons p all-p))
     (variables-add! ps p)
@@ -133,27 +133,27 @@
   ;; ---- making sequences
   (define making
     (list
-     (rule 'list->eseq (lambda () (define xs (draw-new-list)) (add-e! (list->eseq xs) xs)))
-     (rule 'list->pseq (lambda () (define xs (draw-new-list)) (add-p! (list->pseq xs) xs)))
-     (rule 'pseq-edit
+     (rule 'list->esek (lambda () (define xs (draw-new-list)) (add-e! (list->esek xs) xs)))
+     (rule 'list->psek (lambda () (define xs (draw-new-list)) (add-p! (list->psek xs) xs)))
+     (rule 'psek-edit
            (lambda ()
              (define p (draw-p))
-             (add-e! (pseq-edit (P-seq p)) (P-model p))))
-     (rule 'eseq-snapshot #:weight 3
+             (add-e! (psek-edit (P-seq p)) (P-model p))))
+     (rule 'esek-snapshot #:weight 3
            (lambda ()
              (define e (draw-e))
-             (add-p! (eseq-snapshot (E-seq e)) (E-model e))))
-     (rule 'eseq-snapshot-and-clear!
+             (add-p! (esek-snapshot (E-seq e)) (E-model e))))
+     (rule 'esek-snapshot-and-clear!
            (lambda ()
              (define e (draw-e))
-             (define p (eseq-snapshot-and-clear! (E-seq e)))
+             (define p (esek-snapshot-and-clear! (E-seq e)))
              (add-p! p (E-model e))
              (update! e '())))
-     (rule 'eseq-copy #:weight 2
+     (rule 'esek-copy #:weight 2
            (lambda ()
              (define e (draw-e))
              (define mode (draw-of '(copy share) "mode"))
-             (add-e! (eseq-copy (E-seq e) #:mode mode) (E-model e))))))
+             (add-e! (esek-copy (E-seq e) #:mode mode) (E-model e))))))
 
   ;; ---- updating ephemeral sequences
   (define updating
@@ -166,8 +166,8 @@
              (for ([x (in-list xs)])
                (define alias? (draw gen:boolean "alias?"))
                (if (eq? side 'back)
-                   ((if alias? eseq-add! eseq-push-back!) (E-seq e) x)
-                   ((if alias? eseq-cons! eseq-push-front!) (E-seq e) x)))
+                   ((if alias? esek-add! esek-push-back!) (E-seq e) x)
+                   ((if alias? esek-cons! esek-push-front!) (E-seq e) x)))
              (update! e (if (eq? side 'back)
                             (append (E-model e) xs)
                             (append (reverse xs) (E-model e))))))
@@ -180,7 +180,7 @@
              (define k (draw-int 1 n "k"))
              (define got
                (for/list ([_ (in-range k)])
-                 (if (eq? side 'back) (eseq-pop-back! (E-seq e)) (eseq-pop-front! (E-seq e)))))
+                 (if (eq? side 'back) (esek-pop-back! (E-seq e)) (esek-pop-front! (E-seq e)))))
              (define m (E-model e))
              (cond
                [(eq? side 'back)
@@ -189,78 +189,78 @@
                [else
                 (same! "popped" got (take m k))
                 (update! e (drop m k))])))
-     (rule 'eseq-set! #:weight 2
+     (rule 'esek-set! #:weight 2
            (lambda ()
              (define e (draw-e))
              (define n (length (E-model e)))
              (aufheben-assume (> n 0))
              (define i (draw-int 0 (sub1 n) "i"))
              (define v (fresh!))
-             (eseq-set! (E-seq e) i v)
+             (esek-set! (E-seq e) i v)
              (update! e (list-set (E-model e) i v))))
-     (rule 'eseq-append!
+     (rule 'esek-append!
            (lambda ()
              (define e (draw-e))
              (define other (draw-s))
              (aufheben-assume (not (eq? e other)))
              (define side (draw-side))
-             (eseq-append! (E-seq e) (seq-of other) side)
+             (esek-append! (E-seq e) (seq-of other) side)
              (define om (model-of other))
              (update! e (if (eq? side 'back) (append (E-model e) om) (append om (E-model e))))
              (when (E? other) (update! other '()))))
-     (rule 'eseq-concat!
+     (rule 'esek-concat!
            (lambda ()
              (define-values (a b) (draw-two-e))
-             (define r (eseq-concat! (E-seq a) (E-seq b)))
+             (define r (esek-concat! (E-seq a) (E-seq b)))
              (add-e! r (append (E-model a) (E-model b)))
              (update! a '())
              (update! b '())))
-     (rule 'eseq-split!
+     (rule 'esek-split!
            (lambda ()
              (define e (draw-e))
              (define m (E-model e))
              (define i (draw-int 0 (length m) "i"))
-             (define-values (a b) (eseq-split! (E-seq e) i))
+             (define-values (a b) (esek-split! (E-seq e) i))
              (add-e! a (take m i))
              (add-e! b (drop m i))
              (update! e '())))
-     (rule 'eseq-carve!
+     (rule 'esek-carve!
            (lambda ()
              (define e (draw-e))
              (define m (E-model e))
              (define i (draw-int 0 (length m) "i"))
              (define side (draw-side))
-             (define r (eseq-carve! (E-seq e) i side))
+             (define r (esek-carve! (E-seq e) i side))
              (cond
                [(eq? side 'back) (add-e! r (drop m i)) (update! e (take m i))]
                [else (add-e! r (take m i)) (update! e (drop m i))])))
-     (rule 'eseq-take!/drop!
+     (rule 'esek-take!/drop!
            (lambda ()
              (define e (draw-e))
              (define m (E-model e))
              (define i (draw-int 0 (length m) "i"))
              (define side (draw-side))
              (define take? (draw gen:boolean "take?"))
-             ((if take? eseq-take! eseq-drop!) (E-seq e) i side)
+             ((if take? esek-take! esek-drop!) (E-seq e) i side)
              (update! e (if (eq? take? (eq? side 'front)) (take m i) (drop m i)))))
-     (rule 'eseq-clear! (lambda () (define e (draw-e)) (eseq-clear! (E-seq e)) (update! e '())))
-     (rule 'eseq-assign!
+     (rule 'esek-clear! (lambda () (define e (draw-e)) (esek-clear! (E-seq e)) (update! e '())))
+     (rule 'esek-assign!
            (lambda ()
              (define-values (a b) (draw-two-e))
-             (eseq-assign! (E-seq a) (E-seq b))
+             (esek-assign! (E-seq a) (E-seq b))
              (update! a (E-model b))
              (update! b '())))
-     (rule 'eseq-fill!
+     (rule 'esek-fill!
            (lambda ()
              (define e (draw-e))
              (define n (length (E-model e)))
              (define start (draw-int 0 n "start"))
              (define end (draw-int start n "end"))
              (define v (fresh!))
-             (eseq-fill! (E-seq e) v start end)
+             (esek-fill! (E-seq e) v start end)
              (define m (E-model e))
              (update! e (append (take m start) (make-list (- end start) v) (drop m end)))))
-     (rule 'eseq-copy!
+     (rule 'esek-copy!
            (lambda ()
              (define dst (draw-e))
              (define src (draw-s))
@@ -270,7 +270,7 @@
              (define src-start (draw-int 0 (- (length sm) len) "src-start"))
              (define src-end (+ src-start len))
              (define dst-start (draw-int 0 (- (length dm) len) "dst-start"))
-             (eseq-copy! (E-seq dst) dst-start (seq-of src) src-start src-end)
+             (esek-copy! (E-seq dst) dst-start (seq-of src) src-start src-end)
              (update! dst (append (take dm dst-start)
                                   (slice sm src-start src-end)
                                   (drop dm (+ dst-start len))))))))
@@ -288,7 +288,7 @@
              (same! "sek-first" (sek-first (seq-of s)) (first m))
              (same! "sek-last" (sek-last (seq-of s)) (last m))
              (when (E? s)
-               (same! "eseq-ref" (eseq-ref (E-seq s) i) (list-ref m i)))))
+               (same! "esek-ref" (esek-ref (E-seq s) i) (list-ref m i)))))
      (rule 'traverse #:weight 2
            (lambda ()
              (define s (draw-s))
@@ -313,47 +313,47 @@
                  [(take) (values (sek-take q i) (take m i))]
                  [(drop) (values (sek-drop q i) (drop m i))]
                  [(map) (values (sek-map q add1) (map add1 m))]))
-             (if (eseq? r) (add-e! r rm) (add-p! r rm))))
-     (rule 'pseq-push
+             (if (esek? r) (add-e! r rm) (add-p! r rm))))
+     (rule 'psek-push
            (lambda ()
              (define p (draw-p))
              (define v (fresh!))
              (if (eq? (draw-side) 'back)
-                 (add-p! (pseq-push-back (P-seq p) v) (append (P-model p) (list v)))
-                 (add-p! (pseq-push-front (P-seq p) v) (cons v (P-model p))))))
-     (rule 'pseq-pop
+                 (add-p! (psek-push-back (P-seq p) v) (append (P-model p) (list v)))
+                 (add-p! (psek-push-front (P-seq p) v) (cons v (P-model p))))))
+     (rule 'psek-pop
            (lambda ()
              (define p (draw-p))
              (define m (P-model p))
              (aufheben-assume (pair? m))
              (cond
                [(eq? (draw-side) 'back)
-                (define-values (x r) (pseq-pop-back (P-seq p)))
-                (same! "pseq-pop-back" x (last m))
+                (define-values (x r) (psek-pop-back (P-seq p)))
+                (same! "psek-pop-back" x (last m))
                 (add-p! r (drop-right m 1))]
                [else
-                (define-values (x r) (pseq-pop-front (P-seq p)))
-                (same! "pseq-pop-front" x (first m))
+                (define-values (x r) (psek-pop-front (P-seq p)))
+                (same! "psek-pop-front" x (first m))
                 (add-p! r (rest m))])))
-     (rule 'pseq-set
+     (rule 'psek-set
            (lambda ()
              (define p (draw-p))
              (define m (P-model p))
              (aufheben-assume (pair? m))
              (define i (draw-int 0 (sub1 (length m)) "i"))
              (define v (fresh!))
-             (add-p! (pseq-set (P-seq p) i v) (list-set m i v))))
-     (rule 'pseq-append
+             (add-p! (psek-set (P-seq p) i v) (list-set m i v))))
+     (rule 'psek-append
            (lambda ()
              (define a (draw-p))
              (define b (draw-p))
-             (add-p! (pseq-append (P-seq a) (P-seq b)) (append (P-model a) (P-model b)))))
-     (rule 'pseq-split
+             (add-p! (psek-append (P-seq a) (P-seq b)) (append (P-model a) (P-model b)))))
+     (rule 'psek-split
            (lambda ()
              (define p (draw-p))
              (define m (P-model p))
              (define i (draw-int 0 (length m) "i"))
-             (define-values (a b) (pseq-split (P-seq p) i))
+             (define-values (a b) (psek-split (P-seq p) i))
              (add-p! a (take m i))
              (add-p! b (drop m i))))))
 
@@ -547,12 +547,12 @@
      (invariant 'contents
                 (lambda ()
                   (for ([e (in-list all-e)])
-                    (sek-validate-eseq (E-seq e))
-                    (same! "eseq contents" (eseq->list (E-seq e)) (E-model e))
-                    (same! "eseq-length" (eseq-length (E-seq e)) (length (E-model e))))
+                    (sek-validate-esek (E-seq e))
+                    (same! "esek contents" (esek->list (E-seq e)) (E-model e))
+                    (same! "esek-length" (esek-length (E-seq e)) (length (E-model e))))
                   (for ([p (in-list all-p)])
-                    (sek-validate-pseq (P-seq p))
-                    (same! "pseq contents" (pseq->list (P-seq p)) (P-model p)))))
+                    (sek-validate-psek (P-seq p))
+                    (same! "psek contents" (psek->list (P-seq p)) (P-model p)))))
      (invariant 'iterators #:always? #t
                 (lambda ()
                   (for ([i (in-list all-i)])
@@ -564,8 +564,8 @@
 
   ;; start with one sequence and its snapshot, so that few steps are rejected
   (define xs0 (draw-new-list))
-  (define e0 (add-e! (list->eseq xs0) xs0))
-  (add-p! (eseq-snapshot (E-seq e0)) xs0)
+  (define e0 (add-e! (list->esek xs0) xs0))
+  (add-p! (esek-snapshot (E-seq e0)) xs0)
   (run-state-machine (append making updating reading iterating)
                      #:invariants invariants
                      #:steps (current-steps)))

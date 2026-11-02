@@ -14,7 +14,7 @@
 (provide run-treelist-parity-tests)
 
 (define (both l)
-  (values (list->pseq l) (list->treelist l)))
+  (values (list->psek l) (list->treelist l)))
 
 (define (run-treelist-parity-tests)
   (for ([n (in-list '(0 1 2 3 17 200))])
@@ -24,31 +24,31 @@
     (define-values (p t) (both l))
 
     ;; add at the end, cons at the front, and the push aliases for each
-    (check-equal? (pseq->list (pseq-add p 'x)) (treelist->list (treelist-add t 'x)))
-    (check-equal? (pseq->list (pseq-cons p 'x)) (treelist->list (treelist-cons t 'x)))
-    (check-equal? (pseq->list (pseq-push-back p 'x)) (pseq->list (pseq-add p 'x)))
-    (check-equal? (pseq->list (pseq-push-front p 'x)) (pseq->list (pseq-cons p 'x)))
+    (check-equal? (psek->list (psek-add p 'x)) (treelist->list (treelist-add t 'x)))
+    (check-equal? (psek->list (psek-cons p 'x)) (treelist->list (treelist-cons t 'x)))
+    (check-equal? (psek->list (psek-push-back p 'x)) (psek->list (psek-add p 'x)))
+    (check-equal? (psek->list (psek-push-front p 'x)) (psek->list (psek-cons p 'x)))
 
     ;; insert accepts the length itself, meaning "at the end"
     (for ([i (in-range (add1 n))])
-      (check-equal? (pseq->list (sek-insert p i 'x))
+      (check-equal? (psek->list (sek-insert p i 'x))
                     (treelist->list (treelist-insert t i 'x))
                     (format "insert at ~a of ~a" i n)))
 
     ;; delete does not
     (for ([i (in-range n)])
-      (check-equal? (pseq->list (sek-delete p i))
+      (check-equal? (psek->list (sek-delete p i))
                     (treelist->list (treelist-delete t i))
                     (format "delete at ~a of ~a" i n)))
 
     ;; the four takes and drops, including 0 and the whole length
     (for ([k (in-range (add1 n))])
-      (check-equal? (pseq->list (sek-take p k)) (treelist->list (treelist-take t k)))
-      (check-equal? (pseq->list (sek-drop p k)) (treelist->list (treelist-drop t k)))
-      (check-equal? (pseq->list (sek-take-right p k))
+      (check-equal? (psek->list (sek-take p k)) (treelist->list (treelist-take t k)))
+      (check-equal? (psek->list (sek-drop p k)) (treelist->list (treelist-drop t k)))
+      (check-equal? (psek->list (sek-take-right p k))
                     (treelist->list (treelist-take-right t k))
                     (format "take-right ~a of ~a" k n))
-      (check-equal? (pseq->list (sek-drop-right p k))
+      (check-equal? (psek->list (sek-drop-right p k))
                     (treelist->list (treelist-drop-right t k))
                     (format "drop-right ~a of ~a" k n)))
 
@@ -65,27 +65,27 @@
                     (treelist-index-of t (exact->inexact (first l)) =))))
 
   ;; out-of-range indices are rejected
-  (check-exn exn:fail? (lambda () (sek-insert (pseq 1 2) 3 'x)))
-  (check-exn exn:fail? (lambda () (sek-delete (pseq 1 2) 2)))
-  (check-exn exn:fail? (lambda () (sek-take-right (pseq 1 2) 3)))
-  (check-exn exn:fail? (lambda () (sek-drop-right (pseq 1 2) 3)))
+  (check-exn exn:fail? (lambda () (sek-insert (psek 1 2) 3 'x)))
+  (check-exn exn:fail? (lambda () (sek-delete (psek 1 2) 2)))
+  (check-exn exn:fail? (lambda () (sek-take-right (psek 1 2) 3)))
+  (check-exn exn:fail? (lambda () (sek-drop-right (psek 1 2) 3)))
 
   ;; the same operations on an ephemeral sequence give an ephemeral sequence
-  (check-equal? (eseq->list (sek-insert (eseq 1 2 3) 1 'x)) '(1 x 2 3))
-  (check-equal? (eseq->list (sek-delete (eseq 1 2 3) 1)) '(1 3))
-  (check-equal? (eseq->list (sek-take-right (eseq 1 2 3) 2)) '(2 3))
-  (check-equal? (eseq->list (sek-drop-right (eseq 1 2 3) 2)) '(1))
-  (check-equal? (sek-index-of (eseq 'a 'b) 'b) 1)
+  (check-equal? (esek->list (sek-insert (esek 1 2 3) 1 'x)) '(1 x 2 3))
+  (check-equal? (esek->list (sek-delete (esek 1 2 3) 1)) '(1 3))
+  (check-equal? (esek->list (sek-take-right (esek 1 2 3) 2)) '(2 3))
+  (check-equal? (esek->list (sek-drop-right (esek 1 2 3) 2)) '(1))
+  (check-equal? (sek-index-of (esek 'a 'b) 'b) 1)
 
   ;; the ephemeral add!/cons! pair, and their aliases
-  (let ([e (eseq 1 2)])
-    (eseq-add! e 3)
-    (eseq-cons! e 0)
-    (check-equal? (eseq->list e) '(0 1 2 3)))
-  (let ([e (eseq 1 2)])
-    (eseq-push-back! e 3)
-    (eseq-push-front! e 0)
-    (check-equal? (eseq->list e) '(0 1 2 3))))
+  (let ([e (esek 1 2)])
+    (esek-add! e 3)
+    (esek-cons! e 0)
+    (check-equal? (esek->list e) '(0 1 2 3)))
+  (let ([e (esek 1 2)])
+    (esek-push-back! e 3)
+    (esek-push-front! e 0)
+    (check-equal? (esek->list e) '(0 1 2 3))))
 
 (module+ test
   (run-treelist-parity-tests))

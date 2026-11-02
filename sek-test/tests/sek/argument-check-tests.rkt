@@ -49,14 +49,14 @@
 ;; takes what it is given; neither is a missing check.  The named exceptions
 ;; are aliases, which blame the operation they are an alias for.
 (define exempt
-  (set 'pseq
-       'eseq
+  (set 'psek
+       'esek
        'segment
        'sek-configure!
-       'pseq-push-front
-       'pseq-push-back
-       'eseq-push-front!
-       'eseq-push-back!))
+       'psek-push-front
+       'psek-push-back
+       'esek-push-front!
+       'esek-push-back!))
 
 (define (exempt? name)
   (define s (symbol->string name))

@@ -74,13 +74,13 @@
 (define-nqueens nqueens/treelist
                 (empty-treelist treelist-empty? treelist-first tl-rest tl-cons treelist-append))
 
-;; pseq: likewise
-(define (pseq-rest s)
-  (let-values ([(x r) (pseq-pop-front s)])
+;; psek: likewise
+(define (psek-rest s)
+  (let-values ([(x r) (psek-pop-front s)])
     r))
-(define (pseq-cons x s)
-  (pseq-push-front s x))
-(define-nqueens nqueens/pseq (empty-pseq pseq-empty? pseq-first pseq-rest pseq-cons pseq-append))
+(define (psek-cons x s)
+  (psek-push-front s x))
+(define-nqueens nqueens/psek (empty-psek psek-empty? psek-first psek-rest psek-cons psek-append))
 
 ;; gvector: no persistence, so rest, cons and append all copy
 (define (gv-empty)
@@ -172,22 +172,22 @@
          (try-it (mtl-rest x) (mtl-cons (mutable-treelist-first x) y) z))))
   (try-it (one-to n) (mtl-empty) (mtl-empty)))
 
-;; eseq: an ephemeral sequence, copied the same way.  eseq-copy shares its
-;; chunks and separates them lazily, and eseq-append! takes a persistent
+;; esek: an ephemeral sequence, copied the same way.  esek-copy shares its
+;; chunks and separates them lazily, and esek-append! takes a persistent
 ;; second argument without consuming it, so neither copy is a deep one.
 (define (es-rest e)
-  (define r (eseq-copy e))
-  (eseq-pop-front! r)
+  (define r (esek-copy e))
+  (esek-pop-front! r)
   r)
 (define (es-cons x e)
-  (define r (eseq-copy e))
-  (eseq-push-front! r x)
+  (define r (esek-copy e))
+  (esek-push-front! r x)
   r)
 (define (es-append a b)
-  (define r (eseq-copy a))
-  (sek-for-each b (lambda (x) (eseq-push-back! r x)))
+  (define r (esek-copy a))
+  (sek-for-each b (lambda (x) (esek-push-back! r x)))
   r)
-(define-nqueens nqueens/eseq ((make-eseq) eseq-empty? eseq-first es-rest es-cons es-append))
+(define-nqueens nqueens/esek ((make-esek) esek-empty? esek-first es-rest es-cons es-append))
 
 ;; ------------------------------------------- the same problem, one stack deep
 
@@ -233,22 +233,22 @@
    (lambda (t k) (mutable-treelist-ref t (- (mutable-treelist-length t) 1 k)))
    mutable-treelist-length))
 
-(define-nqueens/stack nqueens/stack/eseq
-  ((lambda () (make-eseq))
-   eseq-push-back!
-   eseq-pop-back!
-   (lambda (e k) (eseq-ref e (- (eseq-length e) 1 k)))
-   eseq-length))
+(define-nqueens/stack nqueens/stack/esek
+  ((lambda () (make-esek))
+   esek-push-back!
+   esek-pop-back!
+   (lambda (e k) (esek-ref e (- (esek-length e) 1 k)))
+   esek-length))
 
 ;; A list is a stack already: the k-th from the top is the k-th pair.
 ;; A box holding a persistent sequence is a stack too, and is what you would
 ;; reach for if the search had to keep snapshots of the placed rows.
-(define-nqueens/stack nqueens/stack/box-of-pseq
-  ((lambda () (box empty-pseq))
-   (lambda (b x) (set-box! b (pseq-push-back (unbox b) x)))
-   (lambda (b) (set-box! b (let-values ([(x r) (pseq-pop-back (unbox b))]) r)))
-   (lambda (b k) (let ([s (unbox b)]) (pseq-ref s (- (pseq-length s) 1 k))))
-   (lambda (b) (pseq-length (unbox b)))))
+(define-nqueens/stack nqueens/stack/box-of-psek
+  ((lambda () (box empty-psek))
+   (lambda (b x) (set-box! b (psek-push-back (unbox b) x)))
+   (lambda (b) (set-box! b (let-values ([(x r) (psek-pop-back (unbox b))]) r)))
+   (lambda (b k) (let ([s (unbox b)]) (psek-ref s (- (psek-length s) 1 k))))
+   (lambda (b) (psek-length (unbox b)))))
 
 (define-nqueens/stack nqueens/stack/box-of-treelist
   ((lambda () (box empty-treelist))
@@ -322,8 +322,8 @@
     (group "the classic program with the pair operations swapped out"
            (list (cons 'pairs (lambda () (nqueens/pairs 8)))
                  (cons 'treelist (lambda () (nqueens/treelist 8)))
-                 (cons 'pseq (lambda () (nqueens/pseq 8)))
-                 (cons 'eseq (lambda () (nqueens/eseq 8)))
+                 (cons 'psek (lambda () (nqueens/psek 8)))
+                 (cons 'esek (lambda () (nqueens/esek 8)))
                  (cons 'gvector (lambda () (nqueens/gvector 8)))
                  (cons 'mutable-treelist (lambda () (nqueens/mutable-treelist 8)))
                  (cons 'vector (lambda () (nqueens/vector 8)))))
@@ -331,8 +331,8 @@
            (list (cons 'vector (lambda () (nqueens/stack/vector 8)))
                  (cons 'gvector (lambda () (nqueens/stack/gvector 8)))
                  (cons 'mutable-treelist (lambda () (nqueens/stack/mutable-treelist 8)))
-                 (cons 'eseq (lambda () (nqueens/stack/eseq 8)))
+                 (cons 'esek (lambda () (nqueens/stack/esek 8)))
                  (cons 'box-of-list (lambda () (nqueens/stack/box-of-list 8)))
-                 (cons 'box-of-pseq (lambda () (nqueens/stack/box-of-pseq 8)))
+                 (cons 'box-of-psek (lambda () (nqueens/stack/box-of-psek 8)))
                  (cons 'box-of-treelist (lambda () (nqueens/stack/box-of-treelist 8))))))
   (when json-file (dump-json! json-file)))

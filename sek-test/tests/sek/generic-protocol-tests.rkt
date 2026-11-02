@@ -19,9 +19,9 @@
 (define (run-generic-protocol-tests)
 
   ;; ---- sequences -------------------------------------------------------
-  (for ([make (list (lambda (n) (list->pseq (elems n)))
-                    (lambda (n) (list->eseq (elems n))))]
-        [name '(pseq eseq)])
+  (for ([make (list (lambda (n) (list->psek (elems n)))
+                    (lambda (n) (list->esek (elems n))))]
+        [name '(psek esek)])
     (for ([n (in-list '(0 1 2 17 200))])
       (define v (make n))
       (check-true (sequence? v) (format "~a is a sequence" name))
@@ -32,42 +32,42 @@
 
   ;; ---- streams ---------------------------------------------------------
   ;; A persistent sequence is a stream, as an immutable treelist is.
-  (check-true (stream? (pseq 1 2 3)))
-  (check-equal? (stream-first (pseq 1 2 3)) 1)
-  (check-equal? (stream->list (stream-rest (pseq 1 2 3))) '(2 3))
-  (check-true (stream-empty? empty-pseq))
-  (check-equal? (stream->list (pseq 1 2 3)) '(1 2 3))
+  (check-true (stream? (psek 1 2 3)))
+  (check-equal? (stream-first (psek 1 2 3)) 1)
+  (check-equal? (stream->list (stream-rest (psek 1 2 3))) '(2 3))
+  (check-true (stream-empty? empty-psek))
+  (check-equal? (stream->list (psek 1 2 3)) '(1 2 3))
   ;; An ephemeral one is not, for the reason a mutable treelist is not.
-  (check-false (stream? (eseq 1 2 3)))
+  (check-false (stream? (esek 1 2 3)))
 
   ;; ---- structural equality and hashing ---------------------------------
-  (check-equal? (pseq 1 2 3) (pseq 1 2 3))
-  (check-equal? (eseq 1 2 3) (eseq 1 2 3))
-  (check-not-equal? (pseq 1 2 3) (pseq 1 2))
-  (check-not-equal? (pseq 1 2 3) (pseq 1 2 4))
-  (check-not-equal? (eseq 1 2 3) (eseq 1 2 4))
+  (check-equal? (psek 1 2 3) (psek 1 2 3))
+  (check-equal? (esek 1 2 3) (esek 1 2 3))
+  (check-not-equal? (psek 1 2 3) (psek 1 2))
+  (check-not-equal? (psek 1 2 3) (psek 1 2 4))
+  (check-not-equal? (esek 1 2 3) (esek 1 2 4))
   ;; equal? values must hash alike, or they break hash tables
-  (for ([pair (in-list (list (cons (pseq 1 2 3) (pseq 1 2 3))
-                             (cons (eseq 1 2 3) (eseq 1 2 3))))])
+  (for ([pair (in-list (list (cons (psek 1 2 3) (psek 1 2 3))
+                             (cons (esek 1 2 3) (esek 1 2 3))))])
     (check-equal? (equal-hash-code (car pair)) (equal-hash-code (cdr pair))))
   ;; and they must actually work as hash keys
-  (let ([h (hash (pseq 1 2) 'a)])
-    (check-equal? (hash-ref h (pseq 1 2) #f) 'a))
+  (let ([h (hash (psek 1 2) 'a)])
+    (check-equal? (hash-ref h (psek 1 2) #f) 'a))
 
   ;; ---- serialization ---------------------------------------------------
   (for ([n (in-list '(0 1 2 17 200))])
-    (check-equal? (pseq->list (deserialize (serialize (list->pseq (elems n)))))
+    (check-equal? (psek->list (deserialize (serialize (list->psek (elems n)))))
                   (elems n))
-    (check-equal? (eseq->list (deserialize (serialize (list->eseq (elems n)))))
+    (check-equal? (esek->list (deserialize (serialize (list->esek (elems n)))))
                   (elems n))
     )
-  (check-true (serializable? (pseq 1 2 3)))
-  (check-true (serializable? (eseq 1 2 3)))
+  (check-true (serializable? (psek 1 2 3)))
+  (check-true (serializable? (esek 1 2 3)))
 
   ;; a deserialized ephemeral sequence is independent of the original
-  (let* ([e (eseq 1 2 3)] [e2 (deserialize (serialize e))])
-    (eseq-push-back! e2 4)
-    (check-equal? (eseq->list e) '(1 2 3))
-    (check-equal? (eseq->list e2) '(1 2 3 4))))
+  (let* ([e (esek 1 2 3)] [e2 (deserialize (serialize e))])
+    (esek-push-back! e2 4)
+    (check-equal? (esek->list e) '(1 2 3))
+    (check-equal? (esek->list e2) '(1 2 3 4))))
 
 (module+ test (run-generic-protocol-tests))

@@ -161,7 +161,7 @@
 
 ;; These are two or three instructions each, and every one of them is read on
 ;; a hot path in another module.  Left as ordinary definitions they compile to
-;; calls: disassembling `eseq-push-back!` showed it pushing a six-word frame
+;; calls: disassembling `esek-push-back!` showed it pushing a six-word frame
 ;; and jumping, twice, once to ask `chunk-full?` whether two fields are equal
 ;; and once to push.  Encouraging the inliner removes both calls, and with
 ;; nothing left to call the procedure becomes a leaf, so Chez also drops the

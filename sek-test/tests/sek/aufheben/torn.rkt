@@ -69,9 +69,9 @@
 
 ;; ----------------------------------------------------------- the structure
 
-;; The chunks and trees reachable from an eseq, each with its depth, which are
+;; The chunks and trees reachable from an esek, each with its depth, which are
 ;; what the fields that hold them can be set to.
-(define (walk-eseq e on-chunk on-tree)
+(define (walk-esek e on-chunk on-tree)
   (define (walk-chunk c d)
     (unless (eqv? (chunk-capacity c) 0)
       (on-chunk c d)
@@ -95,7 +95,7 @@
   (cons c (if (cur? p) (cursor-chain p) '())))
 
 ;; A target is a field that one corruption sets:
-;;   (esq e field)          a field of the eseq
+;;   (esq e field)          a field of the esek
 ;;   (chunk c depth field)  head, size or weight
 ;;   (extent c)             the extent of c's support
 ;;   (slot c depth)         a slot of c's support, when depth > 0
@@ -105,7 +105,7 @@
   (for ([f '(front ifront iback back middle folded version id)])
     (add! (list 'esq e f)))
   (define seen (make-hasheq))
-  (walk-eseq e
+  (walk-esek e
              (lambda (c d)
                (unless (hash-ref seen c #f)
                  (hash-set! seen c #t)
@@ -125,10 +125,10 @@
   (define counter 0)
   (define (fresh!) (set! counter (add1 counter)) counter)
   (define (add-e! e)
-    (when (eseq? e)
+    (when (esek? e)
       (set! all-e (cons e all-e))
       (variables-add! es e)))
-  (define (add-p! p) (when (pseq? p) (variables-add! ps p)))
+  (define (add-p! p) (when (psek? p) (variables-add! ps p)))
   (define all-i '())
   (define (add-i! i)
     (when (sek-iter? i)
@@ -145,7 +145,7 @@
     (define chunks (make-hasheqv))
     (define trees (make-hasheqv))
     (for ([e (in-list all-e)])
-      (walk-eseq e
+      (walk-esek e
                  (lambda (c d) (hash-update! chunks d (lambda (l) (cons c l)) '()))
                  (lambda (t d) (hash-update! trees d (lambda (l) (cons t l)) '()))))
     (values chunks trees))
@@ -244,29 +244,29 @@
      (rule 'tear-iterator #:weight 3 tear-iterator!)
      (op make
          (define xs (for/list ([_ (in-range (draw-int 0 80 "n"))]) (fresh!)))
-         (add-e! (list->eseq xs)))
-     (op pseq-edit
+         (add-e! (list->esek xs)))
+     (op psek-edit
          (define p (variables-draw ps))
-         (add-e! (run-op "pseq-edit" (lambda () (pseq-edit p)))))
+         (add-e! (run-op "psek-edit" (lambda () (psek-edit p)))))
      (op push!
          (define e (variables-draw es))
          (define back? (draw gen:boolean "back?"))
          (define xs (for/list ([_ (in-range (draw-int 1 30 "k"))]) (fresh!)))
          (run-op "push" (lambda ()
                           (for ([x (in-list xs)])
-                            (if back? (eseq-push-back! e x) (eseq-push-front! e x))))))
+                            (if back? (esek-push-back! e x) (esek-push-front! e x))))))
      (op pop!
          (define e (variables-draw es))
          (define back? (draw gen:boolean "back?"))
          (define k (draw-int 1 30 "k"))
          (run-op "pop" (lambda ()
                          (for ([_ (in-range k)])
-                           (if back? (eseq-pop-back! e) (eseq-pop-front! e))))))
-     (op eseq-set!
+                           (if back? (esek-pop-back! e) (esek-pop-front! e))))))
+     (op esek-set!
          (define e (variables-draw es))
          (define i (draw-index))
          (define v (fresh!))
-         (run-op "eseq-set!" (lambda () (eseq-set! e i v))))
+         (run-op "esek-set!" (lambda () (esek-set! e i v))))
      (op read #:weight 3
          (define s (draw-s))
          (define s2 (draw-s))
@@ -282,15 +282,15 @@
            [(length) (run-op "sek-length" (lambda () (sek-length s)))]
            [(first) (run-op "sek-first" (lambda () (sek-first s)))]
            [(last) (run-op "sek-last" (lambda () (sek-last s)))]
-           [(validate) (run-op "validate" (lambda () (if (eseq? s) (sek-validate-eseq s) (sek-validate-pseq s))))]
+           [(validate) (run-op "validate" (lambda () (if (esek? s) (sek-validate-esek s) (sek-validate-psek s))))]
            [(equal) (run-op "equal?" (lambda () (equal? s s2)))]))
      (op snapshot #:weight 2
          (define e (variables-draw es))
-         (add-p! (run-op "eseq-snapshot" (lambda () (eseq-snapshot e)))))
+         (add-p! (run-op "esek-snapshot" (lambda () (esek-snapshot e)))))
      (op copy
          (define e (variables-draw es))
          (define mode (draw-of '(copy share) "mode"))
-         (add-e! (run-op "eseq-copy" (lambda () (eseq-copy e #:mode mode)))))
+         (add-e! (run-op "esek-copy" (lambda () (esek-copy e #:mode mode)))))
      (op restructure
          (define a (variables-draw es))
          (define b (variables-draw es))
@@ -301,19 +301,19 @@
          (case (draw-of '(append-e append-p concat split carve take drop clear assign
                           snapshot-and-clear)
                         "how")
-           [(append-e) (run-op "eseq-append!" (lambda () (eseq-append! a b side)))]
-           [(append-p) (run-op "eseq-append!" (lambda () (eseq-append! a p side)))]
-           [(concat) (add-e! (run-op "eseq-concat!" (lambda () (eseq-concat! a b))))]
+           [(append-e) (run-op "esek-append!" (lambda () (esek-append! a b side)))]
+           [(append-p) (run-op "esek-append!" (lambda () (esek-append! a p side)))]
+           [(concat) (add-e! (run-op "esek-concat!" (lambda () (esek-concat! a b))))]
            [(split)
-            (define r (run-op "eseq-split!" (lambda () (call-with-values (lambda () (eseq-split! a i)) list))))
+            (define r (run-op "esek-split!" (lambda () (call-with-values (lambda () (esek-split! a i)) list))))
             (when r (for-each add-e! r))]
-           [(carve) (add-e! (run-op "eseq-carve!" (lambda () (eseq-carve! a i side))))]
-           [(take) (run-op "eseq-take!" (lambda () (eseq-take! a i side)))]
-           [(drop) (run-op "eseq-drop!" (lambda () (eseq-drop! a i side)))]
-           [(clear) (run-op "eseq-clear!" (lambda () (eseq-clear! a)))]
-           [(assign) (run-op "eseq-assign!" (lambda () (eseq-assign! a b)))]
+           [(carve) (add-e! (run-op "esek-carve!" (lambda () (esek-carve! a i side))))]
+           [(take) (run-op "esek-take!" (lambda () (esek-take! a i side)))]
+           [(drop) (run-op "esek-drop!" (lambda () (esek-drop! a i side)))]
+           [(clear) (run-op "esek-clear!" (lambda () (esek-clear! a)))]
+           [(assign) (run-op "esek-assign!" (lambda () (esek-assign! a b)))]
            [(snapshot-and-clear)
-            (add-p! (run-op "eseq-snapshot-and-clear!" (lambda () (eseq-snapshot-and-clear! a))))]))
+            (add-p! (run-op "esek-snapshot-and-clear!" (lambda () (esek-snapshot-and-clear! a))))]))
      (op persistent
          (define p (variables-draw ps))
          (define q (variables-draw ps))
@@ -321,15 +321,15 @@
          (define v (fresh!))
          (define (r name thunk) (add-p! (run-op name thunk)))
          (case (draw-of '(push-back push-front pop-back pop-front set append split take drop) "how")
-           [(push-back) (r "pseq-push-back" (lambda () (pseq-push-back p v)))]
-           [(push-front) (r "pseq-push-front" (lambda () (pseq-push-front p v)))]
-           [(pop-back) (r "pseq-pop-back" (lambda () (let-values ([(x r) (pseq-pop-back p)]) r)))]
-           [(pop-front) (r "pseq-pop-front" (lambda () (let-values ([(x r) (pseq-pop-front p)]) r)))]
-           [(set) (r "pseq-set" (lambda () (pseq-set p i v)))]
-           [(append) (r "pseq-append" (lambda () (pseq-append p q)))]
-           [(split) (r "pseq-split" (lambda () (let-values ([(a b) (pseq-split p i)]) b)))]
-           [(take) (r "pseq-take" (lambda () (pseq-take p i)))]
-           [(drop) (r "pseq-drop" (lambda () (pseq-drop p i)))]))
+           [(push-back) (r "psek-push-back" (lambda () (psek-push-back p v)))]
+           [(push-front) (r "psek-push-front" (lambda () (psek-push-front p v)))]
+           [(pop-back) (r "psek-pop-back" (lambda () (let-values ([(x r) (psek-pop-back p)]) r)))]
+           [(pop-front) (r "psek-pop-front" (lambda () (let-values ([(x r) (psek-pop-front p)]) r)))]
+           [(set) (r "psek-set" (lambda () (psek-set p i v)))]
+           [(append) (r "psek-append" (lambda () (psek-append p q)))]
+           [(split) (r "psek-split" (lambda () (let-values ([(a b) (psek-split p i)]) b)))]
+           [(take) (r "psek-take" (lambda () (psek-take p i)))]
+           [(drop) (r "psek-drop" (lambda () (psek-drop p i)))]))
      (op derive
          (define s (draw-s))
          (define i (draw-index))
@@ -339,7 +339,7 @@
              [(sub) (run-op "sek-sub" (lambda () (sek-sub s (max 0 i) 3)))]
              [(map) (run-op "sek-map" (lambda () (sek-map s values)))]
              [(filter) (run-op "sek-filter" (lambda () (sek-filter s even?)))]))
-         (if (eseq? r) (add-e! r) (add-p! r)))
+         (if (esek? r) (add-e! r) (add-p! r)))
      (op iterator #:weight 2
          (define s (draw-s))
          (define how (draw-of '(forward backward front back) "how"))
@@ -396,9 +396,9 @@
          (add-i! (run-op "sek-iter-copy" (lambda () (sek-iter-copy it)))))))
 
   ;; start with one sequence and its snapshot, so that few steps are rejected
-  (define e0 (list->eseq (for/list ([_ (in-range (draw-int 0 80 "n"))]) (fresh!))))
+  (define e0 (list->esek (for/list ([_ (in-range (draw-int 0 80 "n"))]) (fresh!))))
   (add-e! e0)
-  (add-p! (eseq-snapshot e0))
+  (add-p! (esek-snapshot e0))
   (run-state-machine rules #:steps (current-steps)))
 
 (define current-steps (make-parameter 80))

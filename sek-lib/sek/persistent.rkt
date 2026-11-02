@@ -28,38 +28,38 @@
 ;; structures do not check (see unchecked.rkt), so they would not raise on a
 ;; value of the wrong kind.
 
-(provide (rename-out [psq? pseq?] [psq-rep pseq-rep])
-         pseq-length
-         pseq-empty?
-         empty-pseq
-         pseq-cons
-         pseq-add
-         pseq-push-front
-         pseq-push-back
-         pseq-pop-front
-         pseq-pop-back
-         pseq-first
-         pseq-last
-         pseq-ref
-         pseq-set
-         pseq-append
-         pseq-split
-         pseq-build
-         make-pseq-builder
-         pseq-builder-add!
-         pseq-builder-close
-         pseq-take
-         pseq-drop
-         pseq->list
-         list->pseq
-         pseq->vector
-         vector->pseq
-         in-pseq
-         pseq-for-each
-         pseq-map
-         pseq
+(provide (rename-out [psq? psek?] [psq-rep psek-rep])
+         psek-length
+         psek-empty?
+         empty-psek
+         psek-cons
+         psek-add
+         psek-push-front
+         psek-push-back
+         psek-pop-front
+         psek-pop-back
+         psek-first
+         psek-last
+         psek-ref
+         psek-set
+         psek-append
+         psek-split
+         psek-build
+         make-psek-builder
+         psek-builder-add!
+         psek-builder-close
+         psek-take
+         psek-drop
+         psek->list
+         list->psek
+         psek->vector
+         vector->psek
+         in-psek
+         psek-for-each
+         psek-map
+         psek
          wrap-rep
-         pseq-of-tree
+         psek-of-tree
          normalize
          rep->tree)
 
@@ -69,8 +69,8 @@
 ;; Argument checking is explicit here, because the structure accessors do not
 ;; check (see unchecked.rkt): on the wrong kind of value they would read
 ;; whatever happens to be at that offset.
-(define-syntax-rule (check-pseq who v)
-  (unless (psq? v) (raise-argument-error who "pseq?" v)))
+(define-syntax-rule (check-psek who v)
+  (unless (psq? v) (raise-argument-error who "psek?" v)))
 
 (define (rep->list rep)
   (cond
@@ -85,14 +85,14 @@
   #:constructor-name wrap-rep
   #:authentic #:sealed
   #:property prop:sequence
-  (lambda (s) (in-pseq s))
+  (lambda (s) (in-psek s))
   #:property prop:stream
-  (vector (lambda (s) (pseq-empty? s))
-          (lambda (s) (pseq-first s))
-          (lambda (s) (let-values ([(v rest) (pseq-pop-front s)]) rest)))
+  (vector (lambda (s) (psek-empty? s))
+          (lambda (s) (psek-first s))
+          (lambda (s) (let-values ([(v rest) (psek-pop-front s)]) rest)))
   #:property prop:serializable
-  (make-serialize-info (lambda (v) (vector (pseq->vector v)))
-                       (cons 'deserialize-pseq
+  (make-serialize-info (lambda (v) (vector (psek->vector v)))
+                       (cons 'deserialize-psek
                              (module-path-index-join
                               '(submod "." deserialize)
                               (variable-reference->module-path-index
@@ -103,29 +103,29 @@
   [(define (equal-proc a b rec)
      ;; Length is O(1) and settles most comparisons; the walk after it
      ;; allocates nothing, where converting to lists allocated both.
-     (and (fx= (pseq-length a) (pseq-length b))
-          (for/and ([x (in-pseq a)] [y (in-pseq b)]) (rec x y))))
+     (and (fx= (psek-length a) (psek-length b))
+          (for/and ([x (in-psek a)] [y (in-psek b)]) (rec x y))))
    (define (hash-proc a rec)
-     (hash-elements (in-pseq a) (pseq-length a) rec))
+     (hash-elements (in-psek a) (psek-length a) rec))
    (define (hash2-proc a rec)
-     (hash-elements (in-pseq a) (pseq-length a) rec))]
+     (hash-elements (in-psek a) (psek-length a) rec))]
   #:property prop:custom-print-quotable 'never
   #:methods gen:custom-write
   [(define (write-proc s port mode)
-     (print-sek "pseq" (pseq-empty? s) (lambda (f) (pseq-for-each s f)) port mode))])
+     (print-sek "psek" (psek-empty? s) (lambda (f) (psek-for-each s f)) port mode))])
 
-(define empty-pseq (wrap-rep #f))
+(define empty-psek (wrap-rep #f))
 
 (module+ deserialize
-  (provide deserialize-pseq)
-  (define deserialize-pseq
-    (make-deserialize-info (lambda (v) (vector->pseq v))
-                           (lambda () (error 'deserialize-pseq "cycles not supported")))))
-(define (pseq-of-tree t)
+  (provide deserialize-psek)
+  (define deserialize-psek
+    (make-deserialize-info (lambda (v) (vector->psek v))
+                           (lambda () (error 'deserialize-psek "cycles not supported")))))
+(define (psek-of-tree t)
   (wrap-rep (normalize t)))
 
-(define (pseq-empty? s)
-  (check-pseq 'pseq-empty? s)
+(define (psek-empty? s)
+  (check-psek 'psek-empty? s)
   (not (psq-rep s)))
 
 ;; Build n elements a whole chunk at a time, rather than pushing one element at
@@ -139,12 +139,12 @@
 ;; is the back, and everything between is pushed into the middle sequence,
 ;; which is the shape `make-level` wants.  Every chunk but the last is full, so
 ;; the density invariant holds by construction.
-(define (pseq-build n proc)
+(define (psek-build n proc)
   (define k (capacity-at 0))
   (define (chunk-at i len)
     (chunk-build k len (lambda (j) (proc (+ i j))) no-owner))
   (cond
-    [(eqv? n 0) empty-pseq]
+    [(eqv? n 0) empty-psek]
     [(<= n (short-threshold)) (wrap-rep (build-vector n proc))]
     [(<= n k) (wrap-rep (make-level (chunk-at 0 n) #f (make-chunk k no-owner)))]
     [else
@@ -156,7 +156,7 @@
          (pt-push-back t (chunk-at i k) k 1 no-owner)))
      (wrap-rep (make-level front middle (chunk-at last-start (- n last-start))))]))
 
-;; The same idea as `pseq-build`, for callers that do not know the length in
+;; The same idea as `psek-build`, for callers that do not know the length in
 ;; advance: collect elements into a chunk-sized buffer and emit a whole chunk
 ;; when it fills, rather than pushing each element into a sequence.  One chunk
 ;; is held back so that the last full one can become the back of the level when
@@ -167,11 +167,11 @@
              [held #:mutable] [middle #:mutable])
   #:authentic #:sealed)
 
-(define (make-pseq-builder)
+(define (make-psek-builder)
   (define k (capacity-at 0))
   (bld (make-vector k #f) 0 k #f #f #f))
 
-(define (pseq-builder-emit! b c)
+(define (psek-builder-emit! b c)
   (cond
     [(not (bld-front b)) (set-bld-front! b c)]
     [(not (bld-held b)) (set-bld-held! b c)]
@@ -185,23 +185,23 @@
 ;; callers in other modules, which is what lets `sek-map` and `sek-filter` run
 ;; their loops without a call per element; the chunk-full case is a call.
 (begin-encourage-inline
-  (define (pseq-builder-add! b x)
+  (define (psek-builder-add! b x)
     (define n (bld-n b))
     (vector-set! (bld-buf b) n x)
     (define n* (fx+ n 1))
     (if (fx< n* (bld-cap b))
         (set-bld-n! b n*)
-        (pseq-builder-cut! b))))
+        (psek-builder-cut! b))))
 
 ;; The buffer is full: hand it over as a chunk and start a new one.  It is
 ;; replaced here and never read again, so the chunk can adopt it rather than
 ;; copy it.
-(define (pseq-builder-cut! b)
-  (pseq-builder-emit! b (chunk-of-fresh-vector (bld-buf b) no-owner))
+(define (psek-builder-cut! b)
+  (psek-builder-emit! b (chunk-of-fresh-vector (bld-buf b) no-owner))
   (set-bld-buf! b (make-vector (bld-cap b) #f))
   (set-bld-n! b 0))
 
-(define (pseq-builder-close b)
+(define (psek-builder-close b)
   (define k (bld-cap b))
   (define n (bld-n b))
   (define buf (bld-buf b))
@@ -215,7 +215,7 @@
     ;; below the chunk capacity -- so it still has to be tested.
     [(not front)
      (cond
-       [(eqv? n 0) empty-pseq]
+       [(eqv? n 0) empty-psek]
        [(<= n (short-threshold)) (wrap-rep (vector-copy (bld-buf b) 0 n))]
        [else (wrap-rep (make-level partial #f (make-chunk k no-owner)))])]
     [else
@@ -236,8 +236,8 @@
     [(vector? r) (vector-length r)]
     [else (lvl-weight r)]))
 
-(define (pseq-length s)
-  (check-pseq 'pseq-length s)
+(define (psek-length s)
+  (check-psek 'psek-length s)
   (rep-length (psq-rep s)))
 
 ;; ------------------------------------------------------- representation swaps
@@ -278,8 +278,8 @@
 
 ;; ------------------------------------------------------------------ push/pop
 
-(define (pseq-cons s x)
-  (check-pseq 'pseq-cons s)
+(define (psek-cons s x)
+  (check-psek 'psek-cons s)
   (define r (psq-rep s))
   (define T (short-threshold))
   (wrap-rep (cond
@@ -295,8 +295,8 @@
                (pt-push-front (vector->tree r) x 1 0 no-owner))]
           [else (pt-push-front r x 1 0 no-owner)])))
 
-(define (pseq-add s x)
-  (check-pseq 'pseq-add s)
+(define (psek-add s x)
+  (check-psek 'psek-add s)
   (define r (psq-rep s))
   (define T (short-threshold))
   (wrap-rep (cond
@@ -312,11 +312,11 @@
                (pt-push-back (vector->tree r) x 1 0 no-owner))]
           [else (pt-push-back r x 1 0 no-owner)])))
 
-(define (pseq-pop-front s)
-  (check-pseq 'pseq-pop-front s)
+(define (psek-pop-front s)
+  (check-psek 'psek-pop-front s)
   (define r (psq-rep s))
   (cond
-    [(not r) (raise-arguments-error 'pseq-pop-front "sequence is empty")]
+    [(not r) (raise-arguments-error 'psek-pop-front "sequence is empty")]
     [(vector? r)
      (values (vector-ref r 0)
              (wrap-rep (if (eqv? (vector-length r) 1)
@@ -326,11 +326,11 @@
      (define-values (x t) (pt-pop-front r 0 no-owner))
      (values x (wrap-rep (normalize t)))]))
 
-(define (pseq-pop-back s)
-  (check-pseq 'pseq-pop-back s)
+(define (psek-pop-back s)
+  (check-psek 'psek-pop-back s)
   (define r (psq-rep s))
   (cond
-    [(not r) (raise-arguments-error 'pseq-pop-back "sequence is empty")]
+    [(not r) (raise-arguments-error 'psek-pop-back "sequence is empty")]
     [(vector? r)
      (define n (vector-length r))
      (values (vector-ref r (sub1 n))
@@ -341,35 +341,35 @@
      (define-values (x t) (pt-pop-back r 0 no-owner))
      (values x (wrap-rep (normalize t)))]))
 
-(define (pseq-first s)
-  (check-pseq 'pseq-first s)
+(define (psek-first s)
+  (check-psek 'psek-first s)
   (define r (psq-rep s))
   (cond
-    [(not r) (raise-arguments-error 'pseq-first "sequence is empty")]
+    [(not r) (raise-arguments-error 'psek-first "sequence is empty")]
     [(vector? r) (vector-ref r 0)]
     [else (pt-ref r 0 0)]))
 
-(define (pseq-last s)
-  (check-pseq 'pseq-last s)
+(define (psek-last s)
+  (check-psek 'psek-last s)
   (define r (psq-rep s))
   (cond
-    [(not r) (raise-arguments-error 'pseq-last "sequence is empty")]
+    [(not r) (raise-arguments-error 'psek-last "sequence is empty")]
     [(vector? r) (vector-ref r (sub1 (vector-length r)))]
     [else (pt-ref r (sub1 (lvl-weight r)) 0)]))
 
 ;; ------------------------------------------------------------------ get/set
 
 ;; `fixnum?` rather than `exact-nonnegative-integer?` for the same reason as
-;; in `pseq-ref`: the operations below index with `unsafe-fx`, and a length is
+;; in `psek-ref`: the operations below index with `unsafe-fx`, and a length is
 ;; a fixnum, so a bignum index is out of range by definition.
 (define (check-index who s i)
-  (check-pseq who s)
+  (check-psek who s)
   (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i n))
     (raise-arguments-error who "index out of range" "index" i "length" n)))
 
 ;; The bounds check and the dispatch both have to look at the representation,
-;; so do it once: `check-index` would go back through `pseq-length`, which
+;; so do it once: `check-index` would go back through `psek-length`, which
 ;; re-tests whether the rep is a vector or a tree.
 ;; The guard is `fixnum?` rather than `exact-nonnegative-integer?` for two
 ;; reasons.  It is faster -- disassembling this procedure with the wider test
@@ -379,8 +379,8 @@
 ;; assumes: everything below here indexes with `unsafe-fx` operations, which on
 ;; a bignum are undefined.  A length is a fixnum, so a bignum index is out of
 ;; range by definition and belongs on the slow path anyway.
-(define (pseq-ref s i)
-  (check-pseq 'pseq-ref s)
+(define (psek-ref s i)
+  (check-psek 'psek-ref s)
   (define r (psq-rep s))
   (cond
     [(and (lvl? r) (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i (lvl-weight r)))
@@ -389,11 +389,11 @@
           (unsafe-fx< i (unsafe-vector*-length r)))
      (vector-ref r i)]
     [else
-     (check-index 'pseq-ref s i)
+     (check-index 'psek-ref s i)
      (if (vector? r) (vector-ref r i) (pt-ref r i 0))]))
 
-(define (pseq-set s i x)
-  (check-index 'pseq-set s i)
+(define (psek-set s i x)
+  (check-index 'psek-set s i)
   (define r (psq-rep s))
   (wrap-rep (if (vector? r)
             (let ([v (vector-copy r)])
@@ -403,9 +403,9 @@
 
 ;; ------------------------------------------------------- concat and split
 
-(define (pseq-append s1 s2)
-  (check-pseq 'pseq-append s1)
-  (check-pseq 'pseq-append s2)
+(define (psek-append s1 s2)
+  (check-psek 'psek-append s1)
+  (check-psek 'psek-append s2)
   (define r1 (psq-rep s1))
   (define r2 (psq-rep s2))
   (cond
@@ -416,16 +416,16 @@
     [else (wrap-rep (normalize (pt-concat (rep->tree r1) (rep->tree r2) 0 no-owner)))]))
 
 ;; Split into the first i elements and the rest.
-(define (pseq-split s i)
-  (check-pseq 'pseq-split s)
+(define (psek-split s i)
+  (check-psek 'psek-split s)
   (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
-    (raise-arguments-error 'pseq-split "index out of range"
+    (raise-arguments-error 'psek-split "index out of range"
                            "index" i "length" n))
   (define r (psq-rep s))
   (cond
-    [(eqv? i 0) (values empty-pseq s)]
-    [(eqv? i n) (values s empty-pseq)]
+    [(eqv? i 0) (values empty-psek s)]
+    [(eqv? i n) (values s empty-psek)]
     [(vector? r) (values (wrap-rep (vector-copy r 0 i)) (wrap-rep (vector-copy r i)))]
     [else
      (define-values (t1 t2) (pt-split r i no-owner))
@@ -433,49 +433,49 @@
 
 ;; One-sided versions, which build only the half that is wanted.  The reference
 ;; specializes `three_way_split` the same way, into `take`, `drop` and `get`
-;; (ShareableSequence.ml); `get` is `pseq-ref` here and was already separate.
-(define (pseq-take s i)
-  (check-pseq 'pseq-take s)
+;; (ShareableSequence.ml); `get` is `psek-ref` here and was already separate.
+(define (psek-take s i)
+  (check-psek 'psek-take s)
   (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
-    (raise-arguments-error 'pseq-take "index out of range"
+    (raise-arguments-error 'psek-take "index out of range"
                            "index" i "length" n))
   (define r (psq-rep s))
   (cond
-    [(eqv? i 0) empty-pseq]
+    [(eqv? i 0) empty-psek]
     [(eqv? i n) s]
     [(vector? r) (wrap-rep (vector-copy r 0 i))]
     [else (wrap-rep (normalize (pt-take r i no-owner)))]))
 
-(define (pseq-drop s i)
-  (check-pseq 'pseq-drop s)
+(define (psek-drop s i)
+  (check-psek 'psek-drop s)
   (define n (rep-length (psq-rep s)))
   (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
-    (raise-arguments-error 'pseq-drop "index out of range"
+    (raise-arguments-error 'psek-drop "index out of range"
                            "index" i "length" n))
   (define r (psq-rep s))
   (cond
     [(eqv? i 0) s]
-    [(eqv? i n) empty-pseq]
+    [(eqv? i n) empty-psek]
     [(vector? r) (wrap-rep (vector-copy r i))]
     [else (wrap-rep (normalize (pt-drop r i no-owner)))]))
 
 ;; -------------------------------------------------------------- conversions
 
-(define (pseq->list s)
-  (check-pseq 'pseq->list s)
+(define (psek->list s)
+  (check-psek 'psek->list s)
   (rep->list (psq-rep s)))
 
-(define (pseq->vector s)
-  (check-pseq 'pseq->vector s)
+(define (psek->vector s)
+  (check-psek 'psek->vector s)
   (define r (psq-rep s))
   (cond
     [(not r) (vector)]
     [(vector? r) (vector-copy r)]
     [else (tree->vector r)]))
 
-(define (pseq-for-each s proc)
-  (check-pseq 'pseq-for-each s)
+(define (psek-for-each s proc)
+  (check-psek 'psek-for-each s)
   (define r (psq-rep s))
   (cond
     [(not r) (void)]
@@ -484,13 +484,13 @@
        (proc x))]
     [else (pt-for-each r 0 proc)]))
 
-(define (pseq-map s proc)
-  (check-pseq 'pseq-map s)
-  (list->pseq (map proc (pseq->list s))))
+(define (psek-map s proc)
+  (check-psek 'psek-map s)
+  (list->psek (map proc (psek->list s))))
 
 ;; Streaming traversal: `for` over a sequence walks the tree directly instead
 ;; of building an intermediate list.
-(define (in-pseq s)
+(define (in-psek s)
   (define r (psq-rep s))
   (cond
     [(not r) (in-list '())]
@@ -500,20 +500,20 @@
 ;; Bulk construction claims a private ownership id and builds the tree with
 ;; in-place pushes, then drops the id.  Because ids are never reused, the
 ;; chunks are unowned from then on -- this is just a cheaper way of writing the
-;; same repeated pseq-push-back.
-(define (list->pseq xs)
+;; same repeated psek-push-back.
+(define (list->psek xs)
   (define n (length xs))
   (cond
-    [(eqv? n 0) empty-pseq]
+    [(eqv? n 0) empty-psek]
     [(<= n (short-threshold)) (wrap-rep (list->vector xs))]
     [else (wrap-rep (pt-of-list xs (fresh-id!)))]))
 
 ;; The push names are what the paper and the OCaml library call these, and
 ;; are kept so that code written against either goes on working.
-(define pseq-push-front pseq-cons)
-(define pseq-push-back pseq-add)
+(define psek-push-front psek-cons)
+(define psek-push-back psek-add)
 
-(define (vector->pseq v) (list->pseq (vector->list v)))
+(define (vector->psek v) (list->psek (vector->list v)))
 
-(define (pseq . xs)
-  (list->pseq xs))
+(define (psek . xs)
+  (list->psek xs))

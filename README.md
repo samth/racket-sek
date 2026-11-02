@@ -14,16 +14,16 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 ```racket
 (require sek)
 
-(define p (list->pseq '(1 2 3 4 5)))
-(pseq->list (pseq-push-front p 0))   ; '(0 1 2 3 4 5)
-(pseq->list p)                       ; '(1 2 3 4 5) — unchanged
+(define p (list->psek '(1 2 3 4 5)))
+(psek->list (psek-push-front p 0))   ; '(0 1 2 3 4 5)
+(psek->list p)                       ; '(1 2 3 4 5) — unchanged
 
-(define e (pseq-edit p))             ; O(1): switch to in-place updates
-(eseq-push-back! e 6)
-(eseq-set! e 0 'a)
-(define q (eseq-snapshot e))         ; O(1): switch back
-(pseq->list q)                       ; '(a 2 3 4 5 6)
-(pseq->list p)                       ; '(1 2 3 4 5) — still unchanged
+(define e (psek-edit p))             ; O(1): switch to in-place updates
+(esek-push-back! e 6)
+(esek-set! e 0 'a)
+(define q (esek-snapshot e))         ; O(1): switch back
+(psek->list q)                       ; '(a 2 3 4 5 6)
+(psek->list p)                       ; '(1 2 3 4 5) — still unchanged
 ```
 
 ## What is here
@@ -33,8 +33,8 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 | `sek/config.rkt` | §4.1 | chunk capacities and the short-sequence threshold |
 | `sek/chunk.rkt` | §3.3, Fig. 11–13 | transient chunks: circular support + view + ownership id |
 | `sek/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
-| `sek/persistent.rkt` | §3.5 | `pseq`, including the compact representation of short sequences |
-| `sek/ephemeral.rkt` | §3.6 | `eseq`, including the inner front/back chunks |
+| `sek/persistent.rkt` | §3.5 | `psek`, including the compact representation of short sequences |
+| `sek/ephemeral.rkt` | §3.6 | `esek`, including the inner front/back chunks |
 | `sek/iterate.rkt` | — | lazy left-to-right traversal, behind `prop:sequence` |
 | `sek/segment.rkt` | `Segment` | runs of contiguous storage |
 | `sek/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
@@ -52,7 +52,7 @@ operations and the conformance harness follow the authors' OCaml library,
 
 **Ownership identifiers** (§2.4, from L'orange). Every chunk carries an id, and
 every ephemeral sequence carries one. If they match, the chunk is not shared
-with anybody and can be written in place. `eseq-snapshot` hands the sequence a
+with anybody and can be written in place. `esek-snapshot` hands the sequence a
 *fresh* id, so every chunk in it instantly stops being recognizable as owned —
 which is why a snapshot costs nothing and yet is safe.
 
@@ -74,7 +74,7 @@ adversarial sequences of splits and concatenations.
 
 ## Iterators and segments
 
-Repeated `pseq-ref` costs O(n log_K n) to walk a sequence. An iterator walks it
+Repeated `psek-ref` costs O(n log_K n) to walk a sequence. An iterator walks it
 in O(n), because stepping stays inside one run of contiguous storage most of
 the time:
 
@@ -118,13 +118,13 @@ sequence return the flavor they were given:
 `sek-sub` `sek-take` `sek-drop` `sek-copy` `sek-for-each2` `sek-fold-left2`
 `sek-fold-right2` `sek-map2` `sek-zip` `sek-unzip` `sek-for-all2?`
 `sek-exists2?` `sek-equal?` `sek-compare` `sek-fill!` `sek-blit!`
-`sek-segments-for-each2` `build-pseq` `build-eseq` `make-pseq`
-`sequence->pseq` `sequence->eseq`
+`sek-segments-for-each2` `build-psek` `build-esek` `make-psek`
+`sequence->psek` `sequence->esek`
 
 Ephemeral sequences also have the reference library's in-place structural
-operations, which consume the sequences they are given: `eseq-append!`
-`eseq-concat!` `eseq-split!` `eseq-carve!` `eseq-take!` `eseq-drop!`
-`eseq-assign!` `eseq-clear!`.
+operations, which consume the sequences they are given: `esek-append!`
+`esek-concat!` `esek-split!` `esek-carve!` `esek-take!` `esek-drop!`
+`esek-assign!` `esek-clear!`.
 
 ## Costs
 
@@ -224,7 +224,7 @@ included; no scripts and no network.
 `bench/README.md` has the tables and the analyzis. The short version, at a
 million elements, nanoseconds per operation:
 
-| | eseq | treelist | mutable-treelist | gvector | list |
+| | esek | treelist | mutable-treelist | gvector | list |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | push/pop at the back | **5.4** | 46.1 | 50.0 | 17.5 | — |
 | push/pop at the front | **5.5** | 203.2 | 206.4 | — | 2.5 |
@@ -239,7 +239,7 @@ million elements, nanoseconds per operation:
 The ends are flat in the length of the sequence and indifferent to which end
 you use, which is the whole point; indexing is what the design gives up, and it
 costs about 4× a treelist and 9× a growable array -- which is the honest
-comparison for a structure that gives up nothing else to get it. Snapshots are the headline: `eseq-snapshot` does not
+comparison for a structure that gives up nothing else to get it. Snapshots are the headline: `esek-snapshot` does not
 depend on the length of the sequence, while `mutable-treelist-snapshot`
 copies — 1.5 ms at a million elements against 24.9 ns. In a round trip that
 changes one element between snapshots, sek is four orders of magnitude ahead; a
@@ -249,8 +249,8 @@ The borrowed suites agree, and sharpen two points. Scala's `vApprepend` —
 alternate a push at each end — is the clearest win in the whole set: 5.8 ns
 against a treelist's 146.5 at 10^5, and flat where the treelist's grows with
 depth. And Scala's `vApplySequential` shows what indexing costs and what it
-need not cost: an ascending walk through `pseq-ref` takes 16.4 ns against the
-treelist's cached 5.9, but the same walk through `in-pseq` takes 1.57 — 3.7×
+need not cost: an ascending walk through `psek-ref` takes 16.4 ns against the
+treelist's cached 5.9, but the same walk through `in-psek` takes 1.57 — 3.7×
 faster than the treelist, faster than an indexed read on a growable array, and
 level with a raw vector. The answer to sequential access in this library is a
 first-class iterator, and it is a better answer than a display; it is just not
@@ -274,7 +274,7 @@ invariant is real work an RRB tree does not do, and that is the honest residue.
 10000 repetitions — over each structure, both as the original pair-list
 program with the operations swapped out and as a backtracking search over one
 mutable stack. Pairs win it outright, as they should for a search that never
-holds more than eight elements; among the sequence structures `pseq` is
+holds more than eight elements; among the sequence structures `psek` is
 fastest at 3.4 s against `treelist`'s 4.2 s, and the mutable ones pay 2–4×
 more because every `cons` and `append` has to copy where a persistent
 structure shares.
@@ -307,8 +307,8 @@ proves the rule is the one that *was* about Racket: every struct was paying a
 walk of its type's ancestry vector on each field access, which `#:sealed`
 collapses to one comparison, and the innermost modules had implicit checks on
 every field access and fixnum operation, which unchecked accessors and
-arithmetic remove — found by reading the generated code, worth `pseq-ref`
-35.6 ns to 22.2 and `eseq` push-back 8.8 to 4.7. A second reading of the generated code, this time of the machine code
+arithmetic remove — found by reading the generated code, worth `psek-ref`
+35.6 ns to 22.2 and `esek` push-back 8.8 to 4.7. A second reading of the generated code, this time of the machine code
 rather than the intermediate form, found six more of the same kind: two calls
 on the push path that inlining removes, a capacity read that was three
 dependent loads, an ownership test that went through generic `eqv?` because an
@@ -347,9 +347,9 @@ checked. The remaining differences:
   sequence.
 * `One` and `Short` (§3.5) are unified into one vector representation, used
   only at the top of the structure, as in the authors' implementation.
-* `pseq-edit` shares the front and back chunks instead of copying them, so it
+* `psek-edit` shares the front and back chunks instead of copying them, so it
   is O(1) rather than O(K); the copy happens on the first write, if any.
-* `eseq-snapshot` folds the inner chunks into the snapshot's middle sequence,
+* `esek-snapshot` folds the inner chunks into the snapshot's middle sequence,
   so it is O(K log_K n) in the worst case rather than the O(1) of Figure 16.
   The OCaml library folds them into the sequence's own middle sequence, and so
   does creating an iterator there; here neither changes the sequence, so that

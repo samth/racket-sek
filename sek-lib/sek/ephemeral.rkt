@@ -33,52 +33,52 @@
 ;; structures do not check (see unchecked.rkt), so they would not raise on a
 ;; value of the wrong kind.
 
-(provide (rename-out [esq? eseq?]
-                     [esq-id eseq-id]
-                     [esq-front eseq-front]
-                     [esq-ifront eseq-ifront]
-                     [esq-middle eseq-middle]
-                     [esq-iback eseq-iback]
-                     [esq-back eseq-back])
-         make-eseq
-         eseq
-         eseq-length
-         eseq-empty?
-         eseq-cons!
-         eseq-add!
-         eseq-push-front!
-         eseq-push-back!
-         eseq-pop-front!
-         eseq-pop-back!
-         eseq-first
-         eseq-last
-         eseq-ref
-         eseq-set!
-         eseq-own-at!
-         eseq-snapshot
-         pseq-edit
-         eseq-copy
-         eseq-append!
-         eseq-concat!
-         eseq-split!
-         eseq-carve!
-         eseq-take!
-         eseq-drop!
-         eseq->list
-         list->eseq
-         eseq->vector
-         eseq-for-each
-         in-eseq
-         eseq-clear!
-         eseq-assign!
-         eseq-snapshot-and-clear!
+(provide (rename-out [esq? esek?]
+                     [esq-id esek-id]
+                     [esq-front esek-front]
+                     [esq-ifront esek-ifront]
+                     [esq-middle esek-middle]
+                     [esq-iback esek-iback]
+                     [esq-back esek-back])
+         make-esek
+         esek
+         esek-length
+         esek-empty?
+         esek-cons!
+         esek-add!
+         esek-push-front!
+         esek-push-back!
+         esek-pop-front!
+         esek-pop-back!
+         esek-first
+         esek-last
+         esek-ref
+         esek-set!
+         esek-own-at!
+         esek-snapshot
+         psek-edit
+         esek-copy
+         esek-append!
+         esek-concat!
+         esek-split!
+         esek-carve!
+         esek-take!
+         esek-drop!
+         esek->list
+         list->esek
+         esek->vector
+         esek-for-each
+         in-esek
+         esek-clear!
+         esek-assign!
+         esek-snapshot-and-clear!
          ;; internals used by the iterator and the derived operations
-         eseq-flush-inner!
-         eseq-iterator-born!
-         eseq-iterator-valid?
-         eseq-invalidate-iterators!
-         eseq-invalidate-iterators-except!
-         eseq-become!)
+         esek-flush-inner!
+         esek-iterator-born!
+         esek-iterator-valid?
+         esek-invalidate-iterators!
+         esek-invalidate-iterators-except!
+         esek-become!)
 
 (struct/unchecked esq
         ([id #:mutable] [front #:mutable]
@@ -94,10 +94,10 @@
                         [folded #:mutable])
   #:authentic #:sealed
   #:property prop:sequence
-  (lambda (e) (in-eseq e))
+  (lambda (e) (in-esek e))
   #:property prop:serializable
-  (make-serialize-info (lambda (v) (vector (eseq->vector v)))
-                       (cons 'deserialize-eseq
+  (make-serialize-info (lambda (v) (vector (esek->vector v)))
+                       (cons 'deserialize-esek
                              (module-path-index-join
                               '(submod "." deserialize)
                               (variable-reference->module-path-index
@@ -106,16 +106,16 @@
                        (or (current-load-relative-directory) (current-directory)))
   #:methods gen:equal+hash
   [(define (equal-proc a b rec)
-     (and (fx= (eseq-length a) (eseq-length b))
-          (for/and ([x (in-eseq a)] [y (in-eseq b)]) (rec x y))))
+     (and (fx= (esek-length a) (esek-length b))
+          (for/and ([x (in-esek a)] [y (in-esek b)]) (rec x y))))
    (define (hash-proc a rec)
-     (hash-elements (in-eseq a) (eseq-length a) rec))
+     (hash-elements (in-esek a) (esek-length a) rec))
    (define (hash2-proc a rec)
-     (hash-elements (in-eseq a) (eseq-length a) rec))]
+     (hash-elements (in-esek a) (esek-length a) rec))]
   #:property prop:custom-print-quotable 'never
   #:methods gen:custom-write
   [(define (write-proc e port mode)
-     (print-sek "eseq" (eseq-empty? e) (lambda (f) (eseq-for-each e f)) port mode))])
+     (print-sek "esek" (esek-empty? e) (lambda (f) (esek-for-each e f)) port mode))])
 
 ;; The front and back chunks start as the shared zero-capacity stand-in, and
 ;; a real one is allocated by the first push to that side.  Creating a
@@ -126,19 +126,19 @@
 ;; Argument checking is explicit here, because the structure accessors do not
 ;; check (see unchecked.rkt): on the wrong kind of value they would read
 ;; whatever happens to be at that offset.
-(define-syntax-rule (check-eseq who v)
-  (unless (esq? v) (raise-argument-error who "eseq?" v)))
-(define-syntax-rule (check-pseq who v)
-  (unless (pseq? v) (raise-argument-error who "pseq?" v)))
+(define-syntax-rule (check-esek who v)
+  (unless (esq? v) (raise-argument-error who "esek?" v)))
+(define-syntax-rule (check-psek who v)
+  (unless (psek? v) (raise-argument-error who "psek?" v)))
 
-(define (make-eseq [n 0] [v #f])
+(define (make-esek [n 0] [v #f])
   (define id (fresh-id!))
   (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 1 #f))
-  (for ([_ (in-range n)]) (eseq-add! e v))
+  (for ([_ (in-range n)]) (esek-add! e v))
   e)
 
-(define (eseq . xs)
-  (list->eseq xs))
+(define (esek . xs)
+  (list->esek xs))
 
 ;; ------------------------------------------------------- iterator validity
 
@@ -150,8 +150,8 @@
 ;;
 ;; The field holds the version's magnitude, which starts at 1, and its sign
 ;; says whether a snapshot has left a fold for the next update to adopt (see
-;; `eseq-snapshot`): negative means it has.  Every update runs
-;; `eseq-invalidate-iterators!` before it looks at the structure, so that is
+;; `esek-snapshot`): negative means it has.  Every update runs
+;; `esek-invalidate-iterators!` before it looks at the structure, so that is
 ;; where the fold is adopted, and an update without one pays a sign test on the
 ;; value it has loaded anyway.  It advances the version whether or not any
 ;; iterator is live, and whether or not `check-iterator-validity?` is on, and
@@ -163,7 +163,7 @@
 ;; just past the size that the compiler inlines on its own; left as a call it
 ;; cost each push and pop about a nanosecond.
 (begin-encourage-inline
-  (define (eseq-invalidate-iterators! e)
+  (define (esek-invalidate-iterators! e)
     (define v (esq-version e))
     (if (unsafe-fx< v 0)
         (adopt-fold! e v)
@@ -183,15 +183,15 @@
 
 ;; Invalidate every iterator, and return a birth date for the one iterator
 ;; that is allowed to survive.
-(define (eseq-invalidate-iterators-except! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-invalidate-iterators-except! e)
+  (esek-invalidate-iterators! e)
   (esq-version e))
 
 ;; A birth date for a new iterator.
-(define (eseq-iterator-born! e)
+(define (esek-iterator-born! e)
   (unsafe-fxabs (esq-version e)))
 
-(define (eseq-iterator-valid? e birth)
+(define (esek-iterator-valid? e birth)
   (or (not (check-iterator-validity?))
       (unsafe-fx= birth (unsafe-fxabs (esq-version e)))))
 
@@ -207,29 +207,29 @@
 
 ;; Push both inner chunks into the middle sequence, so that the sequence is
 ;; exactly a front chunk, a middle sequence and a back chunk.
-(define (eseq-flush-inner! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-flush-inner! e)
+  (esek-invalidate-iterators! e)
   (set-esq-middle! e (middle-with-inner e (esq-id e)))
   (set-esq-iback! e empty-chunk)
   (set-esq-ifront! e empty-chunk))
 
 ;; Every component weight is bounded by the length of the sequence, so these
 ;; sums are fixnum arithmetic.
-(define (eseq-length e)
-  (check-eseq 'eseq-length e)
+(define (esek-length e)
+  (check-esek 'esek-length e)
   (unsafe-fx+
    (unsafe-fx+ (chunk-weight (esq-front e)) (chunk-weight (esq-ifront e)))
    (unsafe-fx+ (pt-weight (esq-middle e))
                (unsafe-fx+ (chunk-weight (esq-iback e))
                            (chunk-weight (esq-back e))))))
 
-(define (eseq-empty? e)
-  (check-eseq 'eseq-empty? e)
-  (eqv? 0 (eseq-length e)))
+(define (esek-empty? e)
+  (check-esek 'esek-empty? e)
+  (eqv? 0 (esek-length e)))
 
-(define (eseq-clear! e)
-  (check-eseq 'eseq-clear! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-clear! e)
+  (check-esek 'esek-clear! e)
+  (esek-invalidate-iterators! e)
   (set-esq-id! e (fresh-id!))
   (set-esq-front! e empty-chunk)
   (set-esq-ifront! e empty-chunk)
@@ -239,9 +239,9 @@
 
 ;; --------------------------------------------------------------------- push
 
-(define (eseq-cons! e x)
-  (check-eseq 'eseq-cons! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-cons! e x)
+  (check-esek 'esek-cons! e)
+  (esek-invalidate-iterators! e)
   (define id (esq-id e))
   (define f (esq-front e))
   (cond
@@ -259,9 +259,9 @@
      (set-esq-ifront! e f)
      (set-esq-front! e (chunk-singleton x 1 (capacity-at 0) id))]))
 
-(define (eseq-add! e x)
-  (check-eseq 'eseq-add! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-add! e x)
+  (check-esek 'esek-add! e)
+  (esek-invalidate-iterators! e)
   (define id (esq-id e))
   (define b (esq-back e))
   (cond
@@ -278,9 +278,9 @@
 
 ;; ---------------------------------------------------------------------- pop
 
-(define (eseq-pop-front! e)
-  (check-eseq 'eseq-pop-front! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-pop-front! e)
+  (check-esek 'esek-pop-front! e)
+  (esek-invalidate-iterators! e)
   (define id (esq-id e))
   (define f (esq-front e))
   (cond
@@ -292,7 +292,7 @@
     [(not (chunk-empty? (esq-ifront e)))
      (set-esq-front! e (esq-ifront e))
      (set-esq-ifront! e empty-chunk)
-     (eseq-pop-front! e)]
+     (esek-pop-front! e)]
     ;; the tree that was tested is the one popped: a racing writer could empty
     ;; the field between two reads, and the tree accessors take no #f
     [(esq-middle e)
@@ -304,20 +304,20 @@
           (when (chunk-empty? c) (inconsistent-structure))
           (set-esq-middle! e m)
           (set-esq-front! e c)
-          (eseq-pop-front! e))]
+          (esek-pop-front! e))]
     [(not (chunk-empty? (esq-iback e)))
      (set-esq-front! e (esq-iback e))
      (set-esq-iback! e empty-chunk)
-     (eseq-pop-front! e)]
+     (esek-pop-front! e)]
     [(not (chunk-empty? (esq-back e)))
      (define-values (x b*) (chunk-pop-front (esq-back e) unit-measure id))
      (set-esq-back! e b*)
      x]
-    [else (raise-arguments-error 'eseq-pop-front! "sequence is empty")]))
+    [else (raise-arguments-error 'esek-pop-front! "sequence is empty")]))
 
-(define (eseq-pop-back! e)
-  (check-eseq 'eseq-pop-back! e)
-  (eseq-invalidate-iterators! e)
+(define (esek-pop-back! e)
+  (check-esek 'esek-pop-back! e)
+  (esek-invalidate-iterators! e)
   (define id (esq-id e))
   (define b (esq-back e))
   (cond
@@ -328,29 +328,29 @@
     [(not (chunk-empty? (esq-iback e)))
      (set-esq-back! e (esq-iback e))
      (set-esq-iback! e empty-chunk)
-     (eseq-pop-back! e)]
-    ;; as in eseq-pop-front!
+     (esek-pop-back! e)]
+    ;; as in esek-pop-front!
     [(esq-middle e)
      => (lambda (t)
           (define-values (c m) (pt-pop-back t 1 id))
           (when (chunk-empty? c) (inconsistent-structure))
           (set-esq-middle! e m)
           (set-esq-back! e c)
-          (eseq-pop-back! e))]
+          (esek-pop-back! e))]
     [(not (chunk-empty? (esq-ifront e)))
      (set-esq-back! e (esq-ifront e))
      (set-esq-ifront! e empty-chunk)
-     (eseq-pop-back! e)]
+     (esek-pop-back! e)]
     [(not (chunk-empty? (esq-front e)))
      (define-values (x f*) (chunk-pop-back (esq-front e) unit-measure id))
      (set-esq-front! e f*)
      x]
-    [else (raise-arguments-error 'eseq-pop-back! "sequence is empty")]))
+    [else (raise-arguments-error 'esek-pop-back! "sequence is empty")]))
 
 ;; ----------------------------------------------------------------- get/set
 
 ;; Locate atomic index i among the five components of the sequence.
-(define (eseq-locate e i who)
+(define (esek-locate e i who)
   (define nf (chunk-weight (esq-front e)))
   (define ni (chunk-weight (esq-ifront e)))
   (define nm (pt-weight (esq-middle e)))
@@ -366,16 +366,16 @@
     [(unsafe-fx< i (unsafe-fx+ (unsafe-fx+ nf ni) (unsafe-fx+ nm (unsafe-fx+ nj nb))))
      (values 'back (unsafe-fx- (unsafe-fx- (unsafe-fx- (unsafe-fx- i nf) ni) nm) nj))]
     [else (raise-arguments-error who "index out of range"
-                                 "index" i "length" (eseq-length e))]))
+                                 "index" i "length" (esek-length e))]))
 
-;; The middle sequence, where `eseq-locate` has just found the index.  Only a
+;; The middle sequence, where `esek-locate` has just found the index.  Only a
 ;; data race can have emptied the field since, but the tree accessors take no
 ;; #f, so read it once and test what was read.
 (define (located-middle e)
   (or (esq-middle e) (inconsistent-structure)))
 
 ;; The index guard on the operations below is `fixnum?` and not the wider
-;; `exact-nonnegative-integer?`, because `eseq-locate` indexes with `unsafe-fx`
+;; `exact-nonnegative-integer?`, because `esek-locate` indexes with `unsafe-fx`
 ;; operations and those are undefined on a bignum.  Nothing is given up: a
 ;; length is a fixnum, so a bignum index is out of range by definition.
 ;;
@@ -385,13 +385,13 @@
   (unless (exact-nonnegative-integer? i)
     (raise-argument-error who "exact-nonnegative-integer?" i))
   (raise-arguments-error who "index out of range"
-                         "index" i "length" (eseq-length e)))
+                         "index" i "length" (esek-length e)))
 
-(define (eseq-ref e i)
-  (check-eseq 'eseq-ref e)
+(define (esek-ref e i)
+  (check-esek 'esek-ref e)
   (unless (and (fixnum? i) (unsafe-fx>= i 0))
-    (bad-index 'eseq-ref e i))
-  (define-values (where j) (eseq-locate e i 'eseq-ref))
+    (bad-index 'esek-ref e i))
+  (define-values (where j) (esek-locate e i 'esek-ref))
   (case where
     [(front) (chunk-ref (esq-front e) j)]
     [(ifront) (chunk-ref (esq-ifront e) j)]
@@ -399,15 +399,15 @@
     [(iback) (chunk-ref (esq-iback e) j)]
     [else (chunk-ref (esq-back e) j)]))
 
-(define (eseq-set! e i x)
-  (check-eseq 'eseq-set! e)
+(define (esek-set! e i x)
+  (check-esek 'esek-set! e)
   (unless (and (fixnum? i) (unsafe-fx>= i 0))
-    (bad-index 'eseq-set! e i))
+    (bad-index 'esek-set! e i))
   ;; a set may replace a shared chunk with a private copy, so any iterator
   ;; holding on to the old chunk has to go
-  (eseq-invalidate-iterators! e)
+  (esek-invalidate-iterators! e)
   (define id (esq-id e))
-  (define-values (where j) (eseq-locate e i 'eseq-set!))
+  (define-values (where j) (esek-locate e i 'esek-set!))
   (case where
     [(front) (set-esq-front! e (chunk-set (esq-front e) j x 1 1 id))]
     [(ifront) (set-esq-ifront! e (chunk-set (esq-ifront e) j x 1 1 id))]
@@ -419,10 +419,10 @@
 ;; into its data vector directly.  The middle sequence is handled by writing
 ;; the element back through pt-set, which copies the spine; only the end chunks
 ;; are on the hot path for iterators.
-(define (eseq-own-at! e i)
-  (eseq-invalidate-iterators! e)
+(define (esek-own-at! e i)
+  (esek-invalidate-iterators! e)
   (define id (esq-id e))
-  (define-values (where j) (eseq-locate e i 'eseq-own-at!))
+  (define-values (where j) (esek-locate e i 'esek-own-at!))
   (case where
     [(front) (set-esq-front! e (chunk-own (esq-front e) id))]
     [(ifront) (set-esq-ifront! e (chunk-own (esq-ifront e) id))]
@@ -430,17 +430,17 @@
     [(iback) (set-esq-iback! e (chunk-own (esq-iback e) id))]
     [else (set-esq-back! e (chunk-own (esq-back e) id))]))
 
-(define (eseq-first e)
-  (check-eseq 'eseq-first e)
-  (when (eseq-empty? e)
-    (raise-arguments-error 'eseq-first "sequence is empty"))
-  (eseq-ref e 0))
+(define (esek-first e)
+  (check-esek 'esek-first e)
+  (when (esek-empty? e)
+    (raise-arguments-error 'esek-first "sequence is empty"))
+  (esek-ref e 0))
 
-(define (eseq-last e)
-  (check-eseq 'eseq-last e)
-  (when (eseq-empty? e)
-    (raise-arguments-error 'eseq-last "sequence is empty"))
-  (eseq-ref e (sub1 (eseq-length e))))
+(define (esek-last e)
+  (check-esek 'esek-last e)
+  (when (esek-empty? e)
+    (raise-arguments-error 'esek-last "sequence is empty"))
+  (esek-ref e (sub1 (esek-length e))))
 
 ;; --------------------------------------------------------------- conversions
 
@@ -456,7 +456,7 @@
 ;; path.
 ;;
 ;; The copy is left in `folded`, and the version made negative, so that the
-;; next update adopts it (see `eseq-invalidate-iterators!`); until then, a
+;; next update adopts it (see `esek-invalidate-iterators!`); until then, a
 ;; further snapshot reuses it.  Without that, a sequence snapshotted after
 ;; every few updates would fold the same inner chunks again each time.  The
 ;; fields written -- the id, `folded` and the sign of the version -- are ones
@@ -464,8 +464,8 @@
 ;; Two snapshots taken at once may each make a fold; either will do.  A
 ;; snapshot that sees the version negative but `folded` not yet set, as one
 ;; racing another may, folds for itself.
-(define (eseq-snapshot e)
-  (check-eseq 'eseq-snapshot e)
+(define (esek-snapshot e)
+  (check-esek 'esek-snapshot e)
   (set-esq-id! e (fresh-id!))
   (define v (esq-version e))
   (define m
@@ -479,31 +479,31 @@
        (jitter!)
        (set-esq-version! e (unsafe-fx- 0 (unsafe-fxabs v)))
        m]))
-  (pseq-of-tree (pt-populate-sides (esq-front e) m (esq-back e) 0 no-owner)))
+  (psek-of-tree (pt-populate-sides (esq-front e) m (esq-back e) 0 no-owner)))
 
 ;; Take the snapshot and empty the sequence.  This avoids leaving the two
 ;; structures sharing chunks, so later updates to the sequence never pay for
 ;; copy-on-write; it is the cheaper operation when the old contents are not
 ;; needed.  Being an update, it may move the inner chunks in place, while the
 ;; sequence still owns them.
-(define (eseq-snapshot-and-clear! e)
-  (check-eseq 'eseq-snapshot-and-clear! e)
-  (eseq-flush-inner! e)
+(define (esek-snapshot-and-clear! e)
+  (check-esek 'esek-snapshot-and-clear! e)
+  (esek-flush-inner! e)
   (set-esq-id! e (fresh-id!))
   (define s
-    (pseq-of-tree
+    (psek-of-tree
      (pt-populate-sides (esq-front e) (esq-middle e) (esq-back e) 0 no-owner)))
-  (eseq-clear! e)
+  (esek-clear! e)
   s)
 
 ;; edit (§2.1): a fresh ephemeral sequence over the same immutable structure.
-(define (pseq-edit s)
-  (check-pseq 'pseq-edit s)
+(define (psek-edit s)
+  (check-psek 'psek-edit s)
   (define id (fresh-id!))
   (define k (capacity-at 0))
-  (define r (pseq-rep s))
+  (define r (psek-rep s))
   (cond
-    [(not r) (make-eseq)]
+    [(not r) (make-esek)]
     [(vector? r)
      (esq id (chunk-of-vector r k unit-measure id) empty-chunk #f empty-chunk
           empty-chunk 1 #f)]
@@ -514,8 +514,8 @@
 ;; both structures with their own chunks.  Mode 'share leaves the copy sharing
 ;; chunks with e, which is O(1) now and pays for itself later only if neither
 ;; sequence is updated much -- and e loses ownership of its chunks as well.
-(define (eseq-copy e #:mode [mode 'copy])
-  (check-eseq 'eseq-copy e)
+(define (esek-copy e #:mode [mode 'copy])
+  (check-esek 'esek-copy e)
   (case mode
     [(share)
      ;; Hand both sequences a fresh identity and let them share everything.
@@ -527,12 +527,12 @@
      (set-esq-id! e (fresh-id!))
      (esq (fresh-id!) (esq-front e) (esq-ifront e) (esq-middle e)
           (esq-iback e) (esq-back e) 1 #f)]
-    [(copy) (list->eseq (eseq->list e))]
-    [else (raise-argument-error 'eseq-copy "(or/c 'share 'copy)" mode)]))
+    [(copy) (list->esek (esek->list e))]
+    [else (raise-argument-error 'esek-copy "(or/c 'share 'copy)" mode)]))
 
-(define (eseq-become! e s)
-  (define e* (pseq-edit s))
-  (eseq-invalidate-iterators! e)
+(define (esek-become! e s)
+  (define e* (psek-edit s))
+  (esek-invalidate-iterators! e)
   (set-esq-id! e (esq-id e*))
   (set-esq-front! e (esq-front e*))
   (set-esq-ifront! e (esq-ifront e*))
@@ -542,67 +542,67 @@
   (void))
 
 ;; Move the contents of e2 into e1 and empty e2.
-(define (eseq-assign! e1 e2)
-  (check-eseq 'eseq-assign! e1)
-  (check-eseq 'eseq-assign! e2)
+(define (esek-assign! e1 e2)
+  (check-esek 'esek-assign! e1)
+  (check-esek 'esek-assign! e2)
   (unless (eq? e1 e2)
-    (eseq-become! e1 (eseq-snapshot e2))
-    (eseq-clear! e2))
+    (esek-become! e1 (esek-snapshot e2))
+    (esek-clear! e2))
   (void))
 
 ;; Append the contents of `other` to `e` at the given end.  As in the OCaml
 ;; library, an ephemeral `other` is emptied: handing over its representation
 ;; rather than sharing it is what keeps later updates to either sequence out
 ;; of the copy-on-write path.  A persistent `other` is of course untouched.
-(define (eseq-append! e other [side 'back])
-  (check-eseq 'eseq-append! e)
-  (unless (or (esq? other) (pseq? other))
-    (raise-argument-error 'eseq-append! "(or/c eseq? pseq?)" other))
+(define (esek-append! e other [side 'back])
+  (check-esek 'esek-append! e)
+  (unless (or (esq? other) (psek? other))
+    (raise-argument-error 'esek-append! "(or/c esek? psek?)" other))
   (when (eq? e other)
-    (raise-arguments-error 'eseq-append! "the two sequences must be distinct"))
-  (define o (if (esq? other) (eseq-snapshot-and-clear! other) other))
-  (define self (eseq-snapshot-and-clear! e))
-  (eseq-become! e (if (eq? side 'front) (pseq-append o self) (pseq-append self o))))
+    (raise-arguments-error 'esek-append! "the two sequences must be distinct"))
+  (define o (if (esq? other) (esek-snapshot-and-clear! other) other))
+  (define self (esek-snapshot-and-clear! e))
+  (esek-become! e (if (eq? side 'front) (psek-append o self) (psek-append self o))))
 
 ;; The concatenation of e1 and e2, as a new sequence; both are emptied.
-(define (eseq-concat! e1 e2)
-  (check-eseq 'eseq-concat! e1)
-  (check-eseq 'eseq-concat! e2)
+(define (esek-concat! e1 e2)
+  (check-esek 'esek-concat! e1)
+  (check-esek 'esek-concat! e2)
   (when (eq? e1 e2)
-    (raise-arguments-error 'eseq-concat! "the two sequences must be distinct"))
-  (pseq-edit (pseq-append (eseq-snapshot-and-clear! e1)
-                          (eseq-snapshot-and-clear! e2))))
+    (raise-arguments-error 'esek-concat! "the two sequences must be distinct"))
+  (psek-edit (psek-append (esek-snapshot-and-clear! e1)
+                          (esek-snapshot-and-clear! e2))))
 
 ;; Split e at index i into two new sequences; e is emptied.
-(define (eseq-split! e i)
-  (check-eseq 'eseq-split! e)
-  (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
-  (values (pseq-edit s1) (pseq-edit s2)))
+(define (esek-split! e i)
+  (check-esek 'esek-split! e)
+  (define-values (s1 s2) (psek-split (esek-snapshot-and-clear! e) i))
+  (values (psek-edit s1) (psek-edit s2)))
 
 ;; Split e at index i, keeping one part in e and returning the other:
 ;; 'back keeps the front part, 'front keeps the back part.
-(define (eseq-carve! e i [side 'back])
-  (check-eseq 'eseq-carve! e)
-  (define-values (s1 s2) (pseq-split (eseq-snapshot-and-clear! e) i))
+(define (esek-carve! e i [side 'back])
+  (check-esek 'esek-carve! e)
+  (define-values (s1 s2) (psek-split (esek-snapshot-and-clear! e) i))
   (cond
-    [(eq? side 'back) (eseq-become! e s1) (pseq-edit s2)]
-    [else (eseq-become! e s2) (pseq-edit s1)]))
+    [(eq? side 'back) (esek-become! e s1) (psek-edit s2)]
+    [else (esek-become! e s2) (psek-edit s1)]))
 
 ;; Truncate e at index i, keeping the front part ('front) or the back part
 ;; ('back).
-;; Only one side is kept, so only one side is built -- pseq-take and pseq-drop
+;; Only one side is kept, so only one side is built -- psek-take and psek-drop
 ;; are the specialized splits.
-(define (eseq-take! e i [side 'front])
-  (check-eseq 'eseq-take! e)
-  (define s (eseq-snapshot-and-clear! e))
-  (eseq-become! e (if (eq? side 'front) (pseq-take s i) (pseq-drop s i))))
+(define (esek-take! e i [side 'front])
+  (check-esek 'esek-take! e)
+  (define s (esek-snapshot-and-clear! e))
+  (esek-become! e (if (eq? side 'front) (psek-take s i) (psek-drop s i))))
 
-(define (eseq-drop! e i [side 'front])
-  (check-eseq 'eseq-drop! e)
-  (eseq-take! e i (if (eq? side 'front) 'back 'front)))
+(define (esek-drop! e i [side 'front])
+  (check-esek 'esek-drop! e)
+  (esek-take! e i (if (eq? side 'front) 'back 'front)))
 
-(define (eseq-for-each e proc)
-  (check-eseq 'eseq-for-each e)
+(define (esek-for-each e proc)
+  (check-esek 'esek-for-each e)
   (define (chunk-elems c)
     (for ([j (in-fx-range (chunk-length c))])
       (proc (chunk-ref c j))))
@@ -612,17 +612,17 @@
   (chunk-elems (esq-iback e))
   (chunk-elems (esq-back e)))
 
-(define (eseq->list e)
-  (check-eseq 'eseq->list e)
+(define (esek->list e)
+  (check-esek 'esek->list e)
   (define acc '())
-  (eseq-for-each e (lambda (x) (set! acc (cons x acc))))
+  (esek-for-each e (lambda (x) (set! acc (cons x acc))))
   (reverse acc))
 
-(define (eseq->vector e)
-  (check-eseq 'eseq->vector e)
-  (define v (make-vector (eseq-length e) #f))
+(define (esek->vector e)
+  (check-esek 'esek->vector e)
+  (define v (make-vector (esek-length e) #f))
   (define i 0)
-  (eseq-for-each e
+  (esek-for-each e
                  (lambda (x)
                    (vector-set! v i x)
                    (set! i (add1 i))))
@@ -630,7 +630,7 @@
 
 ;; Streaming traversal.  As with any iterator over a mutable structure, the
 ;; result must not be used across an update to e.
-(define (in-eseq e)
+(define (in-esek e)
   (reader->sequence
    (lambda ()
      (make-reader (list (cons (esq-front e) 0)
@@ -640,21 +640,21 @@
                         (cons (esq-back e) 0))))))
 
 (module+ deserialize
-  (provide deserialize-eseq)
-  (define deserialize-eseq
-    (make-deserialize-info (lambda (v) (list->eseq (vector->list v)))
-                           (lambda () (error 'deserialize-eseq "cycles not supported")))))
+  (provide deserialize-esek)
+  (define deserialize-esek
+    (make-deserialize-info (lambda (v) (list->esek (vector->list v)))
+                           (lambda () (error 'deserialize-esek "cycles not supported")))))
 
-(define (list->eseq xs)
-  (define e (make-eseq))
+(define (list->esek xs)
+  (define e (make-esek))
   (for ([x (in-list xs)])
-    (eseq-add! e x))
+    (esek-add! e x))
   e)
 
 ;; The push names are what the paper and the OCaml library call these, and are
 ;; kept so that code written against either goes on working.
-(define eseq-push-front! eseq-cons!)
-(define eseq-push-back! eseq-add!)
+(define esek-push-front! esek-cons!)
+(define esek-push-back! esek-add!)
 
 ;; For tests that store wrong values in the structure on purpose, as a race can
 ;; (sek-test/tests/sek/iterator-tests.rkt and aufheben/torn.rkt).

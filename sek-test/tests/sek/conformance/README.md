@@ -53,28 +53,28 @@ both `Ephemeral.map` and `Persistent.map`.
 
 | OCaml | this library |
 | --- | --- |
-| `create d` / `make d n v` / `init d n f` | `make-eseq`, `(make-eseq n v)`, `build-eseq`; `empty-pseq`, `make-pseq`, `build-pseq` |
+| `create d` / `make d n v` / `init d n f` | `make-esek`, `(make-esek n v)`, `build-esek`; `empty-psek`, `make-psek`, `build-psek` |
 | `default s` | — (no default value; see below) |
-| `length` / `is_empty` | `sek-length`, `eseq-length`, `pseq-length` / `sek-empty?` … |
-| `clear` | `eseq-clear!` |
-| `copy ~mode` | `eseq-copy #:mode` |
-| `assign` | `eseq-assign!` |
-| `push side` | `eseq-push-front!` / `eseq-push-back!`, `pseq-push-front` / `pseq-push-back` |
-| `pop side` / `pop_opt` | `eseq-pop-front!` … / guard with `sek-empty?` |
-| `peek side` / `peek_opt` | `eseq-first` / `eseq-last`, `pseq-first` / `pseq-last` / guard with `sek-empty?` |
-| `get` / `set` | `sek-ref`, `eseq-set!`, `pseq-set` |
-| `concat` | `eseq-concat!`, `pseq-append` |
-| `append side` | `eseq-append!` |
-| `split` | `eseq-split!`, `pseq-split` |
-| `carve side` | `eseq-carve!` |
-| `take side` / `drop side` | `eseq-take!` / `eseq-drop!` (in place); `sek-take` / `sek-drop` (functional) |
+| `length` / `is_empty` | `sek-length`, `esek-length`, `psek-length` / `sek-empty?` … |
+| `clear` | `esek-clear!` |
+| `copy ~mode` | `esek-copy #:mode` |
+| `assign` | `esek-assign!` |
+| `push side` | `esek-push-front!` / `esek-push-back!`, `psek-push-front` / `psek-push-back` |
+| `pop side` / `pop_opt` | `esek-pop-front!` … / guard with `sek-empty?` |
+| `peek side` / `peek_opt` | `esek-first` / `esek-last`, `psek-first` / `psek-last` / guard with `sek-empty?` |
+| `get` / `set` | `sek-ref`, `esek-set!`, `psek-set` |
+| `concat` | `esek-concat!`, `psek-append` |
+| `append side` | `esek-append!` |
+| `split` | `esek-split!`, `psek-split` |
+| `carve side` | `esek-carve!` |
+| `take side` / `drop side` | `esek-take!` / `esek-drop!` (in place); `sek-take` / `sek-drop` (functional) |
 | `sub` | `sek-sub` |
 | `iter dir` / `iteri dir` | `sek-for-each` / `sek-for-each/index` |
 | `iter_segments dir` | `sek-segments-for-each` |
 | `fold_left` / `fold_right` | `sek-fold-left` / `sek-fold-right` |
 | `to_list` / `to_array` / `to_seq dir` | `sek->list` / `sek->vector` / `in-sek` |
-| `of_list` / `of_array` / `of_seq` | `list->pseq`, `list->eseq`, `vector->pseq`, `sequence->pseq`, `sequence->eseq` |
-| `of_list_segment` / `of_array_segment` / `of_seq_segment` | `(sequence->pseq s n)`, `(sequence->eseq s n)` |
+| `of_list` / `of_array` / `of_seq` | `list->psek`, `list->esek`, `vector->psek`, `sequence->psek`, `sequence->esek` |
+| `of_list_segment` / `of_array_segment` / `of_seq_segment` | `(sequence->psek s n)`, `(sequence->esek s n)` |
 | `find dir` / `find_opt` / `find_map` | `sek-find` (returns `#f`), `sek-find-map`; `sek-find-index` when an element may be `#f` |
 | `for_all` / `exists` / `mem` / `memq` | `sek-for-all?` / `sek-exists?` / `sek-member?` / `sek-memq?` |
 | `map` / `mapi` / `rev` | `sek-map` / `sek-map/index` / `sek-reverse` |
@@ -87,8 +87,8 @@ both `Ephemeral.map` and `Persistent.map`.
 | `equal` / `compare` | `sek-equal?` / `sek-compare` |
 | `sort` / `stable_sort` / `uniq` / `merge` | `sek-sort` (stable) / `sek-uniq` / `sek-merge` |
 | `fill` / `blit` | `sek-fill!` / `sek-blit!` |
-| `format` / `check` | printed by `write`; `sek-validate-pseq` / `sek-validate-eseq` |
-| `snapshot` / `snapshot_and_clear` / `edit` | `eseq-snapshot` / `eseq-snapshot-and-clear!` / `pseq-edit` |
+| `format` / `check` | printed by `write`; `sek-validate-psek` / `sek-validate-esek` |
+| `snapshot` / `snapshot_and_clear` / `edit` | `esek-snapshot` / `esek-snapshot-and-clear!` / `psek-edit` |
 | `front` / `back` / `forward` / `backward` | the symbols `'front` `'back` `'forward` `'backward` |
 
 ### Iterators
@@ -118,9 +118,9 @@ both `Ephemeral.map` and `Persistent.map`.
 * **`sek-sub` on a persistent sequence always shares.** The OCaml version
   copies a slice of at most T elements and shares a longer one; splitting is
   faster here at every size, from 16 elements (0.002 ms against 0.003) to half
-  a million (0.002 ms against 2.1), and `pseq-take` normalizes a short result
+  a million (0.002 ms against 2.1), and `psek-take` normalizes a short result
   into the compact vector anyway. Same result either way.
-* **`pseq-edit` and `eseq-snapshot` do not copy the front and back chunks**,
+* **`psek-edit` and `esek-snapshot` do not copy the front and back chunks**,
   where the OCaml versions do. Observationally identical, and measurably
   better: a loop that snapshots after every push runs ten times faster this
   way (see `bench/README.md`), because the next push usually extends a chunk

@@ -88,49 +88,49 @@
 ;; A destructive operation needs an instance of its own.  For a persistent
 ;; structure this is free; for an ephemeral one the copy is charged to the
 ;; measurement, which is the honest way round -- it is what using a mutable
-;; structure in a persistent way actually costs.  `eseq-copy` is O(1), so for
+;; structure in a persistent way actually costs.  `esek-copy` is O(1), so for
 ;; sek it is nearly free; `mutable-treelist-copy` is about 0.5 ns per element
 ;; and a gvector's is about 1.4.
 (define (fresh-of i s) ((impl-fresh i) s))
 
-(define eseq-impl
-  (mk "eseq" 'ephemeral
-      #:empty (lambda (_) (make-eseq))
-      #:build list->eseq
-      #:construct build-eseq
-      #:push-back (lambda (s x) (eseq-push-back! s x) s)
-      #:push-front (lambda (s x) (eseq-push-front! s x) s)
-      #:pop-back (lambda (s) (eseq-pop-back! s) s)
-      #:pop-front (lambda (s) (eseq-pop-front! s) s)
-      #:ref eseq-ref
-      #:set (lambda (s i v) (eseq-set! s i v) s)
-      #:len eseq-length
-      #:append (lambda (a b) (eseq-append! a b) a)
-      #:split (lambda (s i) (eseq-split! s i))
-      ;; eseq-take! keeps one side in place, which is the ephemeral spelling of
-      ;; immer's take_mut; eseq-split! would build both halves
-      #:take (lambda (s i) (eseq-take! s i 'front) s)
-      #:drop (lambda (s i) (eseq-take! s i 'back) s)
+(define esek-impl
+  (mk "esek" 'ephemeral
+      #:empty (lambda (_) (make-esek))
+      #:build list->esek
+      #:construct build-esek
+      #:push-back (lambda (s x) (esek-push-back! s x) s)
+      #:push-front (lambda (s x) (esek-push-front! s x) s)
+      #:pop-back (lambda (s) (esek-pop-back! s) s)
+      #:pop-front (lambda (s) (esek-pop-front! s) s)
+      #:ref esek-ref
+      #:set (lambda (s i v) (esek-set! s i v) s)
+      #:len esek-length
+      #:append (lambda (a b) (esek-append! a b) a)
+      #:split (lambda (s i) (esek-split! s i))
+      ;; esek-take! keeps one side in place, which is the ephemeral spelling of
+      ;; immer's take_mut; esek-split! would build both halves
+      #:take (lambda (s i) (esek-take! s i 'front) s)
+      #:drop (lambda (s i) (esek-take! s i 'back) s)
       #:for-each (lambda (s f) (sek-for-each s f))
       #:filter sek-filter
       #:map sek-map
-      #:snapshot eseq-snapshot
-      #:fresh eseq-copy))
+      #:snapshot esek-snapshot
+      #:fresh esek-copy))
 
-(define pseq-impl
-  (mk "pseq" 'persistent
-      #:empty (lambda (_) empty-pseq)
-      #:build list->pseq
-      #:construct build-pseq
-      #:push-back pseq-push-back
-      #:push-front pseq-push-front
-      #:pop-back (lambda (s) (let-values ([(x s*) (pseq-pop-back s)]) s*))
-      #:pop-front (lambda (s) (let-values ([(x s*) (pseq-pop-front s)]) s*))
-      #:ref pseq-ref
-      #:set pseq-set
-      #:len pseq-length
-      #:append pseq-append
-      #:split pseq-split
+(define psek-impl
+  (mk "psek" 'persistent
+      #:empty (lambda (_) empty-psek)
+      #:build list->psek
+      #:construct build-psek
+      #:push-back psek-push-back
+      #:push-front psek-push-front
+      #:pop-back (lambda (s) (let-values ([(x s*) (psek-pop-back s)]) s*))
+      #:pop-front (lambda (s) (let-values ([(x s*) (psek-pop-front s)]) s*))
+      #:ref psek-ref
+      #:set psek-set
+      #:len psek-length
+      #:append psek-append
+      #:split psek-split
       #:take sek-take
       #:drop sek-drop
       #:for-each (lambda (s f) (sek-for-each s f))
@@ -463,7 +463,7 @@
       #:linear '(push-front pop-front append split)))
 
 (define all-impls
-  (list eseq-impl pseq-impl treelist-impl mtreelist-impl gvector-impl
+  (list esek-impl psek-impl treelist-impl mtreelist-impl gvector-impl
         list-impl boxlist-impl array-impl))
 
 ;; ------------------------------------------------------------------ harness
@@ -780,13 +780,13 @@
                      (measure n (lambda () (fe s (lambda (x) (set! acc (+ acc x)))))))))))
     ;; the two ways sek can be swept, to show what segments buy
     (list
-     (cons "  pseq via fold"
+     (cons "  psek via fold"
            (for/list ([n (in-list sizes)])
-             (define s (list->pseq (build-list n values)))
+             (define s (list->psek (build-list n values)))
              (measure n (lambda () (sek-fold-left s + 0)))))
-     (cons "  pseq via iter"
+     (cons "  psek via iter"
            (for/list ([n (in-list sizes)])
-             (define s (list->pseq (build-list n values)))
+             (define s (list->psek (build-list n values)))
              (measure n
                       (lambda ()
                         (define it (sek-iterator s 'forward))
@@ -862,9 +862,9 @@
              (define v (build-vector n values))
              (measure k (lambda () (for/fold ([acc 0]) ([j (in-vector ix)]) (+ acc (vector-ref v j)))))))
      ;; an iterator remembers where it is, so a short hop stays in one chunk
-     (cons "pseq iterator"
+     (cons "psek iterator"
            (for/list ([ix (in-list ixs)])
-             (define s (list->pseq (build-list n values)))
+             (define s (list->psek (build-list n values)))
              (define it (sek-iterator s 'forward))
              (measure k
                       (lambda ()
@@ -953,8 +953,8 @@
    "split: split at a random index, ns per split"
    sizes
    (append
-    ;; eseq-split! consumes the sequence, so the ephemeral rows split a fresh
-    ;; copy -- O(1) for an eseq, a walk for the others.
+    ;; esek-split! consumes the sequence, so the ephemeral rows split a fresh
+    ;; copy -- O(1) for an esek, a walk for the others.
     (for/list ([i (in-list all-impls)])
       (cons (impl-name i)
             (for/list ([n (in-list sizes)])
@@ -988,13 +988,13 @@
    "snapshot: one change plus one snapshot of an n-element sequence, ns"
    sizes
    (list
-    (cons "eseq"
+    (cons "esek"
           (for/list ([n (in-list sizes)])
-            (define e (list->eseq (build-list n values)))
+            (define e (list->esek (build-list n values)))
             (define keep #f)
             (measure 1 (lambda ()
-                         (eseq-set! e 0 1)
-                         (set! keep (eseq-snapshot e))))))
+                         (esek-set! e 0 1)
+                         (set! keep (esek-snapshot e))))))
     (cons "mutable-treelist"
           (for/list ([n (in-list sizes)])
             (define t (list->mutable-treelist (build-list n values)))
@@ -1015,16 +1015,16 @@
    (format "snapshot: ~a pushes, keeping a snapshot every m of them, ns per push" n)
    (map (lambda (m) (format "m=~a" m)) periods)
    (list
-    (cons "eseq"
+    (cons "esek"
           (for/list ([m (in-list periods)])
             (measure n #:max-reps 8
                      (lambda ()
-                       (define e (make-eseq))
+                       (define e (make-esek))
                        (define keep '())
                        (for ([k (in-range n)])
-                         (eseq-push-back! e k)
+                         (esek-push-back! e k)
                          (when (zero? (modulo k m))
-                           (set! keep (cons (eseq-snapshot e) keep))))
+                           (set! keep (cons (esek-snapshot e) keep))))
                        keep))))
     (cons "mutable-treelist"
           (for/list ([m (in-list periods)])
@@ -1039,12 +1039,12 @@
                               (when (zero? (modulo k m))
                                 (set! keep (cons (mutable-treelist-snapshot e) keep))))
                             keep)))))
-    (cons "pseq (persistent)"
+    (cons "psek (persistent)"
           (for/list ([m (in-list periods)])
             (measure n #:max-reps 8
                      (lambda ()
-                       (for/fold ([s empty-pseq]) ([k (in-range n)])
-                         (pseq-push-back s k))))))
+                       (for/fold ([s empty-psek]) ([k (in-range n)])
+                         (psek-push-back s k))))))
     (cons "treelist (persistent)"
           (for/list ([m (in-list periods)])
             (measure n #:max-reps 8
@@ -1060,14 +1060,14 @@
    (format "fill: overwrite k consecutive elements of ~a, ns per element" n)
    sizes
    (list
-    (cons "eseq (eseq-fill!)"
+    (cons "esek (esek-fill!)"
           (for/list ([k (in-list sizes)])
-            (define e (list->eseq (build-list n values)))
-            (measure k (lambda () (eseq-fill! e 0 0 k)))))
-    (cons "eseq (set! loop)"
+            (define e (list->esek (build-list n values)))
+            (measure k (lambda () (esek-fill! e 0 0 k)))))
+    (cons "esek (set! loop)"
           (for/list ([k (in-list sizes)])
-            (define e (list->eseq (build-list n values)))
-            (measure k (lambda () (for ([j (in-range k)]) (eseq-set! e j 0))))))
+            (define e (list->esek (build-list n values)))
+            (measure k (lambda () (for ([j (in-range k)]) (esek-set! e j 0))))))
     (cons "mutable-treelist"
           (for/list ([k (in-list sizes)])
             (define t (list->mutable-treelist (build-list n values)))
@@ -1087,10 +1087,10 @@
             (measure k (lambda () (for ([j (in-range k)]) (vector-set! v j 0))))))
     ;; A persistent sequence has no in-place fill; the same range written one
     ;; persistent set at a time is what it costs instead.
-    (cons "pseq (persistent)"
+    (cons "psek (persistent)"
           (for/list ([k (in-list sizes)])
-            (define s (build-pseq n values))
-            (measure k (lambda () (for/fold ([s s]) ([j (in-range k)]) (pseq-set s j 0))))))
+            (define s (build-psek n values))
+            (measure k (lambda () (for/fold ([s s]) ([j (in-range k)]) (psek-set s j 0))))))
     (cons "treelist (persistent)"
           (for/list ([k (in-list sizes)])
             (define t (sequence->treelist (in-range n)))
@@ -1119,36 +1119,36 @@
    (format "capacities over ~a elements: leaf/node capacity, ns per operation" n)
    (map (lambda (c) (format "~a/~a" (car c) (cdr c))) configs)
    (list
-    (cons "pseq-ref"
+    (cons "psek-ref"
           (for/list ([c (in-list configs)])
             (with-config c
               (lambda ()
-                (define s (build-pseq n values))
+                (define s (build-psek n values))
                 (measure k (lambda ()
                              (for/fold ([acc 0]) ([j (in-vector ix)])
-                               (+ acc (pseq-ref s j)))))))))
-    (cons "pseq-set"
+                               (+ acc (psek-ref s j)))))))))
+    (cons "psek-set"
           (for/list ([c (in-list configs)])
             (with-config c
               (lambda ()
-                (define s0 (build-pseq n values))
+                (define s0 (build-psek n values))
                 (measure k (lambda ()
                              (for/fold ([s s0]) ([j (in-vector ix)])
-                               (pseq-set s j 0))))))))
-    (cons "eseq push/pop"
+                               (psek-set s j 0))))))))
+    (cons "esek push/pop"
           (for/list ([c (in-list configs)])
             (with-config c
               (lambda ()
                 (measure (* 2 n)
                          (lambda ()
-                           (define e (make-eseq))
-                           (for ([j (in-range n)]) (eseq-push-back! e j))
-                           (for ([_ (in-range n)]) (eseq-pop-back! e))))))))
+                           (define e (make-esek))
+                           (for ([j (in-range n)]) (esek-push-back! e j))
+                           (for ([_ (in-range n)]) (esek-pop-back! e))))))))
     (cons "traversal"
           (for/list ([c (in-list configs)])
             (with-config c
               (lambda ()
-                (define s (build-pseq n values))
+                (define s (build-psek n values))
                 (measure n (lambda () (sek-fold-left s + 0))))))))))
 
 (define-scenario transient
@@ -1156,7 +1156,7 @@
   (define n (big-n))
   (define counts '(1 10 1000 100000))
   (define ix (build-vector 100000 (lambda (_) (random n))))
-  (define p (build-pseq n values))
+  (define p (build-psek n values))
   (define tl (sequence->treelist (in-range n)))
   ;; Racket's treelist has the same pair of conversions: treelist-copy is its
   ;; edit, mutable-treelist-snapshot its snapshot.
@@ -1168,10 +1168,10 @@
           (for/list ([m (in-list counts)])
             (measure m #:max-reps 200
                      (lambda ()
-                       (define e (pseq-edit p))
+                       (define e (psek-edit p))
                        (for ([k (in-range m)])
-                         (eseq-set! e (vector-ref ix (modulo k 100000)) 0))
-                       (eseq-snapshot e)))))
+                         (esek-set! e (vector-ref ix (modulo k 100000)) 0))
+                       (esek-snapshot e)))))
     (cons "treelist copy/snapshot"
           (for/list ([m (in-list counts)])
             (measure m #:max-reps 200
@@ -1185,7 +1185,7 @@
             (measure m #:max-reps 200
                      (lambda ()
                        (for/fold ([s p]) ([k (in-range m)])
-                         (pseq-set s (vector-ref ix (modulo k 100000)) 0))))))
+                         (psek-set s (vector-ref ix (modulo k 100000)) 0))))))
     (cons "treelist persistent set"
           (for/list ([m (in-list counts)])
             (measure m #:max-reps 200
@@ -1221,13 +1221,13 @@
            (for/list ([n (in-list sizes)])
              (define v (build-vector n values))
              (measure n (lambda () (vector-filter keep? v)))))
-     (cons "  pseq via modulo"
+     (cons "  psek via modulo"
            (for/list ([n (in-list sizes)])
-             (define s (build-pseq n values))
+             (define s (build-psek n values))
              (measure n (lambda () (sek-filter s keep-generic?)))))
-     (cons "  eseq via modulo"
+     (cons "  esek via modulo"
            (for/list ([n (in-list sizes)])
-             (define s (build-eseq n values))
+             (define s (build-esek n values))
              (measure n (lambda () (sek-filter s keep-generic?)))))))))
 
 ;; The command line shared by main.rkt and external.rkt:

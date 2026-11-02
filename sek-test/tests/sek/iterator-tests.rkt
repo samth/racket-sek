@@ -6,7 +6,7 @@
          racket/list
          sek/config
          (only-in sek/chunk chunk-empty?)
-         (only-in sek/check check-eseq)
+         (only-in sek/check check-esek)
          sek/persistent
          sek/ephemeral
          (only-in (submod sek/ephemeral testing) esq-version set-esq-version! set-esq-folded!)
@@ -110,8 +110,8 @@
 (define (run-iterator-random-tests #:seed [seed 1] #:sizes [sizes '(0 1 2 5 17 60 300)])
   (for ([n (in-list sizes)])
     (define xs (build-list n (lambda (i) (list 'x i))))
-    (define p (list->pseq xs))
-    (define e (list->eseq xs))
+    (define p (list->psek xs))
+    (define e (list->esek xs))
     (check-traversals p xs)
     (check-traversals e xs)
     (random-cursor-walk p xs (+ seed n))
@@ -119,8 +119,8 @@
     ;; a sequence that has been split and rejoined has partially filled chunks,
     ;; which exercises the two-segments-per-chunk case
     (when (> n 3)
-      (define-values (a b) (pseq-split p (quotient n 3)))
-      (define q (pseq-append b a))
+      (define-values (a b) (psek-split p (quotient n 3)))
+      (define q (psek-append b a))
       (define ys (append (drop xs (quotient n 3)) (take xs (quotient n 3))))
       (check-traversals q ys)
       (random-cursor-walk q ys (+ seed n 2000)))))
@@ -135,25 +135,25 @@
   (sek-configure! #:leaf-capacity 128 #:node-capacity 16 #:short-threshold 32)
 
   ;; writing through an iterator
-  (define e (list->eseq (build-list 500 values)))
+  (define e (list->esek (build-list 500 values)))
   (define it (sek-iterator e 'forward))
   (for ([i (in-range 500)])
     (sek-iter-set! it (- i))
     (sek-iter-move! it 'forward))
-  (check-equal? (eseq->list e) (build-list 500 -))
+  (check-equal? (esek->list e) (build-list 500 -))
 
   ;; ... and the write must not disturb a snapshot taken beforehand
-  (define e2 (list->eseq (build-list 300 values)))
-  (define snap (eseq-snapshot e2))
+  (define e2 (list->esek (build-list 300 values)))
+  (define snap (esek-snapshot e2))
   (define it2 (sek-iterator e2 'forward))
   (for ([i (in-range 300)])
     (sek-iter-set! it2 'z)
     (sek-iter-move! it2 'forward))
-  (check-equal? (pseq->list snap) (build-list 300 values))
-  (check-equal? (eseq->list e2) (build-list 300 (lambda (_) 'z)))
+  (check-equal? (psek->list snap) (build-list 300 values))
+  (check-equal? (esek->list e2) (build-list 300 (lambda (_) 'z)))
 
   ;; writable segments
-  (define e3 (list->eseq (build-list 400 values)))
+  (define e3 (list->esek (build-list 400 values)))
   (let loop ([it (sek-iterator e3 'forward)])
     (unless (sek-iter-finished? it)
       (define sg (sek-iter-writable-segment it 'forward))
@@ -161,10 +161,10 @@
         (segment-set! sg i (* 2 (segment-ref sg i))))
       (sek-iter-jump! it 'forward (segment-length sg))
       (loop it)))
-  (check-equal? (eseq->list e3) (build-list 400 (lambda (i) (* 2 i))))
+  (check-equal? (esek->list e3) (build-list 400 (lambda (i) (* 2 i))))
 
   ;; the option-flavored operations return #f at a sentinel instead of raising
-  (define e7 (list->eseq '(1 2 3)))
+  (define e7 (list->esek '(1 2 3)))
   (define it8 (sek-iterator e7 'forward))
   (check-true (segment? (sek-iter-segment* it8 'forward)))
   (check-true (segment? (sek-iter-writable-segment* it8 'forward)))
@@ -176,25 +176,25 @@
   (check-false (sek-iter-get* it8))
 
   ;; set-and-move, and sweeping with writable segments
-  (define e8 (list->eseq (build-list 300 values)))
+  (define e8 (list->esek (build-list 300 values)))
   (let loop ([it (sek-iterator e8 'forward)])
     (unless (sek-iter-finished? it)
       (sek-iter-set-and-move! it (- (sek-iter-get it)) 'forward)
       (loop it)))
-  (check-equal? (eseq->list e8) (build-list 300 -))
+  (check-equal? (esek->list e8) (build-list 300 -))
   (let loop ([it (sek-iterator e8 'forward)])
     (define sg (sek-iter-writable-segment-and-jump*! it 'forward))
     (when sg
       (for ([i (in-range (segment-length sg))])
         (segment-set! sg i (abs (segment-ref sg i))))
       (loop it)))
-  (check-equal? (eseq->list e8) (build-list 300 values))
+  (check-equal? (esek->list e8) (build-list 300 values))
 
   ;; invalidation
-  (define e4 (list->eseq '(1 2 3)))
+  (define e4 (list->esek '(1 2 3)))
   (define it4 (sek-iterator e4 'forward))
   (check-equal? (sek-iter-get it4) 1)
-  (eseq-push-back! e4 4)
+  (esek-push-back! e4 4)
   (check-false (sek-iter-valid? it4))
   (check-exn exn:fail? (lambda () (sek-iter-get it4)))
   (sek-iter-reset! it4 'forward)
@@ -202,7 +202,7 @@
   (check-equal? (walk it4 'forward) '(1 2 3 4))
 
   ;; a persistent iterator is never invalidated
-  (define p5 (list->pseq '(1 2 3)))
+  (define p5 (list->psek '(1 2 3)))
   (define it5 (sek-iterator p5 'forward))
   (check-true (sek-iter-valid? it5))
   (check-equal? (sek-iter-get it5) 1)
@@ -214,7 +214,7 @@
   (check-exn exn:fail? (lambda () (sek-iter-set! it5 'no)))
 
   ;; moving past a sentinel is an error
-  (define it7 (sek-iterator-at-sentinel (list->pseq '(1 2)) 'front))
+  (define it7 (sek-iterator-at-sentinel (list->psek '(1 2)) 'front))
   (check-exn exn:fail? (lambda () (sek-iter-move! it7 'backward)))
   (check-exn exn:fail? (lambda () (sek-iter-get it7))))
 
@@ -224,15 +224,15 @@
 ;; the sequence at once -- and every way of moving must still see them.
 (module+ test
  (define (inner-full)
-   (define e (make-eseq))
-   (for ([i (in-range 300)]) (eseq-push-front! e (- -1 i)))
-   (for ([i (in-range 300)]) (eseq-push-back! e i))
+   (define e (make-esek))
+   (for ([i (in-range 300)]) (esek-push-front! e (- -1 i)))
+   (for ([i (in-range 300)]) (esek-push-back! e i))
    e)
  (test-case "inner chunks"
   (define e (inner-full))
-  (define l (eseq->list e))
-  (define ifront (eseq-ifront e))
-  (define iback (eseq-iback e))
+  (define l (esek->list e))
+  (define ifront (esek-ifront e))
+  (define iback (esek-iback e))
   (check-false (chunk-empty? ifront))
   (check-false (chunk-empty? iback))
   (check-equal? (walk (sek-iterator e 'forward) 'forward) l)
@@ -247,42 +247,42 @@
     (sek-iter-reach! it i)
     (check-equal? (sek-iter-index it) i)
     (check-equal? (sek-iter-get it) (list-ref l i)))
-  (check-eq? (eseq-ifront e) ifront)
-  (check-eq? (eseq-iback e) iback)
+  (check-eq? (esek-ifront e) ifront)
+  (check-eq? (esek-iback e) iback)
   ;; a snapshot is a read too
-  (define s (eseq-snapshot e))
-  (check-equal? (pseq->list s) l)
-  (check-eq? (eseq-ifront e) ifront)
-  (check-eq? (eseq-iback e) iback)
+  (define s (esek-snapshot e))
+  (check-equal? (psek->list s) l)
+  (check-eq? (esek-ifront e) ifront)
+  (check-eq? (esek-iback e) iback)
   (check-true (sek-iter-valid? it))
   ;; a second snapshot reuses the first one's fold; the next update adopts it,
   ;; emptying the inner chunks, and neither snapshot notices
-  (define s2 (eseq-snapshot e))
-  (check-equal? (pseq->list s2) l)
+  (define s2 (esek-snapshot e))
+  (check-equal? (psek->list s2) l)
   (check-true (sek-iter-valid? it))
-  (eseq-push-back! e 'end)
+  (esek-push-back! e 'end)
   (check-false (sek-iter-valid? it))
-  (check-true (chunk-empty? (eseq-ifront e)))
-  (check-true (chunk-empty? (eseq-iback e)))
-  (check-eseq e)
-  (check-equal? (eseq->list e) (append l '(end)))
-  (check-equal? (pseq->list s) l)
-  (check-equal? (pseq->list s2) l)
-  (check-equal? (pseq->list (eseq-snapshot e)) (append l '(end)))
-  (eseq-pop-back! e)
-  (check-equal? (eseq->list e) l)
+  (check-true (chunk-empty? (esek-ifront e)))
+  (check-true (chunk-empty? (esek-iback e)))
+  (check-esek e)
+  (check-equal? (esek->list e) (append l '(end)))
+  (check-equal? (psek->list s) l)
+  (check-equal? (psek->list s2) l)
+  (check-equal? (psek->list (esek-snapshot e)) (append l '(end)))
+  (esek-pop-back! e)
+  (check-equal? (esek->list e) l)
   ;; writing through an iterator into each inner chunk
   (define e2 (inner-full))
-  (define n (eseq-length e2))
+  (define n (esek-length e2))
   (define it2 (sek-iterator e2 'forward))
   (define targets (list 130 (- n 131)))
   (for ([i (in-list targets)])
     (sek-iter-reach! it2 i)
     (sek-iter-set! it2 'x))
-  (check-equal? (eseq->list e2)
+  (check-equal? (esek->list e2)
                 (for/list ([x (in-list l)] [i (in-naturals)])
                   (if (memv i targets) 'x x)))
-  (check-equal? (pseq->list s) l)))
+  (check-equal? (psek->list s) l)))
 
 ;; Two snapshots that race may each fold: the first stores its fold and then
 ;; makes the version negative, and the second, on hardware that reorders
@@ -291,10 +291,10 @@
 (module+ test
  (test-case "a snapshot that sees the version's sign before the fold"
   (define e (inner-full))
-  (define l (eseq->list e))
+  (define l (esek->list e))
   (set-esq-version! e (- (abs (esq-version e))))
   (set-esq-folded! e #f)
-  (check-equal? (pseq->list (eseq-snapshot e)) l)
-  (eseq-push-back! e 'end)
-  (check-eseq e)
-  (check-equal? (eseq->list e) (append l '(end)))))
+  (check-equal? (psek->list (esek-snapshot e)) l)
+  (esek-push-back! e 'end)
+  (check-esek e)
+  (check-equal? (esek->list e) (append l '(end)))))

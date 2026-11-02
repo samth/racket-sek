@@ -97,8 +97,8 @@ whole program, comparable across a row and meaningless down a column.
 ```
 editor: edit a document of lines: jump, insert, delete, redraw a window
                                     1k lines   20k lines  400k lines
-eseq                                    1.24        1.86        3.76
-pseq                                    1.01        1.71        3.45
+esek                                    1.24        1.86        3.76
+psek                                    1.01        1.71        3.45
 treelist                                2.20        3.76       23.23
 mutable-treelist                        4.44       36.93         n/a
 gvector                                 3.91       68.76         n/a
@@ -107,8 +107,8 @@ list                                   14.54       352.7         n/a
 
 undo: edit with an undo history: checkpoint often, occasionally restore
                                     1k lines   20k lines  400k lines
-eseq                                    0.90        1.18        1.43
-pseq                                    0.69        1.00        1.36
+esek                                    0.90        1.18        1.43
+psek                                    0.69        1.00        1.36
 treelist                                1.97        3.33       20.70
 gvector                                22.55       410.8         n/a
 array                                   3.37       48.28         n/a
@@ -122,8 +122,8 @@ is doing.
 
 queue: feed a work queue in bursts, drain it, snapshot the backlog
                                  2000 rounds
-eseq                                    5.49
-pseq                                    7.86
+esek                                    5.49
+psek                                    7.86
 treelist                               34.68
 mutable-treelist                       37.81
 array                                  806.8
@@ -132,8 +132,8 @@ list                                   4328.
 
 log: append a log, compact it by dropping, filtering and re-joining
                                   1k batches 50k batches
-pseq                                    0.12        5.17
-eseq                                    0.13        5.24
+psek                                    0.12        5.17
+esek                                    0.13        5.24
 mutable-treelist                        0.34       14.95
 treelist                                0.44       26.51
 gvector                                 0.42       49.95
@@ -143,8 +143,8 @@ scan: build, then walk at a stride, then fold
 gvector                                 0.33       21.16
 array                                   0.35       10.81
 treelist                                0.77       53.76
-pseq                                    0.84       18.30
-eseq                                    0.87       18.62
+psek                                    0.84       18.30
+esek                                    0.87       18.62
 list                                   365.6         n/a
 ```
 
@@ -162,7 +162,7 @@ library and so the one worth quoting.
 
 These say something the operation tables do not. On the editor, which is the
 shape this structure is *for* -- a cursor that moves, an edit where it is, a
-window redrawn around it -- `pseq` is 6.7x a treelist at four hundred thousand
+window redrawn around it -- `psek` is 6.7x a treelist at four hundred thousand
 lines and nothing else finishes at all. On the queue it is 6.3x a treelist and
 a hundred and forty times a `gvector`. But on `scan`, which is indexed access
 and nothing else, a `gvector` and a raw growable array win, and on the strided
@@ -303,7 +303,7 @@ not maintain it. A lock is not free: 2.4× on a push and 9× on a read.
 A destructive operation needs an instance of its own, so the ephemeral rows in
 `concat`, `split`, `slice`, `take-drop`, `split-parts` and `bulk-append` copy
 first and are charged for the copy. That is the honest figure: it is what using
-a mutable sequence in a persistent way actually costs. `eseq-copy` is O(1),
+a mutable sequence in a persistent way actually costs. `esek-copy` is O(1),
 `mutable-treelist-copy` about 0.5 ns an element, a gvector's about 1.4.
 
 ## Against other Racket sequences
@@ -320,8 +320,8 @@ have happened, so n is the peak length.
 ```
 stack: push-back / pop-back                     front stack: push-front / pop-front
               1000    100000   1000000                        1000    100000   1000000
-eseq         10.13     10.24     10.93          eseq           9.76      9.82     10.49
-pseq         12.67     12.89     14.08          pseq          12.60     12.86     14.09
+esek         10.13     10.24     10.93          esek           9.76      9.82     10.49
+psek         12.67     12.89     14.08          psek          12.60     12.86     14.09
 treelist     21.70     38.74     45.51          treelist      37.09     163.8     204.2
 mutable-tl   26.82     43.88     51.48          mutable-tl    43.07     167.5     206.4
 gvector      19.05     19.10     27.43          gvector           -         -         -
@@ -329,13 +329,13 @@ gvector      19.05     19.10     27.43          gvector           -         -   
 
 queue: push-back / pop-front
               1000    100000   1000000
-eseq         10.24     10.16     10.88
-pseq         12.80     13.04     14.23
+esek         10.24     10.16     10.88
+psek         12.80     13.04     14.23
 treelist     28.87     58.21     70.28
 mutable-tl   34.46     62.65     75.10
 ```
 
-This is what the structure is for. `eseq` is flat in n and does not care which
+This is what the structure is for. `esek` is flat in n and does not care which
 end you use; a treelist costs 4× more at the back, 20× more at the front, and
 degrades as the sequence grows. A gvector is fine at the back and has no front.
 A Racket list is unbeatable as a front stack — and is only a front stack.
@@ -345,20 +345,20 @@ A Racket list is unbeatable as a front stack — and is only a front stack.
 ```
 traversal: for-each over the whole sequence, ns per element
                  100     10000   1000000
-eseq            1.59      1.54      1.56
-pseq            1.56      1.52      1.55
+esek            1.59      1.54      1.56
+psek            1.56      1.52      1.55
 treelist        1.80      1.74      1.78
 gvector         1.42      1.35      1.40
 list            1.30      1.17      1.36
-  pseq via fold 1.27      1.20      1.24
-  pseq via iter  3.88      3.72      3.68
+  psek via fold 1.27      1.20      1.24
+  psek via iter  3.88      3.72      3.68
   vector        0.62      0.54      0.54
 ```
 
 Sweeping a sek sequence costs about what sweeping a treelist costs. That is
 entirely down to segments: the same traversal driven one element at a time
 through the iterator costs 11.1 ns, almost 6× more. `sek-fold-left` and the
-`for` clause forms of `in-sek`, `in-pseq` and `in-eseq` all take the segment
+`for` clause forms of `in-sek`, `in-psek` and `in-esek` all take the segment
 path.
 
 ### Random access
@@ -366,12 +366,12 @@ path.
 ```
 random access: ref at random indices        hops: ref at a fixed stride, n = 10^6
                  100     10000   1000000                  +1        +8       +64     +4096
-eseq            7.61     25.19     59.84    eseq       33.01     32.95     36.29     56.01
-pseq            8.07     24.91     60.15    pseq       33.02     33.42     36.68     57.10
+esek            7.61     25.19     59.84    esek       33.01     32.95     36.29     56.01
+psek            8.07     24.91     60.15    psek       33.02     33.42     36.68     57.10
 treelist        4.24      4.88     10.71    treelist    5.34      5.82      7.07     10.28
 mutable-tl      8.34      8.86     16.33    mutable-tl  9.21      9.51     10.21     15.68
 gvector         7.24      7.27     10.82    gvector     7.15      7.17      7.30     12.24
-  vector        0.76      0.85      2.09    pseq iter   9.59     11.79     26.72     74.29
+  vector        0.76      0.85      2.09    psek iter   9.59     11.79     26.72     74.29
 ```
 
 This is the operation the design gives up, and the measurement says so: `ref`
@@ -392,18 +392,18 @@ stays inside the chunk it is already on.
 ```
 update: set at random indices              fill: overwrite k consecutive elements of 10^6
                  100     10000   1000000                        10      1000    100000
-eseq           10.36     31.27     68.06    eseq (sek-fill!)  10.22      2.45      2.44
-pseq           119.2     218.0     650.5    eseq (set! loop)  21.79     20.96     36.42
+esek           10.36     31.27     68.06    esek (sek-fill!)  10.22      2.45      2.44
+psek           119.2     218.0     650.5    esek (set! loop)  21.79     20.96     36.42
 treelist       16.40     32.70     188.5    mutable-treelist   8.80      7.89      7.82
 mutable-tl      7.54      8.00     16.19    gvector           10.03      9.05      8.97
 gvector         9.63      9.62      9.68    vector             1.04      0.63      0.63
 ```
 
-Scattered persistent writes are the other thing the design gives up: `pseq-set`
+Scattered persistent writes are the other thing the design gives up: `psek-set`
 copies a chunk per level, and with 128-element leaves that is a lot of copying.
 Writes with any locality are a different story — going through writable
 segments, `sek-fill!` overwrites at 2.4 ns per element, 15× faster than the
-same range written one `eseq-set!` at a time, and three times faster than a
+same range written one `esek-set!` at a time, and three times faster than a
 mutable treelist or a gvector.
 
 ### Building, concatenating, splitting
@@ -411,8 +411,8 @@ mutable treelist or a gvector.
 ```
 construction: n elements from scratch      concat / split at n = 10^6, ns per operation
                  100     10000   1000000                concat     split
-eseq            2.59      1.66      2.25    pseq         360.5     80.39
-pseq            2.66      1.66      2.29    treelist     781.9     130.8
+esek            2.59      1.66      2.25    psek         360.5     80.39
+psek            2.66      1.66      2.29    treelist     781.9     130.8
 treelist       13.67     32.21     47.62    list       5745314   4895478
 mutable-tl     15.29     34.15     51.09
 gvector         5.44      4.21     17.63
@@ -434,8 +434,8 @@ the whole thing is O(n + K). That is what `sek-filter` does.
 ```
 filter: keep one element in three, ns per input element
                  100     10000   1000000
-pseq            4.15      2.88      3.10
-eseq            4.30      2.91      3.10
+psek            4.15      2.88      3.10
+esek            4.30      2.91      3.10
 treelist        4.81     11.43     16.34
   list          3.36      3.06      4.56
   vector        3.71      3.75      6.89
@@ -463,11 +463,11 @@ the same pair of conversions: `treelist-copy` is its `edit` and
 ```
 one change plus one snapshot of an n-element sequence, ns
                      100     10000   1000000
-eseq               154.7     209.3     209.2
+esek               154.7     209.3     209.2
 mutable-treelist   62.00      3970   1714328
 ```
 
-`eseq-snapshot` does not depend on the length of the sequence.
+`esek-snapshot` does not depend on the length of the sequence.
 `mutable-treelist-snapshot` is linear in it: at a million elements one snapshot
 costs 1.7 milliseconds, about 8000× more. That is the difference between the
 ownership-identifier scheme of §2.4, where a snapshot just hands the sequence a
@@ -498,9 +498,9 @@ The same thing shows up in a loop:
 ```
 100000 pushes, keeping a snapshot every m of them, ns per push
                        m=1      m=10    m=1000  m=100000
-eseq                 127.6     19.61      9.81      9.52
+esek                 127.6     19.61      9.81      9.52
 mutable-treelist         -         -     271.8     44.19
-pseq (persistent)    11.83     11.83     11.87     11.89
+psek (persistent)    11.83     11.83     11.87     11.89
 treelist (persistent) 38.16    38.24     38.32     38.12
 ```
 
@@ -517,9 +517,9 @@ it trades:
 ```
 capacities over 10^6 elements, ns per operation
                     128/16     64/16     32/16     16/16       8/8    256/32
-pseq-ref             59.61     72.65     87.84     108.6     191.0     49.61
-pseq-set             615.9     558.4     539.1     590.7     766.4     858.6
-eseq push/pop        10.17     10.73     11.14     12.38     17.17     10.32
+psek-ref             59.61     72.65     87.84     108.6     191.0     49.61
+psek-set             615.9     558.4     539.1     590.7     766.4     858.6
+esek push/pop        10.17     10.73     11.14     12.38     17.17     10.32
 traversal             1.78      2.15      2.95      4.18      7.35      1.55
 ```
 
@@ -560,7 +560,7 @@ These were run on the smaller size ladder (`--quick`, up to 10^5 rather than
 The trends across the three sizes are the point, and they are already clear.
 Nanoseconds per operation at n = 10^5:
 
-| | eseq | pseq | treelist | mutable-treelist | gvector | array |
+| | esek | psek | treelist | mutable-treelist | gvector | array |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `apply-sequential`, per lookup | 17.5 | 15.1 | 6.0 | 10.0 | 7.5 | **2.5** |
 | `update-sequential`, per set | 24.5 | 130.9 | 48.9 | 9.5 | 10.7 | **3.2** |
@@ -590,8 +590,8 @@ treelist 151.1 ns — 15× — and the gap is entirely a function of length:
 
 | `apprepend`, ns per push | 10 | 1000 | 100000 |
 | --- | ---: | ---: | ---: |
-| eseq | 16.32 | **10.20** | **10.28** |
-| pseq | 13.87 | 12.75 | 12.99 |
+| esek | 16.32 | **10.20** | **10.28** |
+| psek | 13.87 | 12.75 | 12.99 |
 | treelist | **6.67** | 30.75 | 151.1 |
 | mutable-treelist | 10.51 | 35.53 | 159.6 |
 | array | 67.49 | 709.0 | 62441 |
@@ -610,16 +610,16 @@ display answers an ascending walk from cache. sek caches nothing on `ref`:
 
 | `apply-sequential`, ns per lookup | 100 | 10000 | 100000 |
 | --- | ---: | ---: | ---: |
-| eseq | 7.74 | 22.37 | 27.69 |
-| pseq | 8.42 | 22.23 | 27.51 |
+| esek | 7.74 | 22.37 | 27.69 |
+| psek | 8.42 | 22.23 | 27.51 |
 | treelist | 4.91 | 5.41 | 6.14 |
 | gvector | 7.54 | 7.55 | 7.54 |
 | array | 2.64 | 2.51 | **2.51** |
 | list | 29.30 | 3979 | 42000 |
 | vector | 1.66 | 1.59 | 1.59 |
-| pseq via iterator | **1.83** | **1.77** | 2.71 |
+| psek via iterator | **1.83** | **1.77** | 2.71 |
 
-Read through `ref`, sek is 4.5× behind a treelist. Read through `in-pseq`, the
+Read through `ref`, sek is 4.5× behind a treelist. Read through `in-psek`, the
 same walk is 2.7 ns — 2.3× faster than the treelist's cached `ref`, faster than
 a growable array's indexed read, and within 1.7× of a raw vector. The library's
 answer to sequential access is a first-class iterator, and it is a better
@@ -630,8 +630,8 @@ answer than a display; it is just not spelled `ref`.
 
 | ns per input element, n = 10^5 | 100% kept | 50% | 0% |
 | --- | ---: | ---: | ---: |
-| pseq | 10.39 | 6.60 | 2.08 |
-| eseq | 10.37 | 6.55 | 2.10 |
+| psek | 10.39 | 6.60 | 2.08 |
+| esek | 10.37 | 6.55 | 2.10 |
 | treelist | 39.76 | 19.85 | **1.74** |
 | mutable-treelist | 6.37 | 4.93 | 2.58 |
 | gvector | 5.27 | 3.26 | 1.54 |
@@ -658,7 +658,7 @@ repeated one-sided `take` — the density invariant is real work that an RRB tre
 does not do, and that is the honest residue.
 
 The ephemeral rows in `take-drop` are immer's `_mut` variants, and their shape
-is still worth reading: `eseq` is slower than `pseq` because an O(1) copy
+is still worth reading: `esek` is slower than `psek` because an O(1) copy
 still leaves the destructive split the same work to do, while
 `mutable-treelist` is 60× worse than `treelist` because its copy is Θ(n) and
 there are only ten steps to amortise it over.
@@ -666,32 +666,32 @@ there are only ten steps to amortise it over.
 **And `push_move` reproduces immer's headline.** Building through a transient
 and freezing at the end costs 8.7 ns per element against 40.2 for repeated
 persistent `treelist-add` — 4.6× — and it also beats sek's own persistent
-`pseq-push-back` (12.6) and a hand-rolled growable array (7.1, once you count
+`psek-push-back` (12.6) and a hand-rolled growable array (7.1, once you count
 the array's own growth). That is the comparison Clojure spells
 `(persistent! (reduce conj! (transient []) xs))`, and it holds here.
 
 **`tail` is the one where filling the table changed the answer.** Popping the
-front until empty used to be a persistent-only row, and `pseq` won it at 13.4
+front until empty used to be a persistent-only row, and `psek` won it at 13.4
 ns against a treelist's 79.6. With the ephemeral structures measured too —
-each popping a copy of its own, and charged for making it — `eseq` wins at
-10.4, because `eseq-copy` is O(1) and the pops are what the front chunk is for.
+each popping a copy of its own, and charged for making it — `esek` wins at
+10.4, because `esek-copy` is O(1) and the pops are what the front chunk is for.
 A `mutable-treelist` pays 91.1 for the same loop and a growable array 69663,
 since every pop moves the whole array down one.
 
-One oddity worth recording, and it is fixable: `peek` on an `eseq` costs 40.5 ns
-against 16.2 for a `pseq`, where every other operation has the two within a few
+One oddity worth recording, and it is fixable: `peek` on an `esek` costs 40.5 ns
+against 16.2 for a `psek`, where every other operation has the two within a few
 percent. Timed apart, at n = 10^5:
 
 | | first | last |
 | --- | ---: | ---: |
-| `pseq` | 8.21 | 9.25 |
-| `eseq` | 23.06 | 18.44 |
+| `psek` | 8.21 | 9.25 |
+| `esek` | 23.06 | 18.44 |
 
-`pseq-first` reads the representation directly — a vector for a short sequence,
-`pt-ref` at 0 otherwise. `eseq-first` calls `eseq-empty?` (which computes the
-length) and then `eseq-ref e 0`, which walks front, inner front, middle, inner
-back, back like any other index; `eseq-last` computes the length a second time
-on top of that. `eseq-ref e 0` alone is 17.56 ns and `eseq-length` is 6.76.
+`psek-first` reads the representation directly — a vector for a short sequence,
+`pt-ref` at 0 otherwise. `esek-first` calls `esek-empty?` (which computes the
+length) and then `esek-ref e 0`, which walks front, inner front, middle, inner
+back, back like any other index; `esek-last` computes the length a second time
+on top of that. `esek-ref e 0` alone is 17.56 ns and `esek-length` is 6.76.
 Nothing depends on this, but the ephemeral ends could read their front and back
 chunks directly the way the persistent ones do.
 
@@ -706,38 +706,38 @@ for the whole M×N workload.
 1000000 of length 10                     100 of length 100000
 + for/gvector          39                + for/gvector          44
 + for/mut-treelist     34                + for/mut-treelist     37
-+ for/eseq            116                + for/eseq             85
++ for/esek            116                + for/esek             85
 + mut-treelist-add!    90                + mut-treelist-add!   425
 + treelist-add         60                + treelist-add        388
-+ pseq-push-back      137                + pseq-push-back      120
++ psek-push-back      137                + psek-push-back      120
 - treelist-rest        77                - treelist-rest       778
-- eseq-pop-front!     144                - eseq-pop-front!      91
+- esek-pop-front!     144                - esek-pop-front!      91
 ! gvector-set!/fx     105                ! gvector-set!/fx      92
 ! mut-tree-set!/fx     78                ! mut-tree-set!/fx     82
-! eseq-set!/fx        108                ! eseq-set!/fx        347
-! eseq-fill!           86                ! eseq-fill!           25
+! esek-set!/fx        108                ! esek-set!/fx        347
+! esek-fill!           86                ! esek-fill!           25
 ^ in-gvector           12                ^ in-gvector            3
 ^ in-mut-treelist      29                ^ in-mut-treelist      19
 ^ in-sek               66                ^ in-sek               11
 ^ gvector-ref          84                ^ gvector-ref          71
-^ eseq-ref             74                ^ eseq-ref            280
+^ esek-ref             74                ^ esek-ref            280
 ```
 
 The two columns tell opposite stories, and both are fair.
 
 At **length 10** sek loses at everything that touches a fresh sequence:
-`for/eseq` is 3× `for/gvector`. A chunk of capacity 128 is a poor container
+`for/esek` is 3× `for/gvector`. A chunk of capacity 128 is a poor container
 for ten elements, and a million of them is a million such chunks. This is
 Figure 16's "creating an ephemeral sequence costs O(n + K)" showing up as a
 constant factor; the fix within the design would be a smaller K, which the
 capacity table above prices.
 
-At **length 100000** it inverts: `for/eseq` is now half of `mut-treelist-add!`
+At **length 100000** it inverts: `for/esek` is now half of `mut-treelist-add!`
 and a fifth of `treelist-add`, popping from the front is 8× faster than
 `treelist-rest`, and `in-sek` beats `in-mut-treelist`. Only indexing still goes
 the other way.
 
-`eseq-fill!` is the standout in both columns: writing a whole range through
+`esek-fill!` is the standout in both columns: writing a whole range through
 writable segments is 3–4× a per-element `set!` loop on any of the contenders.
 
 ## nqueens
@@ -761,11 +761,11 @@ calls rather than dispatching through a table of closures.
 the classic program with the pair operations swapped out
 pairs                        413 ms
 vector                      1967 ms
-pseq                        3487 ms
+psek                        3487 ms
 treelist                    4376 ms
 mutable-treelist            8225 ms
 gvector                    10791 ms
-eseq                       16295 ms
+esek                       16295 ms
 ```
 
 Pairs win by a factor of eight, and should: the search never holds more than
@@ -775,7 +775,7 @@ bad at — which is also why an immutable `vector` comes second, at 1967 ms.
 Copying on every `cons` is Θ(n), but n is at most eight, and eight words is
 cheaper than any tree's indirection.
 
-Among the sequence structures, `pseq` is the fastest — 20% ahead of
+Among the sequence structures, `psek` is the fastest — 20% ahead of
 `treelist`. Both are persistent, so the translation is direct: the search
 keeps three sequences alive across two recursive calls, and `cons` and
 `append` leave their arguments alone for free.
@@ -784,7 +784,7 @@ The mutable structures cannot do that. Every `cons` and `append` has to copy,
 and that is what the bottom three rows measure — 2× to 4× the persistent ones.
 It is the honest cost of using a mutable sequence for an algorithm that wants
 sharing, and the reason a library like this one has both flavors: on this
-program you would reach for `pseq`, and `eseq` is the wrong tool.
+program you would reach for `psek`, and `esek` is the wrong tool.
 
 The same problem written the way a mutable structure wants it — one stack of
 placed rows, pushed when a queen goes down and popped on the way back out —
@@ -795,13 +795,13 @@ the same problem as a backtracking search over one mutable stack
 vector                      1365 ms
 box-of-list                 1534 ms
 box-of-treelist             4199 ms
-box-of-pseq                 4641 ms
-eseq                        8024 ms
+box-of-psek                 4641 ms
+esek                        8024 ms
 mutable-treelist            8179 ms
 gvector                     9463 ms
 ```
 
-Here `eseq` is level with `mutable-treelist` and ahead of `gvector`. All three
+Here `esek` is level with `mutable-treelist` and ahead of `gvector`. All three
 are about six times a bare vector, because a stack that never exceeds eight
 entries has no use for any of their machinery: the vector version is a
 `vector-set!` and an integer, and everything else is paying for growth it will
@@ -814,12 +814,12 @@ pair list and the mutable structures — the allocation per push is real, but so
 is not having to copy anything, and at eight elements that trade is close to
 even.
 
-Writing this benchmark turned up one fixable thing. `eseq-copy` went through
-`eseq-snapshot` and `pseq-edit`, which for a short sequence converted the tree
+Writing this benchmark turned up one fixable thing. `esek-copy` went through
+`esek-snapshot` and `psek-edit`, which for a short sequence converted the tree
 to a vector and the vector back into a chunk. It now hands both sequences a
 fresh identity and shares everything, leaving the copying to whichever one
 writes first — the same reasoning as `snapshot`, and O(1) rather than
-O(n + K). That is a 3× improvement on the `eseq` row above.
+O(n + K). That is a 3× improvement on the `esek` row above.
 
 ### What the other structures gained
 
@@ -1010,7 +1010,7 @@ turned that into a no-op, so the iterator handed out a still-shared vector and
 `sek-blit!` wrote into its own snapshot; `generic-tests.rkt` caught it on the
 overlapping-blit case. The reference cannot use that idiom either, having the
 same fast path, so the fix is to say what is meant: `chunk-own` / `pt-own` /
-`eseq-own-at!` take ownership explicitly.
+`esek-own-at!` take ownership explicitly.
 
 ## What the generated code said
 
@@ -1044,7 +1044,7 @@ Declaring the struct `#:sealed` — which only forbids subtyping, and which
 (cmp (mem64+ rsi #x1) rdi) (jnz ...)
 ```
 
-Thirteen structs across seven files. On its own that is 11% off an `eseq`
+Thirteen structs across seven files. On its own that is 11% off an `esek`
 push-back.
 
 **Every module is compiled in unsafe mode, and checks its arguments itself.**
@@ -1053,12 +1053,12 @@ push-back.
 longer raises when handed the wrong kind of value: it reads whatever is at that
 offset. So the checking that used to happen incidentally, as a side effect of a
 safe accessor failing, is now deliberate. Fifty-seven functions across six
-modules gained an explicit `unless`, behind six one-line macros (`check-pseq`,
-`check-eseq`, `check-iter`, `check-segment`, `check-parray`, `check-earray`)
+modules gained an explicit `unless`, behind six one-line macros (`check-psek`,
+`check-esek`, `check-iter`, `check-segment`, `check-parray`, `check-earray`)
 joining the `check-sek` that `generic.rkt` already had. With the structs sealed
 each is a single pointer comparison, about 0.35 ns — visible on
-`eseq-push-back!`, which went from 4.69 ns to 4.86, and swamped everywhere else
-by what unsafe mode buys: `eseq-ref` went from 26.8 to 22.9 in the same change.
+`esek-push-back!`, which went from 4.69 ns to 4.86, and swamped everywhere else
+by what unsafe mode buys: `esek-ref` went from 26.8 to 22.9 in the same change.
 
 `sek/tests/error-tests.rkt` is what holds that line. It calls the public surface
 with wrong types and out-of-range indices across about 150 cases and insists on
@@ -1081,15 +1081,15 @@ was to measure rather than to read.
 
 | ns | before | after | OCaml | treelist |
 | --- | ---: | ---: | ---: | ---: |
-| `pseq-ref` | 35.6 | **22.2** | 29.9 | 6.6 |
-| `eseq` push-back | 8.8 | **4.7** | 4.7 | — |
+| `psek-ref` | 35.6 | **22.2** | 29.9 | 6.6 |
+| `esek` push-back | 8.8 | **4.7** | 4.7 | — |
 | `apply-sequential` | 27.5 | **15.1** | — | 6.0 |
 | traversal | 1.78 | **1.67** | 1.9 | 1.77 |
 
 ### Where the settings live
 
 `config.rkt` holds its settings in `set!`-ed module-level variables, and the
-disassembly of `eseq-push-back!` showed what that was costing: before doing any
+disassembly of `esek-push-back!` showed what that was costing: before doing any
 work it pushed a frame and jumped, to call `(check-iterator-validity?)` and read
 one of them. A cross-module call, per push, to fetch a boolean.
 
@@ -1127,7 +1127,7 @@ to be: the version protocol already carries the same information in the sign of
 the version, and only iterator *creation* ever makes it positive. Moving the
 test there leaves a mutation testing the sign of a field it has already loaded.
 The setting is still honoured — with checking off the version never goes
-positive, so nothing is ever invalidated and `eseq-iterator-valid?` answers `#t`
+positive, so nothing is ever invalidated and `esek-iterator-valid?` answers `#t`
 — and `SEK_CHECKITER=0` conformance confirms it.
 
 `overwrite-empty-slots?` is the other hot read, on every owned chunk pop. It
@@ -1139,21 +1139,21 @@ well-predicted branch on a value that is in L1 after the first read.
 
 Reading `EphemeralSequence.init` in the reference turned up an algorithmic
 difference rather than a compilation one. It builds through
-`create_by_segments`, filling each chunk with `EChunk.init`; `build-eseq` here
+`create_by_segments`, filling each chunk with `EChunk.init`; `build-esek` here
 pushed elements one at a time, and a push tests whether the back chunk is full,
 invalidates the iterators and consults the ownership id once per element.
 
-`pseq-build` now assembles the tree directly: the first chunk is the front, the
+`psek-build` now assembles the tree directly: the first chunk is the front, the
 last is the back, and the rest are pushed into the middle. Every chunk but the
 last is full, so the density invariant holds by construction. For the
 operations that do not know the length in advance — `map`, `filter`, `reverse`,
-`append-map`, `for/eseq`, `sequence->eseq` — a `pseq-builder` collects into a
+`append-map`, `for/esek`, `sequence->esek` — a `psek-builder` collects into a
 chunk-sized buffer and emits whole chunks, holding one back so that the last
 full chunk can become the level's back.
 
 | ns per element | before | after | OCaml |
 | --- | ---: | ---: | ---: |
-| `build-eseq` | 5.30 | **3.18** | 2.7 |
+| `build-esek` | 5.30 | **3.18** | 2.7 |
 | `filter` | 4.32 | **3.62** | 3.2 |
 
 That left construction still going through `chunk-of-vector`, which is two
@@ -1166,7 +1166,7 @@ replaced on the next line and never read again. On a capacity-128 chunk that is
 
 | ns per element | before | after | OCaml |
 | --- | ---: | ---: | ---: |
-| `build-eseq` | 3.18 | **1.96** | 2.7 |
+| `build-esek` | 3.18 | **1.96** | 2.7 |
 
 `perf` agrees on why: 126.0 instructions and 17.0 cycles per element before,
 63.4 and 8.8 after.
@@ -1230,7 +1230,7 @@ building**. Written with `sek-for-each` and `build-from`, a per-element
 operation costs three of them: the segment loop calls the traversal's
 procedure, that calls the caller's, and the caller calls `emit`. The
 `build-by-segments` macro collapses all three — the segment loop *is* the
-caller's loop, and `pseq-builder-add!` was split so that its hot half (a store
+caller's loop, and `psek-builder-add!` was split so that its hot half (a store
 and a bounds test) is small enough for the inliner to copy across the module
 boundary, with the chunk-full case left behind a call. An element the predicate
 drops now costs the test and nothing else.
@@ -1286,7 +1286,7 @@ the density invariant being repaired -- real work, already down to a
 A second pass over the operations that were still at or above the reference,
 this time reading what `disassemble` produced rather than what cp0 did.
 
-**`eseq-push-back!` was making two calls.** It pushed a six-word frame and
+**`esek-push-back!` was making two calls.** It pushed a six-word frame and
 jumped, once to ask `chunk-full?` whether two fields were equal and once to
 push -- because `chunk.rkt` had no `begin-encourage-inline` anywhere in it.
 With the small accessors and the push dispatchers inlined there is nothing left
@@ -1308,7 +1308,7 @@ and a call to the generic procedure. A counter *can* reach a bignum, so the
 compiler is right to be careful; an id is now a record, and the comparison is
 `eq?`, which is one instruction.
 
-**`pseq-ref` examined the tag of its index three times.** Nothing carries "is
+**`psek-ref` examined the tag of its index three times.** Nothing carries "is
 an exact nonnegative integer" forward as "is a fixnum", so each comparison
 re-tested it. Guarding on `fixnum?` instead also fixed something worse:
 everything below indexes with `unsafe-fx` operations, which are undefined on a
@@ -1327,11 +1327,11 @@ addition per element, where they can walk the support indices directly.
 
 | ns | before | after |
 | --- | ---: | ---: |
-| `eseq` push-back/pop-back | 4.24 | **3.48** |
-| `eseq` push-front/pop-front | 4.42 | **3.63** |
-| `pseq-ref` at random | 20.44 | **16.98** |
-| `eseq-ref` at random | 20.51 | **17.42** |
-| `eseq-set!` at random | 26.08 | **22.85** |
+| `esek` push-back/pop-back | 4.24 | **3.48** |
+| `esek` push-front/pop-front | 4.42 | **3.63** |
+| `psek-ref` at random | 20.44 | **16.98** |
+| `esek-ref` at random | 20.51 | **17.42** |
+| `esek-set!` at random | 26.08 | **22.85** |
 | traversal by fold, per element | 1.57 | **1.21** |
 | `filter`, per input element | 3.97 | **3.68** |
 
@@ -1443,7 +1443,7 @@ level.
 **Small exported procedures are not inlined across a module boundary unless
 asked.** `chunk-full?` is two field loads and a comparison, and it was a call
 from another module until `begin-encourage-inline` was added -- and the call
-was what forced `eseq-push-back!` to have a frame at all. The annotation works;
+was what forced `esek-push-back!` to have a frame at all. The annotation works;
 the point is that it has to be written.
 
 **A struct predicate's success does not refine its accessors.** In

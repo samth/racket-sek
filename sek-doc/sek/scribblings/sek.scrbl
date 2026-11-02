@@ -24,8 +24,8 @@ The Sek library provides efficient @tech{persistent sequences} and
 Both support random access, pushing and popping at either end, concatenation
 and splitting.
 
-Conversions between these two flavors are cheap: @racket[pseq-edit] produces
-an ephemeral sequence in constant time, and @racket[eseq-snapshot] produces a
+Conversions between these two flavors are cheap: @racket[psek-edit] produces
+an ephemeral sequence in constant time, and @racket[esek-snapshot] produces a
 persistent sequence in logarithmic time. In contrast, snapshotting and editing
 other data structures typically takes linear time relative to the size of the
 data.
@@ -37,18 +37,18 @@ developed in Clojure.
 
 @examples[
 #:eval the-eval
-(define p (list->pseq '(1 2 3 4 5)))
-(pseq->list (pseq-push-front p 0))
+(define p (list->psek '(1 2 3 4 5)))
+(psek->list (psek-push-front p 0))
 (code:comment "p itself is unchanged")
-(pseq->list p)
+(psek->list p)
 (code:comment "switch to in-place updates, in O(1) time")
-(define e (pseq-edit p))
-(eseq-push-back! e 6)
-(eseq-set! e 0 'a)
+(define e (psek-edit p))
+(esek-push-back! e 6)
+(esek-set! e 0 'a)
 (code:comment "and back again")
-(define q (eseq-snapshot e))
-(pseq->list q)
-(pseq->list p)
+(define q (esek-snapshot e))
+(psek->list q)
+(psek->list p)
 ]
 
 @section{Sequences}
@@ -79,7 +79,7 @@ that the logarithm is effectively a constant.
 
 Sequences from this library are more efficient at the beginning and the end.
 Most pushes and pops at either end take @math{O(1)} time, for either flavor
-(see @racket[pseq-add] for when a persistent push costs @math{O(K)}).  In the
+(see @racket[psek-add] for when a persistent push costs @math{O(K)}).  In the
 worst case a push takes @math{O(K log_K N)} time and a pop @math{O(log_K N)},
 and a series of pushes and pops on an @tech{ephemeral sequence} takes amortized
 @math{O(log_K N)} time per operation.  The corresponding treelist operations
@@ -87,10 +87,10 @@ take @math{O(log N)} time.
 
 Conversions are cheaper too.  @racket[treelist-copy] and
 @racket[mutable-treelist-snapshot] each take @math{O(N)} time, where
-@racket[pseq-edit] takes @math{O(1)} and @racket[eseq-snapshot]
+@racket[psek-edit] takes @math{O(1)} and @racket[esek-snapshot]
 @math{O(K log_K N)}.  Likewise @racket[mutable-treelist-append!] takes
 @math{O(N)} time in the length of its second argument, where
-@racket[eseq-append!] takes @math{O(K log_K N + log_K^2 N)}.
+@racket[esek-append!] takes @math{O(K log_K N + log_K^2 N)}.
 
 Traversal is @math{O(N)} for both.  This library also provides
 @tech{segments}, which give a caller the elements a run at a time.
@@ -101,7 +101,7 @@ A @deftech{persistent sequence} is immutable: an operation on one produces a
 new sequence and leaves the original intact.
 
 A persistent sequence can be used as a single-valued @racket[sequence], whose
-elements are the elements of the sequence; see also @racket[in-pseq].  It can
+elements are the elements of the sequence; see also @racket[in-psek].  It can
 also be used as a @tech[#:doc '(lib
 "scribblings/reference/reference.scrbl")]{stream}, and it is
 @racket[serializable?].  Two persistent sequences are @racket[equal?] when
@@ -110,47 +110,47 @@ their elements are.
 Several threads may use a persistent sequence at once, including adding
 elements to it, without synchronization; see @secref["threads"].
 
-@defproc[(pseq? [v any/c]) boolean?]{
+@defproc[(psek? [v any/c]) boolean?]{
 
 Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
 @racket[#f] otherwise.}
 
-@defproc[(pseq [v any/c] ...) pseq?]{
+@defproc[(psek [v any/c] ...) psek?]{
 
 Returns a @tech{persistent sequence} with @racket[v]s as its elements in
 order.
 
 @examples[
 #:eval the-eval
-(pseq 1 "a" 'apple)
+(psek 1 "a" 'apple)
 ]}
 
 @deftogether[(
-@defproc[(pseq-empty? [s pseq?]) boolean?]
-@defthing[empty-pseq (and/c pseq? pseq-empty?)]
+@defproc[(psek-empty? [s psek?]) boolean?]
+@defthing[empty-psek (and/c psek? psek-empty?)]
 )]{
 
 A predicate and constant for a @tech{persistent sequence} of length 0.}
 
-@defproc[(pseq-length [s pseq?]) exact-nonnegative-integer?]{
+@defproc[(psek-length [s psek?]) exact-nonnegative-integer?]{
 
 Returns the number of elements in @racket[s].  This operation takes
 @math{O(1)} time.
 
 @examples[
 #:eval the-eval
-(pseq-length (pseq 1 "a" 'apple))
+(psek-length (psek 1 "a" 'apple))
 ]}
 
 @deftogether[(
-@defproc[(pseq-add [s pseq?] [v any/c]) pseq?]
-@defproc[(pseq-cons [s pseq?] [v any/c]) pseq?]
-@defproc[(pseq-push-back [s pseq?] [v any/c]) pseq?]
-@defproc[(pseq-push-front [s pseq?] [v any/c]) pseq?]
+@defproc[(psek-add [s psek?] [v any/c]) psek?]
+@defproc[(psek-cons [s psek?] [v any/c]) psek?]
+@defproc[(psek-push-back [s psek?] [v any/c]) psek?]
+@defproc[(psek-push-front [s psek?] [v any/c]) psek?]
 )]{
  Return a @tech{persistent sequence} with @racket[v] added at the end
- (@racket[pseq-add]) or at the front (@racket[pseq-cons]).
- @racket[pseq-push-back] and @racket[pseq-push-front] are aliases for these
+ (@racket[psek-add]) or at the front (@racket[psek-cons]).
+ @racket[psek-push-back] and @racket[psek-push-front] are aliases for these
  operations, following the names in the paper.
 
  These take @math{O(K log_K N)} time in the worst case.  Most take
@@ -159,86 +159,86 @@ Returns the number of elements in @racket[s].  This operation takes
 
  @examples[
  #:eval the-eval
- (define s (pseq 1 2 3))
- (pseq-cons s 0)
- (pseq-add s 4)
+ (define s (psek 1 2 3))
+ (psek-cons s 0)
+ (psek-add s 4)
  s
  ]}
 
-@deftogether[(@defproc[(pseq-pop-front [s pseq?]) (values any/c pseq?)]
-              @defproc[(pseq-pop-back [s pseq?]) (values any/c pseq?)])]{
+@deftogether[(@defproc[(psek-pop-front [s psek?]) (values any/c psek?)]
+              @defproc[(psek-pop-back [s psek?]) (values any/c psek?)])]{
  Return the element at the given end and the rest of the sequence.
  These operations take @math{O(log_K N)} time in the worst case, and most
  take @math{O(1)}; they take @math{O(T)} time when the result has at most
  @math{T} elements.  Raises @racket[exn:fail:contract] if @racket[s] is
  empty.}
 
-@deftogether[(@defproc[(pseq-first [s pseq?]) any/c]
-              @defproc[(pseq-last [s pseq?]) any/c])]{
- Shorthands for using @racket[pseq-ref] to access the first or last element
+@deftogether[(@defproc[(psek-first [s psek?]) any/c]
+              @defproc[(psek-last [s psek?]) any/c])]{
+ Shorthands for using @racket[psek-ref] to access the first or last element
  of a @tech{persistent sequence}.}
 
-@deftogether[(@defproc[(pseq-ref [s pseq?] [i exact-nonnegative-integer?]) any/c]
-              @defproc[(pseq-set [s pseq?] [i exact-nonnegative-integer?]
-                                 [v any/c]) pseq?])]{
+@deftogether[(@defproc[(psek-ref [s psek?] [i exact-nonnegative-integer?]) any/c]
+              @defproc[(psek-set [s psek?] [i exact-nonnegative-integer?]
+                                 [v any/c]) psek?])]{
  Returns the @racket[i]th element of @racket[s], or a sequence with that
  element replaced by @racket[v].  The first element is position @racket[0],
- and the last position is one less than @racket[(pseq-length s)].
+ and the last position is one less than @racket[(psek-length s)].
 
- @racket[pseq-ref] takes @math{O(K log_K N)} time in general, and
+ @racket[psek-ref] takes @math{O(K log_K N)} time in general, and
  @math{O(log_K N)} time for a sequence built without concatenation.
- @racket[pseq-set] takes @math{O(K log_K N)} time.
+ @racket[psek-set] takes @math{O(K log_K N)} time.
 
  @examples[
  #:eval the-eval
- (define s (list->pseq '(a b c d)))
- (pseq-ref s 2)
- (pseq->list (pseq-set s 2 'C))
- (pseq->list s)
+ (define s (list->psek '(a b c d)))
+ (psek-ref s 2)
+ (psek->list (psek-set s 2 'C))
+ (psek->list s)
  ]}
 
-@defproc[(pseq-append [s1 pseq?] [s2 pseq?]) pseq?]{
+@defproc[(psek-append [s1 psek?] [s2 psek?]) psek?]{
  Returns a @tech{persistent sequence} with the elements of @racket[s1]
  followed by those of @racket[s2], in @math{O(K log_K N + log_K^2 N)}.
 
  @examples[
  #:eval the-eval
- (pseq->list (pseq-append (pseq 1 2) (pseq 3 4)))
+ (psek->list (psek-append (psek 1 2) (psek 3 4)))
  ]}
 
-@defproc[(pseq-split [s pseq?] [i exact-nonnegative-integer?])
-         (values pseq? pseq?)]{
+@defproc[(psek-split [s psek?] [i exact-nonnegative-integer?])
+         (values psek? psek?)]{
  Returns the first @racket[i] elements and the rest, in
  @math{O(K log_K N + log_K^2 N)}.
 
  @examples[
  #:eval the-eval
- (define-values (before after) (pseq-split (list->pseq '(a b c d e)) 2))
- (pseq->list before)
- (pseq->list after)
+ (define-values (before after) (psek-split (list->psek '(a b c d e)) 2))
+ (psek->list before)
+ (psek->list after)
  ]}
 
-@deftogether[(@defproc[(pseq-take [s pseq?] [i exact-nonnegative-integer?]) pseq?]
-              @defproc[(pseq-drop [s pseq?] [i exact-nonnegative-integer?]) pseq?])]{
- The two halves of @racket[pseq-split] separately: the first @racket[i]
+@deftogether[(@defproc[(psek-take [s psek?] [i exact-nonnegative-integer?]) psek?]
+              @defproc[(psek-drop [s psek?] [i exact-nonnegative-integer?]) psek?])]{
+ The two halves of @racket[psek-split] separately: the first @racket[i]
  elements, or all but the first @racket[i].  Same cost as
- @racket[pseq-split], and @racket[s] is unchanged.
+ @racket[psek-split], and @racket[s] is unchanged.
 
  @examples[
  #:eval the-eval
- (define s (list->pseq '(a b c d e)))
- (pseq->list (pseq-take s 2))
- (pseq->list (pseq-drop s 2))
+ (define s (list->psek '(a b c d e)))
+ (psek->list (psek-take s 2))
+ (psek->list (psek-drop s 2))
  ]}
 
-@deftogether[(@defproc[(pseq->list [s pseq?]) list?]
-              @defproc[(list->pseq [xs list?]) pseq?]
-              @defproc[(pseq->vector [s pseq?]) vector?]
-              @defproc[(vector->pseq [v vector?]) pseq?]
-              @defproc[(pseq-for-each [s pseq?] [proc (-> any/c any)]) void?]
-              @defproc[(pseq-map [s pseq?] [proc (-> any/c any/c)]) pseq?])]{
+@deftogether[(@defproc[(psek->list [s psek?]) list?]
+              @defproc[(list->psek [xs list?]) psek?]
+              @defproc[(psek->vector [s psek?]) vector?]
+              @defproc[(vector->psek [v vector?]) psek?]
+              @defproc[(psek-for-each [s psek?] [proc (-> any/c any)]) void?]
+              @defproc[(psek-map [s psek?] [proc (-> any/c any/c)]) psek?])]{
  Conversion and iteration.  Each of these takes @math{O(N)} time.  See
- @racket[in-pseq] below for
+ @racket[in-psek] below for
  iterating in a @racket[for] clause.}
 
 @subsection{Ephemeral sequences}
@@ -248,7 +248,7 @@ An @deftech{ephemeral sequence} changes in place.  Where an operation on a
 here modifies the sequence it is given and returns @racket[void].
 
 An ephemeral sequence can be used as a single-valued @racket[sequence]; see
-also @racket[in-eseq].  It is @racket[serializable?], and two ephemeral
+also @racket[in-esek].  It is @racket[serializable?], and two ephemeral
 sequences are @racket[equal?] when their elements are.  It is not a
 @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{stream}.
 
@@ -256,59 +256,59 @@ Several threads may use an ephemeral sequence at once as long as none of them
 updates it; an update needs exclusive access.  @Secref["threads"] lists the
 operations that count as updates.
 
-@defproc[(eseq? [v any/c]) boolean?]{
+@defproc[(esek? [v any/c]) boolean?]{
 
 Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
 @racket[#f] otherwise.}
 
-@defproc[(eseq [v any/c] ...) eseq?]{
+@defproc[(esek [v any/c] ...) esek?]{
 
 Returns an @tech{ephemeral sequence} with @racket[v]s as its elements in
 order.
 
 @examples[
 #:eval the-eval
-(eseq 1 "a" 'apple)
+(esek 1 "a" 'apple)
 ]}
 
-@defproc[(make-eseq [n exact-nonnegative-integer? 0] [v any/c #f]) eseq?]{
+@defproc[(make-esek [n exact-nonnegative-integer? 0] [v any/c #f]) esek?]{
 
 Returns an @tech{ephemeral sequence} of length @racket[n], where every element
 is @racket[v].
 
 @examples[
 #:eval the-eval
-(make-eseq 0)
-(make-eseq 3 'pear)
+(make-esek 0)
+(make-esek 3 'pear)
 ]}
 
-@defproc[(eseq-empty? [e eseq?]) boolean?]{
+@defproc[(esek-empty? [e esek?]) boolean?]{
 
 Returns @racket[#t] if @racket[e] has no elements, @racket[#f] otherwise.
 This operation takes @math{O(1)} time.}
 
-@defproc[(eseq-length [e eseq?]) exact-nonnegative-integer?]{
+@defproc[(esek-length [e esek?]) exact-nonnegative-integer?]{
 
 Returns the number of elements in @racket[e].  This operation takes
 @math{O(1)} time.
 
 @examples[
 #:eval the-eval
-(eseq-length (eseq 1 "a" 'apple))
+(esek-length (esek 1 "a" 'apple))
 ]}
 
 @deftogether[(
-@defproc[(eseq-add! [e eseq?] [v any/c]) void?]
-@defproc[(eseq-cons! [e eseq?] [v any/c]) void?]
-@defproc[(eseq-push-back! [e eseq?] [v any/c]) void?]
-@defproc[(eseq-push-front! [e eseq?] [v any/c]) void?]
-@defproc[(eseq-pop-back! [e eseq?]) any/c]
-@defproc[(eseq-pop-front! [e eseq?]) any/c]
+@defproc[(esek-add! [e esek?] [v any/c]) void?]
+@defproc[(esek-cons! [e esek?] [v any/c]) void?]
+@defproc[(esek-push-back! [e esek?] [v any/c]) void?]
+@defproc[(esek-push-front! [e esek?] [v any/c]) void?]
+@defproc[(esek-pop-back! [e esek?]) any/c]
+@defproc[(esek-pop-front! [e esek?]) any/c]
 )]{
- Adds @racket[v] at the end (@racket[eseq-add!]) or the front
- (@racket[eseq-cons!]) of @racket[e], or removes and returns the element at
- one of its ends, modifying @racket[e] in place.  @racket[eseq-push-back!] and
- @racket[eseq-push-front!] are aliases for these operations, following the
+ Adds @racket[v] at the end (@racket[esek-add!]) or the front
+ (@racket[esek-cons!]) of @racket[e], or removes and returns the element at
+ one of its ends, modifying @racket[e] in place.  @racket[esek-push-back!] and
+ @racket[esek-push-front!] are aliases for these operations, following the
  names in the paper.
 
  In the worst case a push takes @math{O(K log_K N)} time and a pop
@@ -317,45 +317,45 @@ Returns the number of elements in @racket[e].  This operation takes
 
  @examples[
  #:eval the-eval
- (define items (eseq 1 2 3))
- (eseq-cons! items 0)
- (eseq-add! items 4)
+ (define items (esek 1 2 3))
+ (esek-cons! items 0)
+ (esek-add! items 4)
  items
- (eseq-pop-front! items)
- (eseq-pop-back! items)
+ (esek-pop-front! items)
+ (esek-pop-back! items)
  items
  ]}
 
 @deftogether[(
-@defproc[(eseq-ref [e eseq?] [i exact-nonnegative-integer?]) any/c]
-@defproc[(eseq-set! [e eseq?] [i exact-nonnegative-integer?] [v any/c]) void?]
+@defproc[(esek-ref [e esek?] [i exact-nonnegative-integer?]) any/c]
+@defproc[(esek-set! [e esek?] [i exact-nonnegative-integer?] [v any/c]) void?]
 )]{
 
 Returns the @racket[i]th element of @racket[e], or replaces it with
 @racket[v].  The first element is position @racket[0], and the last position
-is one less than @racket[(eseq-length e)].
+is one less than @racket[(esek-length e)].
 
-@racket[eseq-ref] takes @math{O(K log_K N)} time in general, and
+@racket[esek-ref] takes @math{O(K log_K N)} time in general, and
 @math{O(log_K N)} time for a sequence built without concatenation.
-@racket[eseq-set!] takes @math{O(K log_K N)} time.  For a sequence built
+@racket[esek-set!] takes @math{O(K log_K N)} time.  For a sequence built
 without concatenation it takes @math{O(log_K N)}, except that after a snapshot
 or an edit the first update near each index costs the full
 @math{O(K log_K N)}.
 
 @examples[
 #:eval the-eval
-(define items (eseq 1 "a" 'apple))
-(eseq-ref items 2)
-(eseq-set! items 2 'pear)
+(define items (esek 1 "a" 'apple))
+(esek-ref items 2)
+(esek-set! items 2 'pear)
 items
 ]}
 
 @deftogether[(
-@defproc[(eseq-first [e eseq?]) any/c]
-@defproc[(eseq-last [e eseq?]) any/c]
+@defproc[(esek-first [e esek?]) any/c]
+@defproc[(esek-last [e esek?]) any/c]
 )]{
 
-Shorthands for using @racket[eseq-ref] to access the first or last element of
+Shorthands for using @racket[esek-ref] to access the first or last element of
 an @tech{ephemeral sequence}.}
 
 The five operations that follow rearrange ephemeral sequences in place, and
@@ -363,69 +363,69 @@ they @italic{consume} the sequences they are given, leaving each empty. Use
 @racket[sek-take], @racket[sek-drop] and @racket[sek-sub] when the input must
 survive.
 
-@defproc[(eseq-append! [e eseq?] [other (or/c eseq? pseq?)]
+@defproc[(esek-append! [e esek?] [other (or/c esek? psek?)]
                        [side (or/c 'front 'back) 'back]) void?]{
  Appends the contents of @racket[other] to @racket[e], in place, at the given
  end.  This empties an ephemeral @racket[other] and leaves a persistent one
  untouched.  The two sequences must be distinct.}
 
-@defproc[(eseq-concat! [e1 eseq?] [e2 eseq?]) eseq?]{
+@defproc[(esek-concat! [e1 esek?] [e2 esek?]) esek?]{
  Returns a new sequence holding the concatenation, and empties both arguments,
  which must be distinct.}
 
-@defproc[(eseq-split! [e eseq?] [i exact-nonnegative-integer?])
-         (values eseq? eseq?)]{
+@defproc[(esek-split! [e esek?] [i exact-nonnegative-integer?])
+         (values esek? esek?)]{
  Returns two new sequences holding the first @racket[i] elements and the rest,
  and empties @racket[e].}
 
-@defproc[(eseq-carve! [e eseq?] [i exact-nonnegative-integer?]
-                      [side (or/c 'front 'back) 'back]) eseq?]{
+@defproc[(esek-carve! [e esek?] [i exact-nonnegative-integer?]
+                      [side (or/c 'front 'back) 'back]) esek?]{
  Splits @racket[e] at @racket[i], keeping one part in @racket[e] and returning
  the other: @racket['back] keeps the front part, @racket['front] keeps the
- back part.  Cheaper than @racket[eseq-split!] when one part is going back
+ back part.  Cheaper than @racket[esek-split!] when one part is going back
  into the same variable.}
 
-@deftogether[(@defproc[(eseq-take! [e eseq?] [i exact-nonnegative-integer?]
+@deftogether[(@defproc[(esek-take! [e esek?] [i exact-nonnegative-integer?]
                                    [side (or/c 'front 'back) 'front]) void?]
-              @defproc[(eseq-drop! [e eseq?] [i exact-nonnegative-integer?]
+              @defproc[(esek-drop! [e esek?] [i exact-nonnegative-integer?]
                                    [side (or/c 'front 'back) 'front]) void?])]{
- Truncate @racket[e] at index @racket[i].  @racket[eseq-take!] keeps the front
+ Truncate @racket[e] at index @racket[i].  @racket[esek-take!] keeps the front
  part when @racket[side] is @racket['front] and the back part otherwise;
- @racket[eseq-drop!] keeps the other one.}
+ @racket[esek-drop!] keeps the other one.}
 
-@defproc[(eseq-clear! [e eseq?]) void?]{Empties @racket[e].}
+@defproc[(esek-clear! [e esek?]) void?]{Empties @racket[e].}
 
-@defproc[(eseq-assign! [e1 eseq?] [e2 eseq?]) void?]{
+@defproc[(esek-assign! [e1 esek?] [e2 esek?]) void?]{
  Moves the contents of @racket[e2] into @racket[e1] and empties @racket[e2].
  Does nothing if the two are the same sequence.}
 
-@deftogether[(@defproc[(eseq->list [e eseq?]) list?]
-              @defproc[(list->eseq [xs list?]) eseq?]
-              @defproc[(eseq->vector [e eseq?]) vector?]
-              @defproc[(eseq-for-each [e eseq?] [proc (-> any/c any)]) void?])]{
+@deftogether[(@defproc[(esek->list [e esek?]) list?]
+              @defproc[(list->esek [xs list?]) esek?]
+              @defproc[(esek->vector [e esek?]) vector?]
+              @defproc[(esek-for-each [e esek?] [proc (-> any/c any)]) void?])]{
  Conversion and iteration.  Each of these takes @math{O(N)} time.  See
- @racket[in-eseq] below for
+ @racket[in-esek] below for
  iterating in a @racket[for] clause.}
 
 @deftogether[(
-@defproc[(eseq-fill! [e eseq?] [v any/c]
+@defproc[(esek-fill! [e esek?] [v any/c]
                      [start exact-nonnegative-integer? 0]
-                     [end exact-nonnegative-integer? (eseq-length e)]) void?]
-@defproc[(eseq-copy! [dst eseq?] [dst-start exact-nonnegative-integer?]
+                     [end exact-nonnegative-integer? (esek-length e)]) void?]
+@defproc[(esek-copy! [dst esek?] [dst-start exact-nonnegative-integer?]
                      [src sek?]
                      [src-start exact-nonnegative-integer? 0]
                      [src-end exact-nonnegative-integer? (sek-length src)]) void?]
 )]{
 
 Change the elements of an @tech{ephemeral sequence} in place:
-@racket[eseq-fill!] sets those from @racket[start] to @racket[end] to
-@racket[v], and @racket[eseq-copy!] sets those starting at @racket[dst-start]
+@racket[esek-fill!] sets those from @racket[start] to @racket[end] to
+@racket[v], and @racket[esek-copy!] sets those starting at @racket[dst-start]
 to match the elements of @racket[src] from @racket[src-start] to
 @racket[src-end]. They take the same arguments in the same order as
 @racket[vector-fill!] and @racket[vector-copy!].
 
 @racket[src] may be of either flavor; only the destination is modified.
-@racket[eseq-copy!] handles the case where @racket[src] and @racket[dst] are
+@racket[esek-copy!] handles the case where @racket[src] and @racket[dst] are
 the same sequence and the ranges overlap.
 
 For a sequence built without concatenation, both cost
@@ -434,16 +434,16 @@ For a sequence built without concatenation, both cost
 
 @examples[
 #:eval the-eval
-(define items (eseq 1 2 3 4 5))
-(eseq-fill! items 'x 1 3)
+(define items (esek 1 2 3 4 5))
+(esek-fill! items 'x 1 3)
 items
-(eseq-copy! items 0 (pseq 'a 'b))
+(esek-copy! items 0 (psek 'a 'b))
 items
 ]}
 
 @subsection{Converting between the two flavors}
 
-@defproc[(eseq-snapshot [e eseq?]) pseq?]{
+@defproc[(esek-snapshot [e esek?]) psek?]{
  Returns a @tech{persistent sequence} with the current contents of
  @racket[e].
  @racket[e] remains usable and keeps its contents; later updates to it do not
@@ -454,15 +454,15 @@ items
 
  @examples[
  #:eval the-eval
- (define e (list->eseq '(1 2 3)))
- (define snap (eseq-snapshot e))
- (eseq-push-back! e 4)
- (eseq->list e)
+ (define e (list->esek '(1 2 3)))
+ (define snap (esek-snapshot e))
+ (esek-push-back! e 4)
+ (esek->list e)
  (code:comment "the snapshot does not see the push")
- (pseq->list snap)
+ (psek->list snap)
  ]}
 
-@defproc[(pseq-edit [s pseq?]) eseq?]{
+@defproc[(psek-edit [s psek?]) esek?]{
  Returns an @tech{ephemeral sequence} with the contents of @racket[s].
  @racket[s] is unaffected by later updates to the result.
 
@@ -470,19 +470,19 @@ items
 
  @examples[
  #:eval the-eval
- (define s (pseq 1 2 3))
- (define e (pseq-edit s))
- (eseq-set! e 0 'changed)
- (eseq->list e)
- (pseq->list s)
+ (define s (psek 1 2 3))
+ (define e (psek-edit s))
+ (esek-set! e 0 'changed)
+ (esek->list e)
+ (psek->list s)
  ]}
 
-@defproc[(eseq-snapshot-and-clear! [e eseq?]) pseq?]{
+@defproc[(esek-snapshot-and-clear! [e esek?]) psek?]{
  Returns a snapshot of @racket[e] and empties @racket[e].  Unlike
- @racket[eseq-snapshot], it does not make later updates to @racket[e] more
+ @racket[esek-snapshot], it does not make later updates to @racket[e] more
  expensive.}
 
-@defproc[(eseq-copy [e eseq?] [#:mode mode (or/c 'share 'copy) 'copy]) eseq?]{
+@defproc[(esek-copy [e esek?] [#:mode mode (or/c 'share 'copy) 'copy]) esek?]{
  An independent ephemeral copy of @racket[e].  @racket['copy] mode, the
  default, costs @math{O(N)} and leaves no later cost.  @racket['share] mode
  costs @math{O(1)} but makes later updates to either sequence more expensive,
@@ -502,11 +502,11 @@ other thread may use the sequence, an @tech{iterator} over it, or a
 @tech{segment} of it.  These operations update an ephemeral sequence:
 
 @itemlist[
- @item{every operation whose name begins with @racketidfont{eseq-} and ends
+ @item{every operation whose name begins with @racketidfont{esek-} and ends
        in @litchar{!}, on the sequence it modifies.
-       @racket[eseq-append!], @racket[eseq-assign!] and @racket[eseq-concat!]
+       @racket[esek-append!], @racket[esek-assign!] and @racket[esek-concat!]
        also update the ephemeral sequence that they empty; the source of
-       @racket[eseq-copy!] is only read;}
+       @racket[esek-copy!] is only read;}
  @item{@racket[sek-iter-set!], @racket[sek-iter-set-and-move!] and the four
        @racket[sek-iter-writable-segment] operations, on an iterator over the
        sequence;}
@@ -515,12 +515,12 @@ other thread may use the sequence, an @tech{iterator} over it, or a
        and every ephemeral sequence in it, since it empties them.}]
 
 Every other operation only reads the sequences it is given.  In particular,
-iterating over a sequence, @racket[eseq-snapshot], @racket[eseq-copy],
+iterating over a sequence, @racket[esek-snapshot], @racket[esek-copy],
 @racket[equal?], and the operations on either flavor that build a new
 sequence are all reads.
 
 The two flavors can share structure -- a snapshot shares with the ephemeral
-sequence it was taken from, and @racket[pseq-edit] returns an ephemeral
+sequence it was taken from, and @racket[psek-edit] returns an ephemeral
 sequence that shares with its argument -- but the sharing needs no
 synchronization: one thread may update an ephemeral sequence while others use
 a persistent sequence that shares with it.
@@ -551,7 +551,7 @@ after.  An iterator that sits on a sentinel is @racket[sek-iter-finished?].
 
 Moving one step costs @math{O(1)} amortized and @math{O(log_K N)} in the
 worst case, so a full traversal costs @math{O(N)}, where repeated
-@racket[pseq-ref] pays for a lookup at every element.
+@racket[psek-ref] pays for a lookup at every element.
 
 Iterating an ephemeral sequence is checked: any update to the sequence
 invalidates every iterator on it, and using an invalidated iterator raises an
@@ -559,13 +559,13 @@ exception.  @racket[sek-configure!] turns the check off, after which using an
 invalidated iterator gives unspecified results, though it does not corrupt
 memory.  Iterators on persistent sequences are never invalidated.
 
-@defproc[(sek-iterator [s (or/c pseq? eseq?)]
+@defproc[(sek-iterator [s (or/c psek? esek?)]
                        [dir (or/c 'forward 'backward) 'forward]) sek-iter?]{
  An iterator on the first element of @racket[s], or on the last one if
  @racket[dir] is @racket['backward].  On an empty sequence the result is
  already finished.}
 
-@defproc[(sek-iterator-at-sentinel [s (or/c pseq? eseq?)]
+@defproc[(sek-iterator-at-sentinel [s (or/c psek? esek?)]
                                    [side (or/c 'front 'back) 'front]) sek-iter?]{
  An iterator on the sentinel just before (or just after) the sequence.}
 
@@ -573,7 +573,7 @@ memory.  Iterators on persistent sequences are never invalidated.
  Returns @racket[#t] if @racket[v] is an @tech{iterator}, @racket[#f]
  otherwise.}
 
-@deftogether[(@defproc[(sek-iter-sequence [it sek-iter?]) (or/c pseq? eseq?)]
+@deftogether[(@defproc[(sek-iter-sequence [it sek-iter?]) (or/c psek? esek?)]
               @defproc[(sek-iter-length [it sek-iter?]) exact-nonnegative-integer?]
               @defproc[(sek-iter-index [it sek-iter?]) exact-integer?]
               @defproc[(sek-iter-finished? [it sek-iter?]) boolean?]
@@ -714,8 +714,8 @@ Those that build a new sequence return the same flavor they were given.
 @subsection{Traversal}
 
 @deftogether[(@defform*[((in-sek s) (in-sek s dir))]
-              @defform*[((in-pseq s) (in-pseq s dir))]
-              @defform*[((in-eseq e) (in-eseq e dir))])]{
+              @defform*[((in-psek s) (in-psek s dir))]
+              @defform*[((in-esek e) (in-esek e dir))])]{
  Sequences over the elements, in @racket['forward] order by default.  They
  are fastest written directly in a @racket[for] clause.  Updating an
  ephemeral sequence during the loop is detected, as for an @tech{iterator}.}
@@ -789,7 +789,7 @@ Those that build a new sequence return the same flavor they were given.
  @math{O(size + K log_K N)} time, which does not make later updates to
  @racket[s] more expensive.  None of them
  modifies @racket[s].  @racket[sek-copy] is the identity on a persistent
- sequence and @racket[eseq-copy] on an ephemeral one.}
+ sequence and @racket[esek-copy] on an ephemeral one.}
 
 @deftogether[(
 @defproc[(sek-take-right [s sek?] [n exact-nonnegative-integer?]) sek?]
@@ -802,8 +802,8 @@ Those that build a new sequence return the same flavor they were given.
 
  @examples[
  #:eval the-eval
- (sek-take-right (pseq 1 2 3 4 5) 2)
- (sek-drop-right (pseq 1 2 3 4 5) 2)
+ (sek-take-right (psek 1 2 3 4 5) 2)
+ (sek-drop-right (psek 1 2 3 4 5) 2)
  ]}
 
 @deftogether[(
@@ -820,9 +820,9 @@ Those that build a new sequence return the same flavor they were given.
 
  @examples[
  #:eval the-eval
- (sek-insert (pseq 1 2 3) 1 'x)
- (sek-insert (pseq 1 2 3) 3 'x)
- (sek-delete (pseq 1 2 3) 1)
+ (sek-insert (psek 1 2 3) 1 'x)
+ (sek-insert (psek 1 2 3) 3 'x)
+ (sek-delete (psek 1 2 3) 1)
  ]}
 
 @defproc[(sek-index-of [s sek?] [v any/c]
@@ -834,8 +834,8 @@ Those that build a new sequence return the same flavor they were given.
 
  @examples[
  #:eval the-eval
- (sek-index-of (pseq 'a 'b 'c) 'b)
- (sek-index-of (pseq 'a 'b 'c) 'z)
+ (sek-index-of (psek 'a 'b 'c) 'b)
+ (sek-index-of (psek 'a 'b 'c) 'z)
  ]}
 
 @subsection{Ordering}
@@ -872,22 +872,22 @@ Those that build a new sequence return the same flavor they were given.
 
 @subsection{Construction}
 
-@deftogether[(@defproc[(build-pseq [n exact-nonnegative-integer?]
-                                   [proc (-> exact-nonnegative-integer? any/c)]) pseq?]
-              @defproc[(build-eseq [n exact-nonnegative-integer?]
-                                   [proc (-> exact-nonnegative-integer? any/c)]) eseq?]
-              @defproc[(make-pseq [n exact-nonnegative-integer?] [v any/c #f]) pseq?]
-              @defproc[(sequence->pseq [s sequence?]
-                                       [n (or/c exact-nonnegative-integer? #f) #f]) pseq?]
-              @defproc[(sequence->eseq [s sequence?]
-                                       [n (or/c exact-nonnegative-integer? #f) #f]) eseq?]
-              @defform[(for/eseq (for-clause ...) body ...+)]
-              @defform[(for*/eseq (for-clause ...) body ...+)]
-              @defform[(for/pseq (for-clause ...) body ...+)]
-              @defform[(for*/pseq (for-clause ...) body ...+)])]{
+@deftogether[(@defproc[(build-psek [n exact-nonnegative-integer?]
+                                   [proc (-> exact-nonnegative-integer? any/c)]) psek?]
+              @defproc[(build-esek [n exact-nonnegative-integer?]
+                                   [proc (-> exact-nonnegative-integer? any/c)]) esek?]
+              @defproc[(make-psek [n exact-nonnegative-integer?] [v any/c #f]) psek?]
+              @defproc[(sequence->psek [s sequence?]
+                                       [n (or/c exact-nonnegative-integer? #f) #f]) psek?]
+              @defproc[(sequence->esek [s sequence?]
+                                       [n (or/c exact-nonnegative-integer? #f) #f]) esek?]
+              @defform[(for/esek (for-clause ...) body ...+)]
+              @defform[(for*/esek (for-clause ...) body ...+)]
+              @defform[(for/psek (for-clause ...) body ...+)]
+              @defform[(for*/psek (for-clause ...) body ...+)])]{
  Build a sequence of @racket[n] elements, or from the elements of any Racket
  @racket[sequence], or from the results of a comprehension, in
- @math{O(N + K)}.  See also @racket[make-eseq], which takes the same arguments
+ @math{O(N + K)}.  See also @racket[make-esek], which takes the same arguments
  as @racket[make-vector].}
 
 @section{Configuration}
@@ -920,7 +920,7 @@ Those that build a new sequence return the same flavor they were given.
  error.
 
  Set the capacities and the threshold before building any sequences: a
- sequence built under other settings fails @racket[sek-validate-pseq] and does
+ sequence built under other settings fails @racket[sek-validate-psek] and does
  not meet the bounds given here.  Small capacities are useful mainly for
  testing.  The settings apply to the whole program, so
  @racket[sek-configure!] must not run while another thread is using a
@@ -928,8 +928,8 @@ Those that build a new sequence return the same flavor they were given.
 
 @section{Validation}
 
-@deftogether[(@defproc[(sek-validate-pseq [s pseq?]) pseq?]
-              @defproc[(sek-validate-eseq [e eseq?]) eseq?])]{
+@deftogether[(@defproc[(sek-validate-psek [s psek?]) psek?]
+              @defproc[(sek-validate-esek [e esek?]) esek?])]{
  Check the structural invariants of a sequence and return it, raising an
  exception describing the first violation found.  This is the paper's runtime
  validation function.  It costs @math{O(N)} and is meant for testing, not
@@ -961,8 +961,8 @@ differences are these.
        sequence's chunks, where the OCaml library copies a slice of at most
        @math{T} elements.}
 
- @item{@racket[pseq-edit] takes @math{O(1)} time, and so does
-       @racket[eseq-copy] in @racket['share] mode, where the OCaml library's
+ @item{@racket[psek-edit] takes @math{O(1)} time, and so does
+       @racket[esek-copy] in @racket['share] mode, where the OCaml library's
        versions take @math{O(K)}.}
 
  @item{The settings are global and are changed at run time with
