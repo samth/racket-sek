@@ -26,7 +26,13 @@
 ;;     [--threshold T] [--test-cases N] [--steps N] [--seed S]
 
 (require racket/list
-         sek
+         ;; the full iterator and segment interface, which `sek` does not
+         ;; export
+         (except-in sek sek-iterator)
+         sek/iterator
+         sek/segment
+         (submod sek config)
+         (submod sek validate)
          (only-in sek/ptree lvl? lvl-front lvl-middle lvl-back)
          (only-in sek/chunk fresh-id! chunk-capacity chunk-weight)
          (submod sek/chunk testing)

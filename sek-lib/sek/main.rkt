@@ -14,10 +14,11 @@
 ;; `esek-snapshot` and `psek-edit` convert between them in constant time, and
 ;; the two flavors share their internal representation.
 ;;
-;; On top of the core there are first-class iterators, segments -- the runs of
-;; contiguous storage an iterator can hand out in one piece -- and a set of
-;; derived operations that work on either flavor, returning results of the
-;; same flavor as their argument.
+;; On top of the core there are first-class iterators, and a set of derived
+;; operations that work on either flavor, returning results of the same flavor
+;; as their argument.  Internally the iterators also hand out segments -- the
+;; runs of contiguous storage the derived operations traverse in one piece --
+;; but segments are not part of the public interface.
 
 (require "config.rkt"
          ;; generic.rkt provides faster for-clause versions of these two
@@ -28,11 +29,8 @@
          "generic.rkt"
          "check.rkt")
 
-;; ---- configuration (§4.1)
-(provide sek-configure!
-
-         ;; ---- persistent sequences (§3.1-3.5)
-         psek?
+;; ---- persistent sequences (§3.1-3.5)
+(provide psek?
          psek
          empty-psek
          psek-empty?
@@ -95,51 +93,16 @@
          psek-edit
          esek-copy
 
-         ;; ---- iterators (§5.4)
-         sek-iterator
-         sek-iterator-at-sentinel
+         ;; ---- iterators (§5.4); the library itself uses the full set in
+         ;; iterator.rkt, segments included
+         (rename-out [sek-iterator-at sek-iterator])
          sek-iter?
-         sek-iter-copy
-         sek-iter-reset!
-         sek-iter-sequence
-         sek-iter-length
          sek-iter-index
          sek-iter-finished?
-         sek-iter-valid?
          sek-iter-get
-         sek-iter-get*
          sek-iter-move!
-         sek-iter-get-and-move!
-         sek-iter-get-and-move*!
-         sek-iter-jump!
          sek-iter-reach!
-         sek-iter-segment
-         sek-iter-segment*
-         sek-iter-segment-and-jump!
-         sek-iter-segment-and-jump*!
          sek-iter-set!
-         sek-iter-set-and-move!
-         sek-iter-writable-segment
-         sek-iter-writable-segment*
-         sek-iter-writable-segment-and-jump!
-         sek-iter-writable-segment-and-jump*!
-         sek-iter-check
-
-         ;; ---- segments
-         segment
-         segment?
-         segment-vector
-         segment-start
-         segment-length
-         segment-valid?
-         segment-empty?
-         segment-ref
-         segment-set!
-         segment-for-each
-         segment-for-each2
-         in-segment
-         segment->list
-         segment->vector
 
          ;; ---- operations that work on either flavor
          sek?
@@ -149,7 +112,6 @@
          sek-first
          sek-last
          in-sek
-         sek-segments-for-each
          sek-for-each
          sek-for-each/index
          sek-fold-left
@@ -165,7 +127,6 @@
          sek->vector
          sek-equal?
          sek-compare
-         sek-segments-for-each2
          sek-for-each2
          sek-fold-left2
          sek-fold-right2
@@ -206,5 +167,14 @@
          for/psek
          for*/psek
 
-         ;; ---- runtime validation (Appendix A)
-         (rename-out [check-psek sek-validate-psek] [check-esek sek-validate-esek]))
+         ;; ---- what a program that breaks the threading rules can see
+         (struct-out exn:fail:sek))
+
+;; Not part of the public interface, and not documented; the tests use them.
+;;   (require (submod sek config))    the tunable settings (§4.1)
+;;   (require (submod sek validate))  runtime validation (Appendix A)
+(module+ config
+  (provide sek-configure!))
+(module+ validate
+  (provide (rename-out [check-psek sek-validate-psek] [check-esek sek-validate-esek])
+           sek-iter-check))

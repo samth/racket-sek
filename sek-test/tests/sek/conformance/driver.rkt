@@ -5,7 +5,11 @@
 (require racket/list
          racket/string
          racket/port
-         sek)
+         ;; the full iterator interface, which `sek` does not export
+         (except-in sek sek-iterator)
+         sek/iterator
+         (submod sek config)
+         (submod sek validate))
 
 (define nslots 6)
 (define es (build-vector nslots (lambda (_) (make-esek))))

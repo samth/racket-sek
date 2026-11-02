@@ -52,6 +52,7 @@
 ;; value of the wrong kind.
 
 (provide sek-iterator
+         sek-iterator-at
          sek-iterator-at-sentinel
          sek-iter?
          sek-iter-copy
@@ -587,6 +588,22 @@
   (define it (sek-iterator-at-sentinel s (if (eq? dir 'forward) 'front 'back)))
   (cur-move! (siter-cursor it) dir)
   it)
+
+;; The constructor the library exports as `sek-iterator`: an iterator at index
+;; i, where -1 and the length are the two sentinels.  Starting at either end
+;; costs O(1); anywhere else, a descent from the root.
+(define (sek-iterator-at s [i 0])
+  (check-sek 'sek-iterator s)
+  (define n (if (psek? s) (psek-length s) (esek-length s)))
+  (unless (and (exact-integer? i) (<= -1 i n))
+    (raise-argument-error 'sek-iterator (format "(integer-in -1 ~a)" n) i))
+  (cond
+    [(eqv? i 0) (sek-iterator s 'forward)]
+    [(eqv? i (sub1 n)) (sek-iterator s 'backward)]
+    [else
+     (define it (sek-iterator-at-sentinel s 'front))
+     (cur-reach! (siter-cursor it) i)
+     it]))
 
 ;; The validity test without the argument check, for the callers below that
 ;; have just made it themselves.

@@ -10,7 +10,8 @@
 ;; takes #:pool, i.e. where threads can run in parallel.
 (require rackunit
          racket/list
-         sek)
+         sek
+         (submod sek validate))
 
 (define parallel?
   (let-values ([(required accepted) (procedure-keywords thread)])

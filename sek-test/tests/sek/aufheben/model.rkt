@@ -17,7 +17,13 @@
 ;;                    [--test-cases N] [--steps N] [--seed S]
 
 (require racket/list
-         sek
+         ;; the full iterator and segment interface, which `sek` does not
+         ;; export
+         (except-in sek sek-iterator)
+         sek/iterator
+         sek/segment
+         (submod sek config)
+         (submod sek validate)
          aufheben
          aufheben/runner)
 

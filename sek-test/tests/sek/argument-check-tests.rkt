@@ -52,7 +52,6 @@
   (set 'psek
        'esek
        'segment
-       'sek-configure!
        'psek-push-front
        'psek-push-back
        'esek-push-front!

@@ -9,7 +9,11 @@
 ;; arbitrary memory.
 (require rackunit
          racket/list
-         sek)
+         ;; the iterator and segment operations the library uses internally
+         ;; are checked too, though `sek` exports only some of them
+         (except-in sek sek-iterator)
+         sek/iterator
+         sek/segment)
 
 (define-syntax-rule (raises expr)
   (check-exn exn:fail? (lambda () expr) (format "~s should raise" 'expr)))

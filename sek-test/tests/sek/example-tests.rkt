@@ -4,7 +4,8 @@
 
 (require rackunit
          racket/list
-         sek)
+         sek
+         (submod sek validate))
 
 (module+ test
   ;; ---- the overview example ------------------------------------------------
@@ -79,6 +80,20 @@
   (check-equal? (for/list ([x (in-psek rejoined)] [_ (in-range 3)]) x) '(0 1 2))
   (check-equal? (for/first ([x (in-psek big)]) x) 0)
   (check-equal? (for/list ([x (in-esek (list->esek '(1 2 3)))]) x) '(1 2 3))
+
+  ;; ---- the iterator constructor takes a start index, -1 to the length ----
+  (for ([s (list (list->psek '(a b c)) (list->esek '(a b c)))])
+    (check-equal? (for/list ([i (in-range -1 4)])
+                    (define it (sek-iterator s i))
+                    (list (sek-iter-index it)
+                          (and (not (sek-iter-finished? it)) (sek-iter-get it))))
+                  '((-1 #f) (0 a) (1 b) (2 c) (3 #f)))
+    (check-exn exn:fail:contract? (lambda () (sek-iterator s 4)))
+    (check-exn exn:fail:contract? (lambda () (sek-iterator s -2))))
+  (check-true (sek-iter-finished? (sek-iterator empty-psek)))
+  (let ([it (sek-iterator (list->esek '(1 2 3)) 2)])
+    (sek-iter-move! it 'backward)
+    (check-equal? (sek-iter-get it) 2))
 
   ;; ---- a queue built ephemerally, snapshotted midway ----------------------
   (define qe (make-esek))

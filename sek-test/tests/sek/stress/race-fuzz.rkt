@@ -35,7 +35,14 @@
 ;; comes out -- the empty-slot marker, a chunk -- is reported as foreign.
 (require racket/list
          racket/async-channel
-         sek)
+         ;; the full iterator and segment interface, which `sek` does not
+         ;; export
+         (except-in sek sek-iterator)
+         sek/iterator
+         sek/segment
+         (only-in sek/generic sek-segments-for-each)
+         (submod sek config)
+         (submod sek validate))
 
 (define mode 'psek)
 (define nthreads 2)
