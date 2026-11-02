@@ -7,6 +7,9 @@ A Racket implementation of
 > Proc. ACM Program. Lang. 10, ICFP, Article 308 (August 2026).
 > <https://doi.org/10.1145/3828706>
 
+The paper is open access, under CC BY 4.0:
+[PDF](https://dl.acm.org/doi/pdf/10.1145/3828706).
+
 A *transient* data structure is an ephemeral data structure, a persistent one,
 and fast conversions between them. You take a persistent snapshot in constant
 time when you need one, and keep the speed of in-place updates everywhere else.
