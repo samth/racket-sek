@@ -1,8 +1,8 @@
 #lang racket/base
 ;; The accessors of the library's own structures do not check their argument
-;; (see sek/unchecked), so one handed the wrong kind of value does not raise --
-;; it reads whatever is at that offset.  Everything a caller
-;; outside the library can reach therefore has to check its arguments with an
+;; (see sek/private/unchecked), so one handed the wrong kind of value does not
+;; raise -- it reads whatever is at that offset.  Everything a caller outside
+;; the library can reach therefore has to check its arguments with an
 ;; explicit `unless`, and this file is what holds that line: it calls the public
 ;; surface with wrong types and out-of-range indices and insists on an
 ;; exception.  Without the checks these are not failures, they are reads of
@@ -12,8 +12,8 @@
          ;; the iterator and segment operations the library uses internally
          ;; are checked too, though `sek` exports only some of them
          (except-in sek sek-iterator)
-         sek/iterator
-         sek/segment)
+         sek/private/iterator
+         sek/private/segment)
 
 (define-syntax-rule (raises expr)
   (check-exn exn:fail? (lambda () expr) (format "~s should raise" 'expr)))

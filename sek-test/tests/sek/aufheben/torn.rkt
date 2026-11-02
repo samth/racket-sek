@@ -29,16 +29,16 @@
          ;; the full iterator and segment interface, which `sek` does not
          ;; export
          (except-in sek sek-iterator)
-         sek/iterator
-         sek/segment
+         sek/private/iterator
+         sek/private/segment
          (submod sek config)
          (submod sek validate)
-         (only-in sek/ptree lvl? lvl-front lvl-middle lvl-back)
-         (only-in sek/chunk fresh-id! chunk-capacity chunk-weight)
-         (submod sek/chunk testing)
-         (submod sek/ephemeral testing)
-         (submod sek/iterator testing)
-         (submod sek/unchecked testing)
+         (only-in sek/private/ptree lvl? lvl-front lvl-middle lvl-back)
+         (only-in sek/private/chunk fresh-id! chunk-capacity chunk-weight)
+         (submod sek/private/chunk testing)
+         (submod sek/private/ephemeral testing)
+         (submod sek/private/iterator testing)
+         (submod sek/private/unchecked testing)
          aufheben
          aufheben/runner)
 

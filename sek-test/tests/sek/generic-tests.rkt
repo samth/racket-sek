@@ -4,12 +4,12 @@
 (require rackunit
          racket/list
          racket/vector
-         sek/config
-         (except-in sek/persistent in-psek)
-         (except-in sek/ephemeral in-esek)
-         sek/generic
-         sek/segment
-         sek/check)
+         sek/private/config
+         (except-in sek/private/persistent in-psek)
+         (except-in sek/private/ephemeral in-esek)
+         sek/private/generic
+         sek/private/segment
+         sek/private/check)
 
 (provide run-generic-tests)
 

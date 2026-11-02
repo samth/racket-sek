@@ -94,8 +94,8 @@ both `Ephemeral.map` and `Persistent.map`.
 ### Iterators
 
 The public `sek` module exports only a small iterator interface, and no
-segments.  The driver requires the full set from `sek/iterator` and
-`sek/segment`, which the table below names; the validators come from
+segments.  The driver requires the full set from `sek/private/iterator` and
+`sek/private/segment`, which the table below names; the validators come from
 `(submod sek validate)`.
 
 | OCaml | this library |

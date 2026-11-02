@@ -7,9 +7,9 @@
 
 (require rackunit
          racket/list
-         sek/config
-         sek/persistent
-         sek/check)
+         sek/private/config
+         sek/private/persistent
+         sek/private/check)
 
 (provide run-persistent-random-tests)
 

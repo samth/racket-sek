@@ -35,7 +35,7 @@
          json
          ;; the full iterator interface, which `sek` does not export
          (except-in sek sek-iterator)
-         sek/iterator
+         sek/private/iterator
          (submod sek config))
 
 ;; bench/external.rkt reuses the contenders and the harness below.

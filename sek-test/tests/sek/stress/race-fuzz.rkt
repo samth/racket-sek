@@ -27,20 +27,21 @@
 ;;   iterator  N threads move and read through one iterator
 ;;
 ;; Run these against a build of sek-lib compiled with SEK_CHECKED=1 (see
-;; sek/unchecked) to have every unchecked operation check its precondition: an
-;; event mentioning "precondition violated" is then a memory-safety failure
-;; caught before it happened.  A build compiled with SEK_JITTER=1 widens the
-;; windows in which races happen.  Elements are fixnums: 0..999999 in the
-;; initial sequence and tagged by thread above that, so anything else that
-;; comes out -- the empty-slot marker, a chunk -- is reported as foreign.
+;; sek/private/unchecked) to have every unchecked operation check its
+;; precondition: an event mentioning "precondition violated" is then a
+;; memory-safety failure caught before it happened.  A build compiled with
+;; SEK_JITTER=1 widens the windows in which races happen.  Elements are
+;; fixnums: 0..999999 in the initial sequence and tagged by thread above that,
+;; so anything else that comes out -- the empty-slot marker, a chunk -- is
+;; reported as foreign.
 (require racket/list
          racket/async-channel
          ;; the full iterator and segment interface, which `sek` does not
          ;; export
          (except-in sek sek-iterator)
-         sek/iterator
-         sek/segment
-         (only-in sek/generic sek-segments-for-each)
+         sek/private/iterator
+         sek/private/segment
+         (only-in sek/private/generic sek-segments-for-each)
          (submod sek config)
          (submod sek validate))
 

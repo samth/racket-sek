@@ -1,12 +1,12 @@
 #lang racket/base
 ;; Every public operation must check its principal argument.
 ;;
-;; The accessors of sek-lib's own structures do not check their argument (see
-;; sek/unchecked), so one handed the wrong kind of value does not raise -- it
-;; reads whatever is at that field offset.  An operation that reaches an
-;; accessor without testing its argument is therefore reading arbitrary
-;; memory, and on some platforms that read lands on something harmless and
-;; passes.
+;; The accessors of sek-lib's own structures do not check their argument
+;; (see sek/private/unchecked), so one handed the wrong kind of value does not
+;; raise -- it reads whatever is at that field offset.  An operation that
+;; reaches an accessor without testing its argument is therefore reading
+;; arbitrary memory, and on some platforms that read lands on something
+;; harmless and passes.
 ;;
 ;; `error-tests.rkt` lists the operations by hand, so it only covers what
 ;; someone remembered to add.  This derives the list from the module's exports

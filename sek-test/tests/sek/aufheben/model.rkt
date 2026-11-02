@@ -20,8 +20,8 @@
          ;; the full iterator and segment interface, which `sek` does not
          ;; export
          (except-in sek sek-iterator)
-         sek/iterator
-         sek/segment
+         sek/private/iterator
+         sek/private/segment
          (submod sek config)
          (submod sek validate)
          aufheben

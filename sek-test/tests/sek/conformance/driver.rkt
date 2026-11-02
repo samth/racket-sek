@@ -7,7 +7,7 @@
          racket/port
          ;; the full iterator interface, which `sek` does not export
          (except-in sek sek-iterator)
-         sek/iterator
+         sek/private/iterator
          (submod sek config)
          (submod sek validate))
 

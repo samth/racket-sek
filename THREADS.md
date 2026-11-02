@@ -310,7 +310,7 @@ the runs under "Weakly ordered hardware".
 Fuzzing tells us about memory safety only when a race happens to corrupt
 memory visibly, and only when the race happens at all; both are rare.  Two
 builds of the library, chosen by environment variables when it is compiled
-(see `sek/unchecked`), remove both limits:
+(see `sek/private/unchecked`), remove both limits:
 
 * **The checked build** (`SEK_CHECKED=1`).  `unchecked.rkt` is the only
   module that uses `racket/unsafe/ops`, and in this build every unchecked

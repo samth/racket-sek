@@ -4,14 +4,15 @@
 
 (require rackunit
          racket/list
-         sek/config
-         (only-in sek/chunk chunk-empty?)
-         (only-in sek/check check-esek)
-         sek/persistent
-         sek/ephemeral
-         (only-in (submod sek/ephemeral testing) esq-version set-esq-version! set-esq-folded!)
-         sek/iterator
-         sek/segment)
+         sek/private/config
+         (only-in sek/private/chunk chunk-empty?)
+         (only-in sek/private/check check-esek)
+         sek/private/persistent
+         sek/private/ephemeral
+         (only-in (submod sek/private/ephemeral testing)
+                  esq-version set-esq-version! set-esq-folded!)
+         sek/private/iterator
+         sek/private/segment)
 
 (provide run-iterator-random-tests)
 

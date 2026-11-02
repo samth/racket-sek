@@ -31,22 +31,23 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 
 ## What is here
 
-The library is in `sek-lib/sek/`, its documentation in `sek-doc/`, and its
-tests, benchmarks and conformance harness in `sek-test/tests/sek/`.
+The library's interface is `sek-lib/sek/main.rkt`, and everything behind it is
+in `sek-lib/sek/private/`.  Its documentation is in `sek-doc/`, and its tests,
+benchmarks and conformance harness in `sek-test/tests/sek/`.
 
 | file | paper | contents |
 | --- | --- | --- |
-| `sek-lib/sek/config.rkt` | §4.1 | chunk capacities and the short-sequence threshold |
-| `sek-lib/sek/chunk.rkt` | §3.3, Fig. 11–13 | transient chunks: circular support + view + ownership id |
-| `sek-lib/sek/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
-| `sek-lib/sek/persistent.rkt` | §3.5 | `psek`, including the compact representation of short sequences |
-| `sek-lib/sek/ephemeral.rkt` | §3.6 | `esek`, including the inner front/back chunks |
-| `sek-lib/sek/iterate.rkt` | — | lazy left-to-right traversal, behind `prop:sequence` |
-| `sek-lib/sek/segment.rkt` | `Segment` | runs of contiguous storage, used internally |
-| `sek-lib/sek/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
-| `sek-lib/sek/generic.rkt` | `Generic`, `PublicSignature` | the derived operation surface |
-| `sek-lib/sek/check.rkt` | Appendix A, Fig. 19 | the runtime validation function |
-| `sek-lib/sek/unchecked.rkt` | — | the only module with unchecked operations, and the checked and jitter builds |
+| `sek-lib/sek/private/config.rkt` | §4.1 | chunk capacities and the short-sequence threshold |
+| `sek-lib/sek/private/chunk.rkt` | §3.3, Fig. 11–13 | transient chunks: circular support + view + ownership id |
+| `sek-lib/sek/private/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
+| `sek-lib/sek/private/persistent.rkt` | §3.5 | `psek`, including the compact representation of short sequences |
+| `sek-lib/sek/private/ephemeral.rkt` | §3.6 | `esek`, including the inner front/back chunks |
+| `sek-lib/sek/private/iterate.rkt` | — | lazy left-to-right traversal, behind `prop:sequence` |
+| `sek-lib/sek/private/segment.rkt` | `Segment` | runs of contiguous storage, used internally |
+| `sek-lib/sek/private/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
+| `sek-lib/sek/private/generic.rkt` | `Generic`, `PublicSignature` | the derived operation surface |
+| `sek-lib/sek/private/check.rkt` | Appendix A, Fig. 19 | the runtime validation function |
+| `sek-lib/sek/private/unchecked.rkt` | — | the only module with unchecked operations, and the checked and jitter builds |
 | `sek-test/tests/sek/` | §4.2 | randomized differential testing against list/vector references |
 | `sek-test/tests/sek/bench/` | §4.3 | benchmarks against Racket's sequences and against the OCaml library |
 | `sek-test/tests/sek/conformance/` | — | differential testing against the OCaml library itself |
@@ -171,11 +172,11 @@ The suite runs at chunk capacities from 2 upwards, so the trees get deep and
 the cascading cases in `push`, `pop`, `split` and `merge` are actually reached.
 
 The accessors of the library's own structures do not check their argument (see
-`sek/unchecked`), so nothing here raises by accident: an accessor handed the
-wrong kind of value reads whatever is at that offset rather than complaining.
-Every function a caller
-outside the library can reach therefore checks its arguments with an explicit
-`unless`, and `sek-test/tests/sek/error-tests.rkt` is what holds that line — it calls the
+`sek/private/unchecked`), so nothing here raises by accident: an accessor
+handed the wrong kind of value reads whatever is at that offset rather than
+complaining.  Every function a caller outside the library can reach therefore
+checks its arguments with an explicit `unless`, and
+`sek-test/tests/sek/error-tests.rkt` is what holds that line — it calls the
 public surface with wrong types and out-of-range indices across about 150 cases
 and insists on an exception. It is worth running whenever an entry point is
 added, because a missing check there is not a bad error message, it is a read of

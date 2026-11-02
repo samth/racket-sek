@@ -20,14 +20,14 @@
 ;; runs of contiguous storage the derived operations traverse in one piece --
 ;; but segments are not part of the public interface.
 
-(require "config.rkt"
+(require "private/config.rkt"
          ;; generic.rkt provides faster for-clause versions of these two
-         (except-in "persistent.rkt" in-psek)
-         (except-in "ephemeral.rkt" in-esek)
-         "iterator.rkt"
-         "segment.rkt"
-         "generic.rkt"
-         "check.rkt")
+         (except-in "private/persistent.rkt" in-psek)
+         (except-in "private/ephemeral.rkt" in-esek)
+         "private/iterator.rkt"
+         "private/segment.rkt"
+         "private/generic.rkt"
+         "private/check.rkt")
 
 ;; ---- persistent sequences (§3.1-3.5)
 (provide psek?
