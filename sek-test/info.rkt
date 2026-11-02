@@ -8,6 +8,8 @@
 
 (define pkg-authors '(samth))
 
+;; No module requires sek-doc, but test-docs-complete.rkt needs its
+;; documentation installed.
 (define build-deps '(["sek-lib" #:version "1.0"]
                      "sek-doc"
                      "racket-index"

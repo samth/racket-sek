@@ -10,9 +10,7 @@
 
 (define build-deps '(["sek-lib" #:version "1.0"]
                      "racket-doc"
-                     "scribble-lib"
-                     "data-doc"
-                     "data-lib"))
+                     "scribble-lib"))
 
 (define update-implies '("sek-lib"))
 

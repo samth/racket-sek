@@ -86,12 +86,17 @@ both `Ephemeral.map` and `Persistent.map`.
 | `for_all2` / `exists2` | `sek-for-all2?` / `sek-exists2?` |
 | `equal` / `compare` | `sek-equal?` / `sek-compare` |
 | `sort` / `stable_sort` / `uniq` / `merge` | `sek-sort` (stable) / `sek-uniq` / `sek-merge` |
-| `fill` / `blit` | `sek-fill!` / `sek-blit!` |
+| `fill` / `blit` | `esek-fill!` / `esek-copy!` |
 | `format` / `check` | printed by `write`; `sek-validate-psek` / `sek-validate-esek` |
 | `snapshot` / `snapshot_and_clear` / `edit` | `esek-snapshot` / `esek-snapshot-and-clear!` / `psek-edit` |
 | `front` / `back` / `forward` / `backward` | the symbols `'front` `'back` `'forward` `'backward` |
 
 ### Iterators
+
+The public `sek` module exports only a small iterator interface, and no
+segments.  The driver requires the full set from `sek/iterator` and
+`sek/segment`, which the table below names; the validators come from
+`(submod sek validate)`.
 
 | OCaml | this library |
 | --- | --- |

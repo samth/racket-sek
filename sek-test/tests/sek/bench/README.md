@@ -392,7 +392,7 @@ stays inside the chunk it is already on.
 ```
 update: set at random indices              fill: overwrite k consecutive elements of 10^6
                  100     10000   1000000                        10      1000    100000
-esek           10.36     31.27     68.06    esek (sek-fill!)  10.22      2.45      2.44
+esek           10.36     31.27     68.06    esek (esek-fill!) 10.22      2.45      2.44
 psek           119.2     218.0     650.5    esek (set! loop)  21.79     20.96     36.42
 treelist       16.40     32.70     188.5    mutable-treelist   8.80      7.89      7.82
 mutable-tl      7.54      8.00     16.19    gvector           10.03      9.05      8.97
@@ -402,7 +402,7 @@ gvector         9.63      9.62      9.68    vector             1.04      0.63   
 Scattered persistent writes are the other thing the design gives up: `psek-set`
 copies a chunk per level, and with 128-element leaves that is a lot of copying.
 Writes with any locality are a different story — going through writable
-segments, `sek-fill!` overwrites at 2.4 ns per element, 15× faster than the
+segments, `esek-fill!` overwrites at 2.4 ns per element, 15× faster than the
 same range written one `esek-set!` at a time, and three times faster than a
 mutable treelist or a gvector.
 
@@ -1007,7 +1007,7 @@ choice and takes the single-pass `Array.copy` whenever it may. Measured on a
 `ensure-owned!` in the iterator forced copy-on-write by **writing the current
 element back to itself**, relying on `set` always copying. The new fast path
 turned that into a no-op, so the iterator handed out a still-shared vector and
-`sek-blit!` wrote into its own snapshot; `generic-tests.rkt` caught it on the
+`esek-copy!` (then `sek-blit!`) wrote into its own snapshot; `generic-tests.rkt` caught it on the
 overlapping-blit case. The reference cannot use that idiom either, having the
 same fast path, so the fix is to say what is meant: `chunk-own` / `pt-own` /
 `esek-own-at!` take ownership explicitly.
@@ -1060,7 +1060,7 @@ each is a single pointer comparison, about 0.35 ns — visible on
 `esek-push-back!`, which went from 4.69 ns to 4.86, and swamped everywhere else
 by what unsafe mode buys: `esek-ref` went from 26.8 to 22.9 in the same change.
 
-`sek/tests/error-tests.rkt` is what holds that line. It calls the public surface
+`sek-test/tests/sek/error-tests.rkt` is what holds that line. It calls the public surface
 with wrong types and out-of-range indices across about 150 cases and insists on
 an exception, because without the checks those are not failures but reads of
 arbitrary memory. It found a hole the moment it was written: `earray-length`
