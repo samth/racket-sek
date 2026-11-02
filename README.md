@@ -28,21 +28,27 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 
 ## What is here
 
+The library is in `sek-lib/sek/`, its documentation in `sek-doc/`, and its
+tests, benchmarks and conformance harness in `sek-test/tests/sek/`.
+
 | file | paper | contents |
 | --- | --- | --- |
-| `sek/config.rkt` | §4.1 | chunk capacities and the short-sequence threshold |
-| `sek/chunk.rkt` | §3.3, Fig. 11–13 | transient chunks: circular support + view + ownership id |
-| `sek/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
-| `sek/persistent.rkt` | §3.5 | `psek`, including the compact representation of short sequences |
-| `sek/ephemeral.rkt` | §3.6 | `esek`, including the inner front/back chunks |
-| `sek/iterate.rkt` | — | lazy left-to-right traversal, behind `prop:sequence` |
-| `sek/segment.rkt` | `Segment` | runs of contiguous storage |
-| `sek/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
-| `sek/generic.rkt` | `Generic`, `PublicSignature` | the derived operation surface |
-| `sek/check.rkt` | Appendix A, Fig. 19 | the runtime validation function |
-| `bench/` | §4.3 | benchmarks against Racket's sequences and against the OCaml library |
-| `sek/tests/` | §4.2 | randomized differential testing against list/vector references |
-| `conformance/` | — | differential testing against the OCaml library itself |
+| `sek-lib/sek/config.rkt` | §4.1 | chunk capacities and the short-sequence threshold |
+| `sek-lib/sek/chunk.rkt` | §3.3, Fig. 11–13 | transient chunks: circular support + view + ownership id |
+| `sek-lib/sek/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
+| `sek-lib/sek/persistent.rkt` | §3.5 | `psek`, including the compact representation of short sequences |
+| `sek-lib/sek/ephemeral.rkt` | §3.6 | `esek`, including the inner front/back chunks |
+| `sek-lib/sek/iterate.rkt` | — | lazy left-to-right traversal, behind `prop:sequence` |
+| `sek-lib/sek/segment.rkt` | `Segment` | runs of contiguous storage, used internally |
+| `sek-lib/sek/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
+| `sek-lib/sek/generic.rkt` | `Generic`, `PublicSignature` | the derived operation surface |
+| `sek-lib/sek/check.rkt` | Appendix A, Fig. 19 | the runtime validation function |
+| `sek-lib/sek/unchecked.rkt` | — | the only module with unchecked operations, and the checked and jitter builds |
+| `sek-test/tests/sek/` | §4.2 | randomized differential testing against list/vector references |
+| `sek-test/tests/sek/bench/` | §4.3 | benchmarks against Racket's sequences and against the OCaml library |
+| `sek-test/tests/sek/conformance/` | — | differential testing against the OCaml library itself |
+| `sek-test/tests/sek/stress/` | — | a fuzzer that races threads on shared sequences |
+| `THREADS.md` | — | what threads may do with a sequence, and why we believe it is safe |
 
 The paper describes the data structure; segments, iterators, the derived
 operations and the conformance harness follow the authors' OCaml library,
@@ -72,36 +78,34 @@ cheap; a density invariant on the middle sequences (any two adjacent chunks
 hold more than `K` items together) keeps the depth logarithmic even after
 adversarial sequences of splits and concatenations.
 
-## Iterators and segments
+## Iterators
 
 Repeated `psek-ref` costs O(n log_K n) to walk a sequence. An iterator walks it
 in O(n), because stepping stays inside one run of contiguous storage most of
 the time:
 
 ```racket
-(define it (sek-iterator s 'forward))
+(define it (sek-iterator s))          ; at index 0; -1 and the length are sentinels
 (let loop ()
   (unless (sek-iter-finished? it)
-    (displayln (sek-iter-get-and-move! it 'forward))
+    (displayln (sek-iter-get it))
+    (sek-iter-move! it)
     (loop)))
 ```
 
-An iterator can also hand out the whole run it is sitting on, as a *segment* —
-a vector, a start index and a length. That turns a traversal into a sequence of
-tight vector loops, and it is how everything in the next section is built:
-
-```racket
-(sek-segments-for-each s (lambda (sg) (for ([x (in-segment sg)]) ...)))
-```
-
-Segments are views into the sequence, not copies. On an ephemeral sequence they
-can be written through (`sek-iter-writable-segment`), which is what makes
-`sek-fill!` and `sek-blit!` cost O(size + K log_K n) instead of a tree descent
-per element.
+The public interface is eight names: `sek-iterator`, `sek-iter?`,
+`sek-iter-index`, `sek-iter-finished?`, `sek-iter-get`, `sek-iter-move!`,
+`sek-iter-reach!` and `sek-iter-set!`.  Internally an iterator can also hand
+out the whole run it is sitting on, as a *segment* — a vector, a start index
+and a length — and that is how `in-sek`, the folds and everything in the next
+section are built: a traversal becomes a series of tight vector loops.
+Writable segments are what make `esek-fill!` and `esek-copy!` cost
+O(size + K log_K n) instead of a tree descent per element.  Segments are not
+exported.
 
 Any update to an ephemeral sequence invalidates every iterator on it, and using
-an invalidated iterator raises rather than reading stale storage. The check is
-a version-number comparison; `sek-configure!` can turn it off.
+an invalidated iterator raises rather than reading stale storage.  The check is
+a version-number comparison.
 
 ## Operations
 
@@ -110,16 +114,19 @@ Beyond the core, the library has the operation surface of the OCaml library's
 sequence return the flavor they were given:
 
 `sek-length` `sek-empty?` `sek-ref` `sek-first` `sek-last` `in-sek`
-`sek-for-each` `sek-for-each/index` `sek-segments-for-each` `sek-fold-left`
-`sek-fold-right` `sek->list` `sek->vector` `sek-find` `sek-find-index`
-`sek-find-map` `sek-for-all?` `sek-exists?` `sek-member?` `sek-memq?`
+`sek-for-each` `sek-for-each/index` `sek-fold-left` `sek-fold-right`
+`sek->list` `sek->vector` `sek-find` `sek-find-index` `sek-find-map`
+`sek-for-all?` `sek-exists?` `sek-member?` `sek-memq?` `sek-index-of`
 `sek-map` `sek-map/index` `sek-filter` `sek-filter-map` `sek-partition`
 `sek-reverse` `sek-append*` `sek-append-map` `sek-sort` `sek-uniq` `sek-merge`
-`sek-sub` `sek-take` `sek-drop` `sek-copy` `sek-for-each2` `sek-fold-left2`
+`sek-sub` `sek-take` `sek-drop` `sek-take-right` `sek-drop-right`
+`sek-insert` `sek-delete` `sek-copy` `sek-for-each2` `sek-fold-left2`
 `sek-fold-right2` `sek-map2` `sek-zip` `sek-unzip` `sek-for-all2?`
-`sek-exists2?` `sek-equal?` `sek-compare` `sek-fill!` `sek-blit!`
-`sek-segments-for-each2` `build-psek` `build-esek` `make-psek`
-`sequence->psek` `sequence->esek`
+`sek-exists2?` `sek-equal?` `sek-compare`
+
+Each flavor has its constructors (`make-psek`, `build-psek`,
+`sequence->psek`, `for/psek`, `for*/psek` and the same for `esek`), and
+ephemeral sequences have `esek-fill!` and `esek-copy!`.
 
 Ephemeral sequences also have the reference library's in-place structural
 operations, which consume the sequences they are given: `esek-append!`
@@ -137,9 +144,9 @@ and `N` a bound on the length an ephemeral sequence reaches.
 | `set` | O(K log_K n) | O(K log_K n), O(log_K n) once the path is owned |
 | `pop` | O(log_K n) | O(log_K N) amortized |
 | `push` | O(K log_K n) | O(log_K N) amortized |
-| `append`, `split` | O(K log_K n + log²_K n) | — |
-| `edit` | O(K) | — |
-| `snapshot` | — | O(1) |
+| `append`, `split` | O(K log_K n + log²_K n) | O(K log_K n + log²_K n) |
+| `edit` | O(1) | — |
+| `snapshot` | — | O(K log_K n) |
 
 `ref` and `set` drop to O(log_K n) on *packed* chunks, which is every chunk of
 a sequence built without concatenation.
@@ -154,7 +161,7 @@ bugs: an in-place write to a chunk some snapshot still observes corrupts that
 snapshot and nothing else notices.
 
 ```
-raco test sek/
+raco test sek-test/tests/sek/
 ```
 
 The suite runs at chunk capacities from 2 upwards, so the trees get deep and
@@ -165,26 +172,26 @@ The accessors of the library's own structures do not check their argument (see
 wrong kind of value reads whatever is at that offset rather than complaining.
 Every function a caller
 outside the library can reach therefore checks its arguments with an explicit
-`unless`, and `sek/tests/error-tests.rkt` is what holds that line — it calls the
+`unless`, and `sek-test/tests/sek/error-tests.rkt` is what holds that line — it calls the
 public surface with wrong types and out-of-range indices across about 150 cases
 and insists on an exception. It is worth running whenever an entry point is
 added, because a missing check there is not a bad error message, it is a read of
 arbitrary memory.
 
-Separately, `conformance/` checks this library against the OCaml one directly:
-a generated script of several hundred operations is run by both, and the two
-traces — the result of every command plus the full contents of a dozen
-sequences after it — must be identical.
+Separately, `sek-test/tests/sek/conformance/` checks this library against the
+OCaml one directly: a generated script of several hundred operations is run by
+both, and the two traces — the result of every command plus the full contents
+of a dozen sequences after it — must be identical.
 
 ```
-cd conformance && ./build.sh && ./run.sh 1 8 700
+cd sek-test/tests/sek/conformance && ./build.sh && ./run.sh 1 8 700
 ```
 
 Ten configurations of the tunable settings, eight seeds each, all match.
 
 ## Benchmarks
 
-`bench/` runs the scenarios from the paper and from the OCaml library's own
+`sek-test/tests/sek/bench/` (`bench/` below) runs the scenarios from the paper and from the OCaml library's own
 benchmark suite — stack, queue, traversal, random access, hops, update,
 construction, concat, split, filter, fill — plus transient scenarios, which the
 reference's suite does not measure. Contenders are Racket's `treelist` and
@@ -209,7 +216,7 @@ bifurcan's list benchmarks, which `clojure/core.rrb-vector` reuses for its
 published numbers.
 
 ```
-cd bench && ./run.sh                    # this library
+cd sek-test/tests/sek/bench && ./run.sh # this library
 ./run.sh --external                     # the borrowed scenarios
 ./build-ocaml.sh && ./run.sh --ocaml    # the reference, same scenarios
 racket -y bm.rkt                        # the gvector PR benchmark, plus sek
@@ -221,7 +228,7 @@ racket -y nqueens.rkt                   # the classic Scheme nqueens benchmark
 `bench/report.rkt` draws the recorded results as one static HTML page, charts
 included; no scripts and no network.
 
-`bench/README.md` has the tables and the analyzis. The short version, at a
+`bench/README.md` has the tables and the analysis. The short version, at a
 million elements, nanoseconds per operation:
 
 | | esek | treelist | mutable-treelist | gvector | list |
@@ -326,21 +333,23 @@ has the diagnosis; the fix and its regression test are in the Racket tree.
 
 ## Deviations from the paper
 
-Agreement with the reference is not a claim, it is checked: `conformance/`
-runs the OCaml library and this one on the same generated script and compares
-the traces — the result of every operation and the full contents of a dozen
-sequences after each one. See `conformance/README.md` for the harness, the
-operation-by-operation mapping between the two APIs, and what has been
-checked. The remaining differences:
+This library follows the paper, and where the paper is silent, the authors'
+OCaml library. Agreement with the reference is not a claim, it is checked:
+`sek-test/tests/sek/conformance/` runs the OCaml library and this one on the
+same generated script and compares the traces — the result of every operation
+and the full contents of a dozen sequences after each one. See the README there
+for the harness, the operation-by-operation mapping between the two APIs, and
+what has been checked. The remaining differences:
 
 * Sequences are parameterized by neither an element type nor a `default` value;
   logically empty slots get a private sentinel instead, which removes the
   `default` argument the OCaml library threads through every constructor.
 * The two flavors are one set of names rather than two parallel modules: an
   operation that builds a sequence returns the flavor it was given.
-* `sek-append*` builds a fresh result, where the OCaml `flatten` clears the
-  sequence of sequences and every sequence in it.
-* `sek-sort` is stable, so it covers `stable_sort` too.
+* `sek-sort` is stable, so it covers `stable_sort` too; `sort` there makes no
+  such promise.
+* `sek-sub` on a persistent sequence always shares the sequence's chunks,
+  where the OCaml library copies a slice of at most `T` elements.
 * `sek-iter-reach!` reuses the cursor's position when the target is in the run
   or the chunk it is already on; beyond that it descends from the root, where
   the reference can also search from the current position inside the middle
@@ -349,12 +358,19 @@ checked. The remaining differences:
   only at the top of the structure, as in the authors' implementation.
 * `psek-edit` shares the front and back chunks instead of copying them, so it
   is O(1) rather than O(K); the copy happens on the first write, if any.
+  `esek-copy` in `'share` mode is likewise O(1).
 * `esek-snapshot` folds the inner chunks into the snapshot's middle sequence,
   so it is O(K log_K n) in the worst case rather than the O(1) of Figure 16.
   The OCaml library folds them into the sequence's own middle sequence, and so
   does creating an iterator there; here neither changes the sequence, so that
   several threads may read one ephemeral sequence at once.
-* A `#:short-threshold` of 0 works here and not there.
+* The settings — the chunk capacities and the short-sequence threshold — are
+  global, where the OCaml library fixes them when its functor `Make` is
+  applied, and the chunk capacity takes one value for the leaves and one for
+  every level above them, where the OCaml library takes a function of the
+  depth.  They are not part of the public interface: the tests change them
+  through `(submod sek config)`.  A short-sequence threshold of 0 works here
+  and not there.
 * A persistent sequence may be shared between threads.  A monotonic in-place
   update claims its slot with a compare-and-swap on the support's head and
   size, which share one field for the purpose; the OCaml library writes the
