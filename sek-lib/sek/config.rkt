@@ -12,7 +12,10 @@
 
 ;; The accessors below are inlined: they are consulted on every operation in
 ;; the library, and a cross-module call to read one mutable variable was
-;; costing more than the operation.
+;; costing more than the operation.  Once inlined, the variables cost nothing
+;; measurable: making them constants moved the geometric mean of the
+;; benchmark suite by 0.3%, well inside its noise.  So the settings stay
+;; mutable, and the tests use small capacities to reach deep trees.
 
 (provide print-sek
          hash-elements
