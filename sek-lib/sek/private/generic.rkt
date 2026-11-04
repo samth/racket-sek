@@ -566,7 +566,7 @@
 
 ;; -1, 0 or 1, comparing element by element and then by length.
 ;; cmp compares two elements and returns a negative number, zero, or a
-;; positive number; any real will do, so an inexact zero counts as zero.
+;; positive number.  Only an exact 0 means equal, as in SRFI 67 and OCaml.
 (define (sek-compare s1 s2 cmp)
   (check-sek 'sek-compare s1)
   (check-sek 'sek-compare s2)
@@ -585,7 +585,7 @@
        (unless (real? c)
          (raise-result-error 'sek-compare "real?" c))
        (cond
-         [(zero? c)
+         [(eqv? c 0)
           (sek-iter-move! it1 'forward)
           (sek-iter-move! it2 'forward)
           (loop)]

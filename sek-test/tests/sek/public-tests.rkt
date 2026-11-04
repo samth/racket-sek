@@ -2,7 +2,7 @@
 ;; Behavior of the public interface that the other files, written mostly
 ;; against the internal modules, do not reach: the sequence forms as values as
 ;; well as in for clauses, binary folds over sequences of different lengths,
-;; comparators that return inexact numbers, and traversals that race an update.
+;; what a comparator's zero means, and traversals that race an update.
 
 (require rackunit
          racket/list
@@ -54,15 +54,13 @@
    (sek-fold-left2 (psek 1 2 3) (esek 10 20) (lambda (acc x y) (cons (list x y) acc)) '())
    '((2 20) (1 10))))
 
-(test-case "sek-compare takes any real as a comparator's answer"
-  (define (inexact a b)
-    (exact->inexact (- a b)))
-  (check-equal? (sek-compare (psek 1 2) (psek 1 3) inexact) -1)
-  (check-equal? (sek-compare (psek 1 3) (esek 1 2) inexact) 1)
-  (check-equal? (sek-compare (psek 1 2) (esek 1 2) inexact) 0)
-  (check-equal? (sek-compare (psek 1 2) (psek 1 2 0) inexact) -1)
-  (check-equal? (sek-compare (psek 1 2) (psek 1 2) (lambda (a b) (if (= a b) -0.0 1.0))) 0)
-  (check-equal? (sek-compare (psek 1 2) (psek 1 2) (lambda (a b) (if (= a b) 0.0 1.0))) 0))
+;; As in SRFI 67 and OCaml, only an exact 0 means equal.
+(test-case "sek-compare treats only an exact 0 as equal"
+  (check-equal? (sek-compare (psek 1 2) (psek 1 3) -) -1)
+  (check-equal? (sek-compare (psek 1 3) (esek 1 2) -) 1)
+  (check-equal? (sek-compare (psek 1 2) (esek 1 2) -) 0)
+  (check-equal? (sek-compare (psek 1 2) (psek 1 2 0) -) -1)
+  (check-equal? (sek-compare (psek 1 2) (psek 1 2) (lambda (a b) (if (= a b) 0.0 -1.0))) 1))
 
 (test-case "sequence->psek takes at most n elements"
   (check-equal? (sek->list (sequence->psek '(a b) 5)) '(a b))
