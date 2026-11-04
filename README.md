@@ -110,10 +110,7 @@ exported.
 
 Any update to an ephemeral sequence invalidates every iterator on it, and using
 an invalidated iterator raises rather than reading stale storage.  The check is
-a version-number comparison.  A traversal by `in-esek` makes the same check at
-every element when it is a value, and when it is written in a `for` clause,
-only as it moves from one segment to the next: checking at every element
-would cost the loop what the segments save it.
+a version-number comparison.
 
 ## Operations
 
@@ -355,11 +352,8 @@ what has been checked. The remaining differences:
 * The two flavors are one set of names rather than two parallel modules: an
   operation that builds a sequence returns the flavor it was given.
 * `sek-sort` is stable, so it covers `stable_sort` too; `sort` there makes no
-  such promise.  Given an ephemeral sequence, `sek-sort`, `sek-uniq` and
-  `sek-merge` return a new one and leave their arguments alone, where
-  `Ephemeral.sort` and its relatives update the sequence in place and return
-  unit.  (The conformance driver compensates, so matching traces do not show
-  this.)
+  such promise.  Given an ephemeral sequence, `sek-sort` returns a new one,
+  where `Ephemeral.sort` sorts in place.
 * `sek-sub` on a persistent sequence always shares the sequence's chunks,
   where the OCaml library copies a slice of at most `T` elements.
 * `sek-iter-reach!` reuses the cursor's position when the target is in the run
@@ -368,15 +362,10 @@ what has been checked. The remaining differences:
   sequence.
 * `One` and `Short` (§3.5) are unified into one vector representation, used
   only at the top of the structure, as in the authors' implementation.
-* `psek-edit` of a sequence held as a tree shares the front and back chunks
-  instead of copying them, so it is O(1) rather than O(K); the copy happens on
-  the first write, if any.  A sequence of at most `T` elements is a vector,
-  and editing one still copies it into a chunk, in O(K).  `esek-copy` in
-  `'share` mode is O(1).
-* A concatenation whose result would be longer than the largest power of two
-  that is a fixnum raises an error.  Sharing lets a program build such a
-  sequence in a few dozen appends, and the limit keeps every length and weight
-  a fixnum.
+* `psek-edit` shares the front and back chunks instead of copying them, so it
+  is O(1) rather than O(K), except on a sequence of at most `T` elements; the
+  copy happens on the first write, if any.  `esek-copy` in `'share` mode is
+  likewise O(1).
 * `esek-snapshot` folds the inner chunks into the snapshot's middle sequence,
   so it is O(K log_K n) in the worst case rather than the O(1) of Figure 16.
   The OCaml library folds them into the sequence's own middle sequence, and so

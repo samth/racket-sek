@@ -76,7 +76,7 @@ Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
 @defproc[(psek [v any/c] ...) psek?]{
 
 Returns a @tech{persistent sequence} with @racket[v]s as its elements in
-order.
+order.  This operation takes @math{O(N + K)} time.
 
 @examples[
 #:eval the-eval
@@ -95,8 +95,8 @@ order.
 
 Build a @tech{persistent sequence} of @racket[n] copies of @racket[v], of the
 results of @racket[proc] on @racket[0] through @racket[(sub1 n)], of the
-elements of any Racket @racket[sequence] (of which @racket[n], when given, is
-the length), or of the results of a comprehension.  Each takes
+elements of any Racket @racket[sequence] (at most @racket[n] of them, when
+@racket[n] is given), or of the results of a comprehension.  Each takes
 @math{O(N + K)} time.
 
 @examples[
@@ -238,7 +238,7 @@ order by default or @racket['backward].  It is fastest written directly in a
 
 Returns an @tech{ephemeral sequence} with the contents of @racket[s], which is
 unaffected by later updates to the result.  This operation takes @math{O(1)}
-time.
+time, or @math{O(K)} when @racket[s] has at most @math{T} elements.
 
 @examples[
 #:eval the-eval
@@ -265,7 +265,7 @@ Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
 @defproc[(esek [v any/c] ...) esek?]{
 
 Returns an @tech{ephemeral sequence} with @racket[v]s as its elements in
-order.
+order.  This operation takes @math{O(N + K)} time.
 
 @examples[
 #:eval the-eval
@@ -284,9 +284,10 @@ order.
 
 Build an @tech{ephemeral sequence} of @racket[n] copies of @racket[v], of the
 results of @racket[proc] on @racket[0] through @racket[(sub1 n)], of the
-elements of any Racket @racket[sequence] (of which @racket[n], when given, is
-the length), or of the results of a comprehension.  @racket[make-esek] takes
-the same arguments as @racket[make-vector].  Each takes @math{O(N + K)} time.
+elements of any Racket @racket[sequence] (at most @racket[n] of them, when
+@racket[n] is given), or of the results of a comprehension.
+@racket[make-esek] takes the same arguments as @racket[make-vector].  Each
+takes @math{O(N + K)} time.
 
 @examples[
 #:eval the-eval
@@ -372,7 +373,8 @@ Shorthands for using @racket[esek-ref] to access the first or last element of
 an @tech{ephemeral sequence}.}
 
 The six operations that follow rearrange ephemeral sequences in place, and
-they @italic{consume} the sequences they are given, leaving each empty.  Use
+they @italic{consume} the sequences they are given, leaving each empty unless
+it holds the result.  Use
 @racket[sek-take], @racket[sek-drop] and @racket[sek-sub] when the input must
 survive.
 
@@ -439,7 +441,9 @@ Conversion and iteration; see @racket[in-esek] for iterating in a
 A @racket[sequence] over the elements of @racket[e], in @racket['forward]
 order by default or @racket['backward].  It is fastest written directly in a
 @racket[for] clause.  Updating @racket[e] during the loop is detected, as for
-an @tech{iterator}.  A full traversal takes @math{O(N)} time.}
+an @tech{iterator}, except that a loop written directly in a @racket[for]
+clause checks only when it moves to the next chunk.  A full traversal takes
+@math{O(N)} time.}
 
 @deftogether[(
 @defproc[(esek-fill! [e esek?] [v any/c]
@@ -595,7 +599,10 @@ time in the worst case.
 The usual list-shaped operations.  @racket[sek-append*] concatenates a
 sequence of sequences; given an ephemeral one it empties both it and its
 elements.  Each takes @math{O(N)} time plus the cost of the calls to
-@racket[proc] or @racket[pred].}
+@racket[proc] or @racket[pred], where @math{N} counts the elements of the
+result for @racket[sek-append*] and @racket[sek-append-map]; on an ephemeral
+sequence @racket[sek-append*] instead takes
+@math{O(K log_K N + log_K^2 N)} time per element of @racket[s].}
 
 @deftogether[(@defproc[(sek-sub [s sek?] [start exact-nonnegative-integer?]
                                 [size exact-nonnegative-integer?]) sek?]
