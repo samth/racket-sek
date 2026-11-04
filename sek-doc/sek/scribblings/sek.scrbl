@@ -58,6 +58,13 @@ Unless otherwise specified, operations on a sequence of length @math{N} take
 purposes: a sequence of up to a hundred million elements is at most six
 levels deep.
 
+A sequence may hold at most the largest power of two that is a fixnum,
+@racket[(expt 2 59)] elements on a 64-bit platform.  Concatenation shares the
+structure of its arguments, so a sequence appended to itself doubles in
+length at the cost of one concatenation, and can reach that limit without
+using that much memory.  An operation whose result would exceed the limit
+raises @racket[exn:fail:contract] instead.
+
 Sequences of either flavor can be used as single-valued @racket[sequence]s
 whose elements are the sequence's elements, they are @racket[serializable?],
 and two sequences of the same flavor are @racket[equal?] when their elements
@@ -71,12 +78,12 @@ none of them updates it; @secref["threads"] gives the rules.
 @defproc[(psek? [v any/c]) boolean?]{
 
 Returns @racket[#t] if @racket[v] is a @tech{persistent sequence},
-@racket[#f] otherwise.}
+@racket[#f] otherwise.  This operation takes @math{O(1)} time.}
 
 @defproc[(psek [v any/c] ...) psek?]{
 
 Returns a @tech{persistent sequence} with @racket[v]s as its elements in
-order.
+order.  This operation takes @math{O(N + K)} time.
 
 @examples[
 #:eval the-eval
@@ -95,9 +102,9 @@ order.
 
 Build a @tech{persistent sequence} of @racket[n] copies of @racket[v], of the
 results of @racket[proc] on @racket[0] through @racket[(sub1 n)], of the
-elements of any Racket @racket[sequence] (of which @racket[n], when given, is
-the length), or of the results of a comprehension.  Each takes
-@math{O(N + K)} time.
+elements of any Racket @racket[sequence] (only its first @racket[n], when
+@racket[n] is given and the sequence is longer), or of the results of a
+comprehension.  Each takes @math{O(N + K)} time.
 
 @examples[
 #:eval the-eval
@@ -110,7 +117,8 @@ the length), or of the results of a comprehension.  Each takes
 @defthing[empty-psek (and/c psek? psek-empty?)]
 )]{
 
-A predicate and constant for a @tech{persistent sequence} of length 0.}
+A predicate and constant for a @tech{persistent sequence} of length 0.
+@racket[psek-empty?] takes @math{O(1)} time.}
 
 @defproc[(psek-length [s psek?]) exact-nonnegative-integer?]{
 
@@ -158,7 +166,8 @@ Return the element at the given end and the rest of the sequence, or raise
               @defproc[(psek-last [s psek?]) any/c])]{
 
 Shorthands for using @racket[psek-ref] to access the first or last element of
-a @tech{persistent sequence}.}
+a @tech{persistent sequence}, which raise @racket[exn:fail:contract] if
+@racket[s] is empty.  Each takes @math{O(1)} time.}
 
 @deftogether[(@defproc[(psek-ref [s psek?] [i exact-nonnegative-integer?]) any/c]
               @defproc[(psek-set [s psek?] [i exact-nonnegative-integer?]
@@ -238,7 +247,8 @@ order by default or @racket['backward].  It is fastest written directly in a
 
 Returns an @tech{ephemeral sequence} with the contents of @racket[s], which is
 unaffected by later updates to the result.  This operation takes @math{O(1)}
-time.
+time, except that a sequence of at most @math{T} elements is copied into a
+chunk, in @math{O(K)} time.
 
 @examples[
 #:eval the-eval
@@ -260,12 +270,12 @@ operations that count as updates.
 @defproc[(esek? [v any/c]) boolean?]{
 
 Returns @racket[#t] if @racket[v] is an @tech{ephemeral sequence},
-@racket[#f] otherwise.}
+@racket[#f] otherwise.  This operation takes @math{O(1)} time.}
 
 @defproc[(esek [v any/c] ...) esek?]{
 
 Returns an @tech{ephemeral sequence} with @racket[v]s as its elements in
-order.
+order.  This operation takes @math{O(N + K)} time.
 
 @examples[
 #:eval the-eval
@@ -284,8 +294,9 @@ order.
 
 Build an @tech{ephemeral sequence} of @racket[n] copies of @racket[v], of the
 results of @racket[proc] on @racket[0] through @racket[(sub1 n)], of the
-elements of any Racket @racket[sequence] (of which @racket[n], when given, is
-the length), or of the results of a comprehension.  @racket[make-esek] takes
+elements of any Racket @racket[sequence] (only its first @racket[n], when
+@racket[n] is given and the sequence is longer), or of the results of a
+comprehension.  @racket[make-esek] takes
 the same arguments as @racket[make-vector].  Each takes @math{O(N + K)} time.
 
 @examples[
@@ -369,12 +380,15 @@ items
 )]{
 
 Shorthands for using @racket[esek-ref] to access the first or last element of
-an @tech{ephemeral sequence}.}
+an @tech{ephemeral sequence}, which raise @racket[exn:fail:contract] if
+@racket[e] is empty.  Each takes @math{O(log_K N)} time.}
 
-The six operations that follow rearrange ephemeral sequences in place, and
-they @italic{consume} the sequences they are given, leaving each empty.  Use
-@racket[sek-take], @racket[sek-drop] and @racket[sek-sub] when the input must
-survive.
+The six operations that follow rearrange ephemeral sequences in place by
+taking their structure apart, so they @italic{consume} what they are given:
+each empties an ephemeral sequence it does not return, or returns it with
+only part of its old contents.  Each checks all of its arguments before it
+changes anything.  Use @racket[sek-take], @racket[sek-drop] and
+@racket[sek-sub] when the input must survive.
 
 @defproc[(esek-append! [e esek?] [other (or/c esek? psek?)]
                        [side (or/c 'front 'back) 'back]) void?]{
@@ -438,8 +452,15 @@ Conversion and iteration; see @racket[in-esek] for iterating in a
 
 A @racket[sequence] over the elements of @racket[e], in @racket['forward]
 order by default or @racket['backward].  It is fastest written directly in a
-@racket[for] clause.  Updating @racket[e] during the loop is detected, as for
-an @tech{iterator}.  A full traversal takes @math{O(N)} time.}
+@racket[for] clause.  A full traversal takes @math{O(N)} time.
+
+Updating @racket[e] during the traversal is an error.  Used as a value, as
+@racket[e] itself is when it serves as a @racket[sequence], the traversal
+raises @racket[exn:fail:contract] at its next read, as an @tech{iterator}
+does.  Written directly in a @racket[for] clause, it checks only when it moves
+from one chunk to the next, which is what makes it fast: the loop may see an
+update to the chunk it is reading, and a loop that stops before the next
+chunk does not report the update.}
 
 @deftogether[(
 @defproc[(esek-fill! [e esek?] [v any/c]
@@ -539,8 +560,17 @@ given direction.  Each takes @math{O(N)} time plus the cost of the calls to
               @defproc[(sek-fold-right [s sek?] [proc (-> any/c any/c any/c)]
                                        [init any/c]) any/c])]{
 
-Fold from the left or from the right.  Each takes @math{O(N)} time plus the
-cost of the calls to @racket[proc].}
+Fold from the left or from the right.  @racket[sek-fold-left] calls
+@racket[(proc acc x)] on each element @racket[x] from first to last, and
+@racket[sek-fold-right] calls @racket[(proc x acc)] from last to first; each
+starts with @racket[init] as @racket[acc] and returns the last result.  Each
+takes @math{O(N)} time plus the cost of the calls to @racket[proc].
+
+@examples[
+#:eval the-eval
+(sek-fold-left (psek 1 2 3) (lambda (acc x) (cons x acc)) '())
+(sek-fold-right (psek 1 2 3) (lambda (x acc) (cons x acc)) '())
+]}
 
 @deftogether[(@defproc[(sek->list [s sek?] [dir (or/c 'forward 'backward) 'forward]) list?]
               @defproc[(sek->vector [s sek?]) vector?])]{
@@ -561,10 +591,14 @@ Conversions.  Each takes @math{O(N)} time.}
                        boolean?]
               @defproc[(sek-memq? [s sek?] [v any/c]) boolean?])]{
 
-Search operations, all of which stop as soon as they can.  @racket[sek-find]
-returns @racket[#f] when nothing matches, so use @racket[sek-find-index] when
-an element could itself be @racket[#f].  Each takes @math{O(N)} time in the
-worst case.}
+Search operations, all of which stop as soon as they can.  Going in the
+given direction, @racket[sek-find] returns the first element that satisfies
+@racket[pred], @racket[sek-find-index] its index, and @racket[sek-find-map]
+the first result of @racket[proc] that is not @racket[#f]; each returns
+@racket[#f] when there is none, so use @racket[sek-find-index] when an element
+could itself be @racket[#f].  @racket[sek-member?] calls @racket[(same? v x)]
+on the elements @racket[x], and @racket[sek-memq?] compares with
+@racket[eq?].  Each takes @math{O(N)} time in the worst case.}
 
 @defproc[(sek-index-of [s sek?] [v any/c]
                        [same? (-> any/c any/c any/c) equal?])
@@ -592,10 +626,29 @@ time in the worst case.
               @defproc[(sek-append* [s sek?]) sek?]
               @defproc[(sek-append-map [s sek?] [proc (-> any/c sek?)]) sek?])]{
 
-The usual list-shaped operations.  @racket[sek-append*] concatenates a
-sequence of sequences; given an ephemeral one it empties both it and its
-elements.  Each takes @math{O(N)} time plus the cost of the calls to
-@racket[proc] or @racket[pred].}
+The usual list-shaped operations.  @racket[sek-filter-map] keeps the
+results of @racket[proc] that are not @racket[#f], and @racket[sek-partition]
+returns the elements that satisfy @racket[pred] and then those that do not.
+@racket[sek-append*] concatenates a sequence of sequences, and
+@racket[sek-append-map] the sequences that @racket[proc] returns.  Given an
+ephemeral sequence, @racket[sek-append*] empties both it and its elements, but
+only after checking that every element is a sequence.
+
+@racket[sek-map], @racket[sek-map/index], @racket[sek-filter],
+@racket[sek-filter-map], @racket[sek-partition] and @racket[sek-reverse] take
+@math{O(N)} time plus the cost of the calls to @racket[proc] or
+@racket[pred].  With @math{M} the length of the result,
+@racket[sek-append-map] takes @math{O(N + M)} time plus the cost of the calls
+to @racket[proc], and @racket[sek-append*] takes @math{O(N + M)} time on a
+persistent sequence and @math{O(N (K log_K M + log_K^2 M))} on an ephemeral
+one, whose elements it concatenates rather than copies.
+
+@examples[
+#:eval the-eval
+(sek-filter-map (psek 1 2 3 4) (lambda (x) (and (even? x) (* x x))))
+(sek-partition (psek 1 2 3 4) even?)
+(sek-append* (psek (psek 1 2) (psek) (psek 3)))
+]}
 
 @deftogether[(@defproc[(sek-sub [s sek?] [start exact-nonnegative-integer?]
                                 [size exact-nonnegative-integer?]) sek?]
@@ -654,8 +707,9 @@ the element at @racket[i], or that the element at @racket[i] is removed.  If
 
 A stable sort; a pass that drops adjacent duplicates, and so drops every
 duplicate from a sorted sequence; and a stable merge of two sorted sequences.
-@racket[sek-sort] takes @math{O(N log N)} time, and the other two
-@math{O(N)}.}
+Each returns a new sequence and leaves its arguments unchanged, ephemeral
+ones included.  @racket[sek-sort] takes @math{O(N log N)} time, and the other
+two @math{O(N)}.}
 
 @deftogether[(@defproc[(sek-for-each2 [s1 sek?] [s2 sek?] [proc (-> any/c any/c any)]
                                       [dir (or/c 'forward 'backward) 'forward]) void?]
@@ -673,12 +727,26 @@ duplicate from a sorted sequence; and a stable merge of two sorted sequences.
               @defproc[(sek-compare [s1 sek?] [s2 sek?]
                                     [cmp (-> any/c any/c real?)] ) (or/c -1 0 1)])]{
 
-Operations on two sequences at once.  They stop at the end of the shorter
-sequence, except @racket[sek-equal?], which first compares lengths, and
-@racket[sek-compare], which orders a proper prefix before the sequence that
-extends it.  @racket[sek-zip] pairs elements with @racket[cons], and
+Operations on two sequences at once.  They pair the elements of @racket[s1]
+and @racket[s2] from the front and stop at the end of the shorter sequence.
+@racket[sek-fold-right2], like @racket[sek-for-each2] going
+@racket['backward], pairs them from the back instead, so when the lengths
+differ it leaves out the first elements of the longer sequence.
+@racket[sek-fold-left2] calls @racket[(proc acc x y)], and
+@racket[sek-fold-right2] calls @racket[(proc x y acc)].
+
+@racket[sek-equal?] first compares lengths, and @racket[sek-compare] orders a
+proper prefix before the sequence that extends it.  The comparison
+@racket[cmp] returns a negative, zero or positive real number, and a zero
+need not be exact.  @racket[sek-zip] pairs elements with @racket[cons], and
 @racket[sek-unzip] undoes it.  Each takes @math{O(N)} time plus the cost of
-the calls to the procedure argument.}
+the calls to the procedure argument.
+
+@examples[
+#:eval the-eval
+(sek-fold-left2 (psek 1 2 3) (psek 'a 'b) (lambda (acc x y) (cons (list x y) acc)) '())
+(sek-fold-right2 (psek 1 2 3) (psek 'a 'b) (lambda (x y acc) (cons (list x y) acc)) '())
+]}
 
 @section{Iterators}
 

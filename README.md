@@ -11,8 +11,9 @@ The paper is open access, under CC BY 4.0:
 [PDF](https://dl.acm.org/doi/pdf/10.1145/3828706).
 
 A *transient* data structure is an ephemeral data structure, a persistent one,
-and fast conversions between them. You take a persistent snapshot in constant
-time when you need one, and keep the speed of in-place updates everywhere else.
+and fast conversions between them. You take a persistent snapshot in
+logarithmic time when you need one, and keep the speed of in-place updates
+everywhere else.
 
 ```racket
 (require sek)
@@ -21,10 +22,10 @@ time when you need one, and keep the speed of in-place updates everywhere else.
 (psek->list (psek-push-front p 0))   ; '(0 1 2 3 4 5)
 (psek->list p)                       ; '(1 2 3 4 5) — unchanged
 
-(define e (psek-edit p))             ; O(1): switch to in-place updates
+(define e (psek-edit p))             ; switch to in-place updates
 (esek-push-back! e 6)
 (esek-set! e 0 'a)
-(define q (esek-snapshot e))         ; O(1): switch back
+(define q (esek-snapshot e))         ; and back
 (psek->list q)                       ; '(a 2 3 4 5 6)
 (psek->list p)                       ; '(1 2 3 4 5) — still unchanged
 ```
@@ -64,7 +65,7 @@ operations and the conformance harness follow the authors' OCaml library,
 every ephemeral sequence carries one. If they match, the chunk is not shared
 with anybody and can be written in place. `esek-snapshot` hands the sequence a
 *fresh* id, so every chunk in it instantly stops being recognizable as owned —
-which is why a snapshot costs nothing and yet is safe.
+which is why a snapshot copies no chunk and yet is safe.
 
 **Monotonic updates** (§3.3). A chunk is a view onto a partially-filled
 circular buffer. Filling a slot that lies outside every view cannot be observed
@@ -109,7 +110,10 @@ exported.
 
 Any update to an ephemeral sequence invalidates every iterator on it, and using
 an invalidated iterator raises rather than reading stale storage.  The check is
-a version-number comparison.
+a version-number comparison.  A traversal by `in-esek` makes the same check at
+every element when it is a value, and when it is written in a `for` clause,
+only as it moves from one segment to the next: checking at every element
+would cost the loop what the segments save it.
 
 ## Operations
 
@@ -149,7 +153,7 @@ and `N` a bound on the length an ephemeral sequence reaches.
 | `pop` | O(log_K n) | O(log_K N) amortized |
 | `push` | O(K log_K n) | O(log_K N) amortized |
 | `append`, `split` | O(K log_K n + log²_K n) | O(K log_K n + log²_K n) |
-| `edit` | O(1) | — |
+| `edit` | O(1), O(K) at length ≤ T | — |
 | `snapshot` | — | O(K log_K n) |
 
 `ref` and `set` drop to O(log_K n) on *packed* chunks, which is every chunk of
@@ -250,8 +254,8 @@ million elements, nanoseconds per operation:
 The ends are flat in the length of the sequence and indifferent to which end
 you use, which is the whole point; indexing is what the design gives up, and it
 costs about 4× a treelist and 9× a growable array -- which is the honest
-comparison for a structure that gives up nothing else to get it. Snapshots are the headline: `esek-snapshot` does not
-depend on the length of the sequence, while `mutable-treelist-snapshot`
+comparison for a structure that gives up nothing else to get it. Snapshots are the headline: `esek-snapshot` grows
+at most logarithmically with the length of the sequence, while `mutable-treelist-snapshot`
 copies — 1.5 ms at a million elements against 24.9 ns. In a round trip that
 changes one element between snapshots, sek is four orders of magnitude ahead; a
 treelist catches up only once tens of thousands of writes amortize its copy.
@@ -351,7 +355,11 @@ what has been checked. The remaining differences:
 * The two flavors are one set of names rather than two parallel modules: an
   operation that builds a sequence returns the flavor it was given.
 * `sek-sort` is stable, so it covers `stable_sort` too; `sort` there makes no
-  such promise.
+  such promise.  Given an ephemeral sequence, `sek-sort`, `sek-uniq` and
+  `sek-merge` return a new one and leave their arguments alone, where
+  `Ephemeral.sort` and its relatives update the sequence in place and return
+  unit.  (The conformance driver compensates, so matching traces do not show
+  this.)
 * `sek-sub` on a persistent sequence always shares the sequence's chunks,
   where the OCaml library copies a slice of at most `T` elements.
 * `sek-iter-reach!` reuses the cursor's position when the target is in the run
@@ -360,9 +368,15 @@ what has been checked. The remaining differences:
   sequence.
 * `One` and `Short` (§3.5) are unified into one vector representation, used
   only at the top of the structure, as in the authors' implementation.
-* `psek-edit` shares the front and back chunks instead of copying them, so it
-  is O(1) rather than O(K); the copy happens on the first write, if any.
-  `esek-copy` in `'share` mode is likewise O(1).
+* `psek-edit` of a sequence held as a tree shares the front and back chunks
+  instead of copying them, so it is O(1) rather than O(K); the copy happens on
+  the first write, if any.  A sequence of at most `T` elements is a vector,
+  and editing one still copies it into a chunk, in O(K).  `esek-copy` in
+  `'share` mode is O(1).
+* A concatenation whose result would be longer than the largest power of two
+  that is a fixnum raises an error.  Sharing lets a program build such a
+  sequence in a few dozen appends, and the limit keeps every length and weight
+  a fixnum.
 * `esek-snapshot` folds the inner chunks into the snapshot's middle sequence,
   so it is O(K log_K n) in the worst case rather than the O(1) of Figure 16.
   The OCaml library folds them into the sequence's own middle sequence, and so
