@@ -41,8 +41,10 @@
          psek-first
          psek-last
          psek-ref
+         psek-ref/who
          psek-set
          psek-append
+         append-psek
          psek-split
          psek-build
          make-psek-builder
@@ -379,18 +381,28 @@
 ;; assumes: everything below here indexes with `unsafe-fx` operations, which on
 ;; a bignum are undefined.  A length is a fixnum, so a bignum index is out of
 ;; range by definition and belongs on the slow path anyway.
+;;
+;; The body is a macro so that `sek-ref` gets the same code with its own name
+;; in the errors, without a second call on the fast path.
+(define-syntax-rule (psek-ref-body who s i)
+  (let ()
+    (check-psek who s)
+    (define r (psq-rep s))
+    (cond
+      [(and (lvl? r) (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i (lvl-weight r)))
+       (pt-ref r i 0)]
+      [(and (vector? r) (fixnum? i) (unsafe-fx>= i 0)
+            (unsafe-fx< i (unsafe-vector*-length r)))
+       (vector-ref r i)]
+      [else
+       (check-index who s i)
+       (if (vector? r) (vector-ref r i) (pt-ref r i 0))])))
+
 (define (psek-ref s i)
-  (check-psek 'psek-ref s)
-  (define r (psq-rep s))
-  (cond
-    [(and (lvl? r) (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx< i (lvl-weight r)))
-     (pt-ref r i 0)]
-    [(and (vector? r) (fixnum? i) (unsafe-fx>= i 0)
-          (unsafe-fx< i (unsafe-vector*-length r)))
-     (vector-ref r i)]
-    [else
-     (check-index 'psek-ref s i)
-     (if (vector? r) (vector-ref r i) (pt-ref r i 0))]))
+  (psek-ref-body 'psek-ref s i))
+
+(define (psek-ref/who who s i)
+  (psek-ref-body who s i))
 
 (define (psek-set s i x)
   (check-index 'psek-set s i)
@@ -406,8 +418,14 @@
 (define (psek-append s1 s2)
   (check-psek 'psek-append s1)
   (check-psek 'psek-append s2)
+  (append-psek 'psek-append s1 s2))
+
+;; The concatenation without the argument checks, for callers that have made
+;; them and want an error to name the operation they export.
+(define (append-psek who s1 s2)
   (define r1 (psq-rep s1))
   (define r2 (psq-rep s2))
+  (check-append-length who (rep-length r1) (rep-length r2))
   (cond
     [(not r1) s2]
     [(not r2) s1]
@@ -476,6 +494,7 @@
 
 (define (psek-for-each s proc)
   (check-psek 'psek-for-each s)
+  (check-procedure 'psek-for-each proc 1)
   (define r (psq-rep s))
   (cond
     [(not r) (void)]
@@ -486,6 +505,7 @@
 
 (define (psek-map s proc)
   (check-psek 'psek-map s)
+  (check-procedure 'psek-map proc 1)
   (list->psek (map proc (psek->list s))))
 
 ;; Streaming traversal: `for` over a sequence walks the tree directly instead

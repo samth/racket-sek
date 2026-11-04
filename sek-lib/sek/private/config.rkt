@@ -21,13 +21,18 @@
          hash-elements
          capacity-at
          capacity-bits
-         max-item-weight
-         max-item-weight-shift
+         packed-item-weight
+         packed-item-shift
          leaf-capacity
          node-capacity
          short-threshold
          overwrite-empty-slots?
          check-iterator-validity?
+         max-length
+         check-append-length
+         check-procedure
+         check-direction
+         check-side
          sek-configure!
          (struct-out exn:fail:sek))
 
@@ -55,19 +60,24 @@
   (define (capacity-at d)
     (if (eqv? d 0) leaf-cap node-cap)))
 
-;; max-item-weight : depth -> nat
-;; The largest weight an item of depth d can have, i.e. the product of the
-;; capacities of the levels below it.  A chunk all of whose items have this
-;; weight is "packed" (§3.2) and can be indexed in O(1) by division.
-;; It is consulted once per level on every indexed access, so it is tabulated
-;; rather than recomputed; 32 levels is past the reach of any real sequence
-;; (with the smallest legal capacity that is already 2^32 elements).
-(define miw-depth 32)
-(define miw-cache (make-vector miw-depth 1))
-;; log2 of the same value when it is a power of two, else #f.  Indexing a
-;; packed chunk is a division by this weight, and capacities are powers of two
-;; often enough -- both defaults are -- that it is worth turning those
-;; divisions into shifts.
+;; packed-item-weight : depth -> (or/c fixnum #f)
+;; The largest weight an item of depth d can have is the product of the
+;; capacities of the levels below it.  A chunk all of whose items have that
+;; weight is "packed" (§3.2) and can be indexed in O(1) by division.  It is
+;; consulted once per level on every indexed access, so it is tabulated.
+;;
+;; The division and the test for packing are fixnum operations, which are
+;; unchecked, so the table holds the weight only where a full chunk of such
+;; items weighs a fixnum; elsewhere it holds #f, and the lookup scans.  The
+;; weight itself is no bound on a sequence: sharing builds a sequence whose
+;; length is a fixnum and whose maximum item weights, at small capacities, are
+;; not.  A full chunk at depth d weighs at least 2^(d+1), so beyond the table
+;; no depth qualifies, whatever the capacities.
+(define miw-depth 62)
+(define miw-cache (make-vector miw-depth #f))
+;; log2 of the same weight when it is a power of two, else #f.  Capacities are
+;; powers of two often enough -- both defaults are -- that it is worth turning
+;; those divisions into shifts.
 (define miw-shift-cache (make-vector miw-depth #f))
 
 (define (exact-log2 n)
@@ -75,21 +85,18 @@
        (let loop ([n n] [k 0]) (if (eqv? n 1) k (loop (arithmetic-shift n -1) (add1 k))))))
 
 (define (recompute-max-item-weights!)
-  (vector-set! miw-cache 0 1)
-  (vector-set! miw-shift-cache 0 0)
-  (for ([d (in-range 1 miw-depth)])
-    (define w (* leaf-cap (expt node-cap (sub1 d))))
-    (vector-set! miw-cache d w)
-    (vector-set! miw-shift-cache d (exact-log2 w))))
+  (for ([d (in-range miw-depth)])
+    (define w (if (eqv? d 0) 1 (* leaf-cap (expt node-cap (sub1 d)))))
+    (define ok? (fixnum? (* (capacity-at d) w)))
+    (vector-set! miw-cache d (and ok? w))
+    (vector-set! miw-shift-cache d (and ok? (exact-log2 w)))))
 
 (begin-encourage-inline
-  (define (max-item-weight d)
-    (if (< d miw-depth)
-        (vector-ref miw-cache d)
-        (* leaf-cap (expt node-cap (sub1 d))))))
+  (define (packed-item-weight d)
+    (and (< d miw-depth) (vector-ref miw-cache d))))
 
 (begin-encourage-inline
-  (define (max-item-weight-shift d)
+  (define (packed-item-shift d)
     (and (< d miw-depth) (vector-ref miw-shift-cache d))))
 
 ;; Should a slot that becomes logically empty be overwritten?  Leaving it
@@ -112,6 +119,38 @@
 ;; 2^30 where fixnums reach 2^60 - 1, and 2^14 where they are 30 bits wide.
 (define capacity-bits (if (fixnum? (sub1 (expt 2 60))) 30 14))
 (define max-capacity (sub1 (expt 2 capacity-bits)))
+
+;; The longest sequence a concatenation may build: the largest power of two
+;; that is a fixnum.  Sharing makes such lengths cheap -- a sequence appended
+;; to itself doubles at the cost of one concatenation -- so without a limit a
+;; length could leave fixnum range, and lengths and weights are added with
+;; unchecked fixnum operations.  Pushes add one element at a time, and no
+;; program pushes enough to carry a length from here past the fixnum range.
+(define max-length
+  (let loop ([n 1]) (if (fixnum? (* 2 n)) (loop (* 2 n)) n)))
+
+(define (check-append-length who n1 n2)
+  (unless (<= (+ n1 n2) max-length)
+    (raise-arguments-error who "resulting sequence would be too long"
+                           "first length" n1
+                           "second length" n2
+                           "maximum length" max-length)))
+
+;; Checks of the arguments besides the sequence, shared by every module with
+;; an entry point.  A callback is checked before the traversal, as
+;; racket/treelist checks one, so that a wrong one is reported even when the
+;; sequence is empty.
+(define (check-procedure who p arity)
+  (unless (and (procedure? p) (procedure-arity-includes? p arity))
+    (raise-argument-error who (format "(procedure-arity-includes/c ~a)" arity) p)))
+
+(define (check-direction who d)
+  (unless (or (eq? d 'forward) (eq? d 'backward))
+    (raise-argument-error who "(or/c 'forward 'backward)" d)))
+
+(define (check-side who side)
+  (unless (or (eq? side 'front) (eq? side 'back))
+    (raise-argument-error who "(or/c 'front 'back)" side)))
 
 ;; Settings must be chosen before any sequence is built; mixing capacities
 ;; within one structure breaks the density invariant checks.

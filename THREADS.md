@@ -241,8 +241,12 @@ guard:
   never changes length, so a run checked once stays in range whatever happens
   to the sequence afterwards.
 * *An unchecked fixnum operation's operands are fixnums.*  They come from
-  fields that are only ever assigned fixnums, or from indices the entry points
-  checked with `fixnum?`.
+  fields that are only ever assigned fixnums, from indices the entry points
+  checked with `fixnum?`, or from the table of packed item weights, which
+  `config.rkt` fills only where a full chunk's weight is a fixnum.  (Until the
+  release review it held every maximum weight, and sharing could build a
+  sequence deep enough for one of them to be a bignum.)  The concatenations
+  refuse a result whose length would not be a fixnum.
 
 **Sharing persistent sequences** needs every write that a persistent operation
 makes to shared storage to be safe under concurrency.  Reading

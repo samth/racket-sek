@@ -150,5 +150,135 @@
   (raises (sek-iter-get it))
   (raises (sek-iter-move! it 'forward)))
 
+;; ------------------------------------------- the other arguments, and blame
+;; The tests above pass the wrong sequence.  These pass the wrong everything
+;; else -- an index, a side, a direction, a callback, a count, a mode -- and
+;; insist that the error names the operation the caller called.
+(define-syntax-rule (raises/who who expr)
+  (check-exn (lambda (x)
+               (and (exn:fail:contract? x)
+                    (regexp-match? (string-append "^" (regexp-quote (symbol->string who)) ":")
+                                   (exn-message x))))
+             (lambda () expr)
+             (format "~s should raise, naming ~a" 'expr who)))
+
+;; Each of these empties its argument before it builds the result, so it has
+;; to check everything first.
+(test-case "a destructive operation with a bad argument leaves its input alone"
+  (for* ([op (in-list (list esek-split! esek-carve! esek-take! esek-drop!))]
+         [i (in-list (list 4 -1 'x 1.5 (expt 2 70)))])
+    (define q (esek 'a 'b 'c))
+    (raises/who (object-name op) (op q i))
+    (check-equal? (esek->list q) '(a b c) (format "~a ~s" (object-name op) i)))
+  (for ([op (in-list (list esek-carve! esek-take! esek-drop!))])
+    (define q (esek 'a 'b 'c))
+    (raises/who (object-name op) (op q 1 'sideways))
+    (check-equal? (esek->list q) '(a b c)))
+  (define q (esek 'a 'b))
+  (define r (esek 'c))
+  (raises/who 'esek-append! (esek-append! q r 'sideways))
+  (check-equal? (esek->list q) '(a b))
+  (check-equal? (esek->list r) '(c)))
+
+(test-case "a callback is checked even when the sequence is empty"
+  (for ([s (in-list (list empty-psek (make-esek)))])
+    (raises/who 'sek-for-each (sek-for-each s 'wrong))
+    (raises/who 'sek-for-each/index (sek-for-each/index s car))
+    (raises/who 'sek-fold-left (sek-fold-left s car 0))
+    (raises/who 'sek-fold-right (sek-fold-right s car 0))
+    (raises/who 'sek-find (sek-find s cons))
+    (raises/who 'sek-find-index (sek-find-index s cons))
+    (raises/who 'sek-find-map (sek-find-map s cons))
+    (raises/who 'sek-for-all? (sek-for-all? s cons))
+    (raises/who 'sek-exists? (sek-exists? s cons))
+    (raises/who 'sek-member? (sek-member? s 1 car))
+    (raises/who 'sek-index-of (sek-index-of s 1 car))
+    (raises/who 'sek-map (sek-map s 'wrong))
+    (raises/who 'sek-map/index (sek-map/index s car))
+    (raises/who 'sek-filter (sek-filter s cons))
+    (raises/who 'sek-filter-map (sek-filter-map s cons))
+    (raises/who 'sek-partition (sek-partition s cons))
+    (raises/who 'sek-append-map (sek-append-map s cons))
+    (raises/who 'sek-sort (sek-sort s car))
+    (raises/who 'sek-uniq (sek-uniq s car))
+    (raises/who 'sek-for-each2 (sek-for-each2 s s car))
+    (raises/who 'sek-fold-left2 (sek-fold-left2 s s cons 0))
+    (raises/who 'sek-fold-right2 (sek-fold-right2 s s cons 0))
+    (raises/who 'sek-for-all2? (sek-for-all2? s s car))
+    (raises/who 'sek-exists2? (sek-exists2? s s car))
+    (raises/who 'sek-map2 (sek-map2 s s car))
+    (raises/who 'sek-merge (sek-merge s s car))
+    (raises/who 'sek-equal? (sek-equal? s s car))
+    (raises/who 'sek-compare (sek-compare s s car)))
+  (raises/who 'psek-for-each (psek-for-each empty-psek 'wrong))
+  (raises/who 'psek-map (psek-map empty-psek 'wrong))
+  (raises/who 'esek-for-each (esek-for-each (make-esek) 'wrong))
+  (raises/who 'build-psek (build-psek 0 cons))
+  (raises/who 'build-esek (build-esek 0 cons)))
+
+(test-case "a callback's results are checked where the operation uses them"
+  (raises/who 'sek-compare (sek-compare (psek 1) (psek 2) (lambda (a b) 'less)))
+  (raises/who 'sek-append-map (sek-append-map (psek 1) (lambda (x) (list x))))
+  (raises/who 'sek-unzip (sek-unzip (psek (cons 1 2) 3))))
+
+(test-case "directions, sides and modes are checked"
+  (for ([s (in-list (list p e))])
+    (raises/who 'sek-for-each (sek-for-each s void 'sideways))
+    (raises/who 'sek-for-each/index (sek-for-each/index s void 'sideways))
+    (raises/who 'sek-find (sek-find s odd? 'sideways))
+    (raises/who 'sek-find-index (sek-find-index s odd? 'sideways))
+    (raises/who 'sek-find-map (sek-find-map s odd? 'sideways))
+    (raises/who 'sek->list (sek->list s 'sideways))
+    (raises/who 'sek-for-each2 (sek-for-each2 s s void 'sideways))
+    (raises/who 'in-sek (for/list ([x (in-sek s 'sideways)]) x))
+    (raises/who 'in-sek (in-sek s 'sideways))
+    (raises/who 'sek-copy (sek-copy s #:mode 'deep)))
+  (raises/who 'in-psek (for/list ([x (in-psek p 'sideways)]) x))
+  (raises/who 'in-psek (in-psek p 'sideways))
+  (raises/who 'in-esek (for/list ([x (in-esek e 'sideways)]) x))
+  (raises/who 'in-esek (in-esek e 'sideways))
+  (raises/who 'sek-iter-move! (sek-iter-move! (sek-iterator p) 'sideways)))
+
+(test-case "in-psek and in-esek take only their own flavor, in a for clause too"
+  (raises/who 'in-psek (for/list ([x (in-psek e)]) x))
+  (raises/who 'in-psek (in-psek e))
+  (raises/who 'in-esek (for/list ([x (in-esek p)]) x))
+  (raises/who 'in-esek (in-esek p)))
+
+(test-case "counts and sources are checked"
+  (for ([n (in-list (list -1 3/2 1.0 'x))])
+    (raises/who 'make-esek (make-esek n))
+    (raises/who 'make-psek (make-psek n))
+    (raises/who 'build-psek (build-psek n values))
+    (raises/who 'build-esek (build-esek n values))
+    (raises/who 'sequence->psek (sequence->psek '(a b) n))
+    (raises/who 'sequence->esek (sequence->esek '(a b) n)))
+  (raises/who 'sequence->psek (sequence->psek (box 1)))
+  (raises/who 'sequence->esek (sequence->esek (box 1))))
+
+(test-case "the generic operations name themselves in errors"
+  (for ([s (in-list (list p e))])
+    (raises/who 'sek-ref (sek-ref s 4))
+    (raises/who 'sek-ref (sek-ref s 'x))
+    (raises/who 'sek-take (sek-take s 4))
+    (raises/who 'sek-drop (sek-drop s -1)))
+  (for ([s (in-list (list empty-psek (make-esek)))])
+    (raises/who 'sek-first (sek-first s))
+    (raises/who 'sek-last (sek-last s)))
+  (check-exn #rx"expected: sek-iter[?]" (lambda () (sek-iter-get 'wrong))))
+
+;; sek-append* empties ephemeral arguments as it goes, so a bad element must
+;; be found before the first of them is touched.
+(test-case "sek-append* checks every element before consuming any"
+  (define inner (esek 1 2))
+  (define outer (esek inner 7))
+  (raises/who 'sek-append* (sek-append* outer))
+  (check-equal? (esek->list inner) '(1 2))
+  (check-equal? (esek-length outer) 2)
+  (define self (esek))
+  (esek-add! self self)
+  (raises/who 'sek-append* (sek-append* self))
+  (check-equal? (esek-length self) 1))
+
 (module+ test
   (void))

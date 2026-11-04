@@ -114,16 +114,22 @@
 (define (sek-ref s i)
   (check-sek 'sek-ref s)
   (if (psek? s)
-      (psek-ref s i)
-      (esek-ref s i)))
+      (psek-ref/who 'sek-ref s i)
+      (esek-ref/who 'sek-ref s i)))
+
+(define (check-nonempty who s)
+  (when (eqv? 0 (sek-length s))
+    (raise-arguments-error who "sequence is empty")))
 
 (define (sek-first s)
   (check-sek 'sek-first s)
+  (check-nonempty 'sek-first s)
   (if (psek? s)
       (psek-first s)
       (esek-first s)))
 (define (sek-last s)
   (check-sek 'sek-last s)
+  (check-nonempty 'sek-last s)
   (if (psek? s)
       (psek-last s)
       (esek-last s)))
@@ -192,10 +198,14 @@
 
 (define (sek-for-each s proc [dir 'forward])
   (check-sek 'sek-for-each s)
+  (check-procedure 'sek-for-each proc 1)
+  (check-direction 'sek-for-each dir)
   (sek-segments-for-each s (lambda (sg) (segment-for-each sg proc dir)) dir))
 
 (define (sek-for-each/index s proc [dir 'forward])
   (check-sek 'sek-for-each/index s)
+  (check-procedure 'sek-for-each/index proc 2)
+  (check-direction 'sek-for-each/index dir)
   (define it (sek-iterator s dir))
   (let loop ()
     (unless (sek-iter-finished? it)
@@ -206,6 +216,7 @@
 
 (define (sek-fold-left s proc init)
   (check-sek 'sek-fold-left s)
+  (check-procedure 'sek-fold-left proc 2)
   (define it (sek-iterator s 'forward))
   (let loop ([acc init])
     (cond
@@ -222,6 +233,7 @@
 
 (define (sek-fold-right s proc init)
   (check-sek 'sek-fold-right s)
+  (check-procedure 'sek-fold-right proc 2)
   (define it (sek-iterator s 'backward))
   (let loop ([acc init])
     (cond
@@ -239,7 +251,10 @@
 ;; The generic-dispatch version, used when a sequence value is passed around
 ;; rather than written directly in a for clause.
 (define (in-sek/proc s [dir 'forward])
-  (check-sek 'in-sek s)
+  (check-in-sek s dir)
+  (in-sek/unchecked s dir))
+
+(define (in-sek/unchecked s dir)
   (make-do-sequence (lambda ()
                       (define it (sek-iterator s dir))
                       (values (lambda (_) (sek-iter-get it))
@@ -271,14 +286,23 @@
 ;; The four loop variables are the run's vector, the position to read, the
 ;; limit, and the step (+1 forward, -1 backward).  All the work happens in one
 ;; inner binding, because :do-in binds its inner clauses in parallel.
+;;
+;; The loop checks that the sequence has not been updated each time it moves
+;; to a new run, rather than at every element: the check is what an iterator
+;; pays per step, and the loop exists to avoid paying it.  So a loop may see an
+;; update to the run it is reading, and one that stops first never reports it.
+;;
+;; `check` tests the sequence and the direction, and names the form.
 (begin-for-syntax
-  (define (sek-for-clause stx)
+  (define ((sek-for-clause check) stx)
     (define (expand seq-expr dir-expr id)
-      (with-syntax ([seq-expr seq-expr] [dir-expr dir-expr] [id id])
+      (with-syntax ([seq-expr seq-expr] [dir-expr dir-expr] [id id] [check check])
         #'[(id)
            (:do-in
             ([(it dir)
-              (let ([d dir-expr]) (values (sek-iterator seq-expr d) d))])
+              (let* ([s seq-expr] [d dir-expr])
+                (check s d)
+                (values (sek-iterator s d) d))])
             #t
             ([v #f] [i 0] [n 0] [step 1])
             #t
@@ -299,30 +323,43 @@
       [[(id) (_ seq-expr dir-expr)] (expand #'seq-expr #'dir-expr #'id)]
       [_ #f])))
 
+(define (check-in-sek s d)
+  (check-sek 'in-sek s)
+  (check-direction 'in-sek d))
+
 (define-sequence-syntax in-sek
   (lambda () #'in-sek/proc)
-  sek-for-clause)
+  (sek-for-clause #'check-in-sek))
 
 ;; The same loop, restricted to one flavor.  These shadow the plain readers
 ;; that persistent.rkt and ephemeral.rkt define.
-(define (in-psek/proc s)
+(define (check-in-psek s d)
   (unless (psek? s) (raise-argument-error 'in-psek "psek?" s))
-  (in-sek/proc s 'forward))
+  (check-direction 'in-psek d))
 
-(define (in-esek/proc e)
+(define (check-in-esek e d)
   (unless (esek? e) (raise-argument-error 'in-esek "esek?" e))
-  (in-sek/proc e 'forward))
+  (check-direction 'in-esek d))
+
+(define (in-psek/proc s [dir 'forward])
+  (check-in-psek s dir)
+  (in-sek/unchecked s dir))
+
+(define (in-esek/proc e [dir 'forward])
+  (check-in-esek e dir)
+  (in-sek/unchecked e dir))
 
 (define-sequence-syntax in-psek
   (lambda () #'in-psek/proc)
-  sek-for-clause)
+  (sek-for-clause #'check-in-psek))
 
 (define-sequence-syntax in-esek
   (lambda () #'in-esek/proc)
-  sek-for-clause)
+  (sek-for-clause #'check-in-esek))
 
 (define (sek->list s [dir 'forward])
   (check-sek 'sek->list s)
+  (check-direction 'sek->list dir)
   (define acc '())
   (sek-for-each s (lambda (x) (set! acc (cons x acc))) (if (eq? dir 'forward) 'backward 'forward))
   acc)
@@ -343,6 +380,8 @@
 ;; element could itself be #f.
 (define (sek-find s pred [dir 'forward])
   (check-sek 'sek-find s)
+  (check-procedure 'sek-find pred 1)
+  (check-direction 'sek-find dir)
   (define it (sek-iterator s dir))
   (let loop ()
     (cond
@@ -358,6 +397,8 @@
 ;; The index of the first (or last) element satisfying pred, or #f.
 (define (sek-find-index s pred [dir 'forward])
   (check-sek 'sek-find-index s)
+  (check-procedure 'sek-find-index pred 1)
+  (check-direction 'sek-find-index dir)
   (define it (sek-iterator s dir))
   (let loop ()
     (cond
@@ -369,6 +410,8 @@
 
 (define (sek-find-map s proc [dir 'forward])
   (check-sek 'sek-find-map s)
+  (check-procedure 'sek-find-map proc 1)
+  (check-direction 'sek-find-map dir)
   (define it (sek-iterator s dir))
   (let loop ()
     (cond
@@ -383,6 +426,7 @@
 
 (define (sek-for-all? s pred)
   (check-sek 'sek-for-all? s)
+  (check-procedure 'sek-for-all? pred 1)
   (define it (sek-iterator s 'forward))
   (let loop ()
     (cond
@@ -394,6 +438,7 @@
 
 (define (sek-exists? s pred)
   (check-sek 'sek-exists? s)
+  (check-procedure 'sek-exists? pred 1)
   (define it (sek-iterator s 'forward))
   (let loop ()
     (cond
@@ -405,6 +450,7 @@
 
 (define (sek-member? s v [same? equal?])
   (check-sek 'sek-member? s)
+  (check-procedure 'sek-member? same? 2)
   (sek-exists? s (lambda (y) (same? v y))))
 
 (define (sek-memq? s v)
@@ -440,6 +486,8 @@
 (define (sek-for-each2 s1 s2 proc [dir 'forward])
   (check-sek 'sek-for-each2 s1)
   (check-sek 'sek-for-each2 s2)
+  (check-procedure 'sek-for-each2 proc 2)
+  (check-direction 'sek-for-each2 dir)
   (define it1 (sek-iterator s1 dir))
   (define it2 (sek-iterator s2 dir))
   (let loop ()
@@ -452,6 +500,7 @@
 (define (sek-fold-left2 s1 s2 proc init)
   (check-sek 'sek-fold-left2 s1)
   (check-sek 'sek-fold-left2 s2)
+  (check-procedure 'sek-fold-left2 proc 3)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ([acc init])
@@ -462,27 +511,27 @@
           (sek-iter-move! it2 'forward)
           (loop acc)))))
 
+;; As in the reference, where fold_right2 is iter2 backward: the two
+;; sequences are paired from their last elements, so when the lengths differ
+;; the longer one's extra elements at the front are left out.
 (define (sek-fold-right2 s1 s2 proc init)
   (check-sek 'sek-fold-right2 s1)
   (check-sek 'sek-fold-right2 s2)
-  (define n (min (sek-length s1) (sek-length s2)))
+  (check-procedure 'sek-fold-right2 proc 3)
   (define it1 (sek-iterator s1 'backward))
   (define it2 (sek-iterator s2 'backward))
-  ;; align the two cursors on the last n elements of each
-  (sek-iter-reach! it1 (sub1 n))
-  (sek-iter-reach! it2 (sub1 n))
-  (let loop ([acc init]
-             [k n])
-    (if (eqv? k 0)
+  (let loop ([acc init])
+    (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
         acc
         (let ([acc (proc (sek-iter-get it1) (sek-iter-get it2) acc)])
           (sek-iter-move! it1 'backward)
           (sek-iter-move! it2 'backward)
-          (loop acc (sub1 k))))))
+          (loop acc)))))
 
 (define (sek-for-all2? s1 s2 pred)
   (check-sek 'sek-for-all2? s1)
   (check-sek 'sek-for-all2? s2)
+  (check-procedure 'sek-for-all2? pred 2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -497,6 +546,7 @@
 (define (sek-exists2? s1 s2 pred)
   (check-sek 'sek-exists2? s1)
   (check-sek 'sek-exists2? s2)
+  (check-procedure 'sek-exists2? pred 2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -511,14 +561,16 @@
 (define (sek-equal? s1 s2 [same? equal?])
   (check-sek 'sek-equal? s1)
   (check-sek 'sek-equal? s2)
+  (check-procedure 'sek-equal? same? 2)
   (and (= (sek-length s1) (sek-length s2)) (sek-for-all2? s1 s2 same?)))
 
 ;; -1, 0 or 1, comparing element by element and then by length.
 ;; cmp compares two elements and returns a negative number, zero, or a
-;; positive number.
+;; positive number; any real will do, so an inexact zero counts as zero.
 (define (sek-compare s1 s2 cmp)
   (check-sek 'sek-compare s1)
   (check-sek 'sek-compare s2)
+  (check-procedure 'sek-compare cmp 2)
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -530,8 +582,10 @@
       [d2 1]
       [else
        (define c (cmp (sek-iter-get it1) (sek-iter-get it2)))
+       (unless (real? c)
+         (raise-result-error 'sek-compare "real?" c))
        (cond
-         [(eqv? c 0)
+         [(zero? c)
           (sek-iter-move! it1 'forward)
           (sek-iter-move! it2 'forward)
           (loop)]
@@ -541,27 +595,33 @@
 
 (define (sek-map s proc)
   (check-sek 'sek-map s)
+  (check-procedure 'sek-map proc 1)
   (build-by-segments s s x add! (add! (proc x))))
 
 (define (sek-map/index s proc)
   (check-sek 'sek-map/index s)
+  (check-procedure 'sek-map/index proc 2)
   (build-from s (lambda (emit) (sek-for-each/index s (lambda (i x) (emit (proc i x)))))))
 
 (define (sek-map2 s1 s2 proc)
   (check-sek 'sek-map2 s1)
   (check-sek 'sek-map2 s2)
+  (check-procedure 'sek-map2 proc 2)
   (build-from s1 (lambda (emit) (sek-for-each2 s1 s2 (lambda (x y) (emit (proc x y)))))))
 
 (define (sek-filter s pred)
   (check-sek 'sek-filter s)
+  (check-procedure 'sek-filter pred 1)
   (build-by-segments s s x add! (when (pred x) (add! x))))
 
 (define (sek-filter-map s proc)
   (check-sek 'sek-filter-map s)
+  (check-procedure 'sek-filter-map proc 1)
   (build-by-segments s s x add! (let ([y (proc x)]) (when y (add! y)))))
 
 (define (sek-partition s pred)
   (check-sek 'sek-partition s)
+  (check-procedure 'sek-partition pred 1)
   (define yes (open-builder))
   (define no (open-builder))
   (sek-for-each s (lambda (x) (esek-push-back! (if (pred x) yes no) x)))
@@ -582,6 +642,8 @@
   (define bs (open-builder))
   (sek-for-each s
                 (lambda (p)
+                  (unless (pair? p)
+                    (raise-arguments-error 'sek-unzip "element is not a pair" "element" p))
                   (esek-push-back! as (car p))
                   (esek-push-back! bs (cdr p))))
   (values (close-builder as s) (close-builder bs s)))
@@ -591,26 +653,49 @@
 ;; empties every sequence it is given, including the outer one.  Handing over
 ;; each sequence's representation rather than copying its elements is also the
 ;; faster way to do it.  On the persistent side nothing is consumed.
+;;
+;; Every element is checked before any is consumed, so that an error leaves
+;; the arguments as they were.
 (define (sek-append* s)
   (check-sek 'sek-append* s)
+  (define total
+    (sek-fold-left s
+                   (lambda (n t)
+                     (unless (sek? t)
+                       (raise-arguments-error 'sek-append* "element is not a sequence"
+                                              "element" t))
+                     (when (eq? t s)
+                       (raise-arguments-error 'sek-append* "sequence contains itself"))
+                     (+ n (sek-length t)))
+                   0))
+  (unless (<= total max-length)
+    (raise-arguments-error 'sek-append* "resulting sequence would be too long"
+                           "length" total "maximum length" max-length))
   (cond
     [(psek? s)
      (build-from s (lambda (emit) (sek-for-each s (lambda (t) (sek-for-each t emit)))))]
     [else
      (define acc (make-esek))
-     (sek-for-each s (lambda (t) (unless (eq? t acc) (esek-append! acc t))))
+     (sek-for-each s (lambda (t) (append-esek! 'sek-append* acc t 'back)))
      (esek-clear! s)
      acc]))
 
 (define (sek-append-map s proc)
   (check-sek 'sek-append-map s)
-  (build-from s (lambda (emit) (sek-for-each s (lambda (x) (sek-for-each (proc x) emit))))))
+  (check-procedure 'sek-append-map proc 1)
+  (build-from s (lambda (emit)
+                  (sek-for-each s (lambda (x)
+                                    (define t (proc x))
+                                    (unless (sek? t)
+                                      (raise-result-error 'sek-append-map "sek?" t))
+                                    (sek-for-each t emit))))))
 
 ;; ---------------------------------------------------------------- ordering
 
 ;; A stable sort, by way of a vector.
 (define (sek-sort s less?)
   (check-sek 'sek-sort s)
+  (check-procedure 'sek-sort less? 2)
   (define v (sek->vector s))
   (define sorted (vector-sort v less?))
   (build-from s
@@ -622,6 +707,7 @@
 ;; duplicates when the sequence is sorted.
 (define (sek-uniq s [same? equal?])
   (check-sek 'sek-uniq s)
+  (check-procedure 'sek-uniq same? 2)
   (define b (open-builder))
   (define first? #t)
   (define previous #f)
@@ -637,6 +723,7 @@
 (define (sek-merge s1 s2 less?)
   (check-sek 'sek-merge s1)
   (check-sek 'sek-merge s2)
+  (check-procedure 'sek-merge less? 2)
   (define b (open-builder))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
@@ -716,7 +803,7 @@
 ;; rather than O(N).
 (define (psek-insert-at s i v)
   (define-values (before after) (psek-split s i))
-  (psek-append (psek-add before v) after))
+  (append-psek 'sek-insert (psek-add before v) after))
 
 (define (sek-insert s i v)
   (check-sek 'sek-insert s)
@@ -743,6 +830,7 @@
 ;; `treelist-index-of` calls its `eql?`.
 (define (sek-index-of s v [same? equal?])
   (check-sek 'sek-index-of s)
+  (check-procedure 'sek-index-of same? 2)
   (sek-find-index s (lambda (x) (same? v x))))
 
 (define (sek-take-right s n)
@@ -759,20 +847,29 @@
     (raise-arguments-error 'sek-drop-right "index out of range" "index" n "length" len))
   (sek-take s (- len n)))
 
+(define (check-split-index who s i)
+  (define n (sek-length s))
+  (unless (and (exact-nonnegative-integer? i) (<= i n))
+    (raise-arguments-error who "index out of range" "index" i "length" n)))
+
 (define (sek-take s n)
   (check-sek 'sek-take s)
+  (check-split-index 'sek-take s n)
   (if (psek? s)
       (psek-take s n)
       (psek-edit (psek-take (esek-snapshot s) n))))
 
 (define (sek-drop s n)
   (check-sek 'sek-drop s)
+  (check-split-index 'sek-drop s n)
   (if (psek? s)
       (psek-drop s n)
       (psek-edit (psek-drop (esek-snapshot s) n))))
 
 (define (sek-copy s #:mode [mode 'copy])
   (check-sek 'sek-copy s)
+  (unless (memq mode '(copy share))
+    (raise-argument-error 'sek-copy "(or/c 'share 'copy)" mode))
   (if (psek? s)
       s
       (esek-copy s #:mode mode)))
@@ -859,29 +956,42 @@
 
 ;; ------------------------------------------------------------ construction
 
-;; Build from any Racket sequence -- the OCaml library's of_seq.
+;; Build from any Racket sequence -- the OCaml library's of_seq.  With n, take
+;; at most the first n elements.
 (define (sequence->esek seq [n #f])
+  (psek-edit (sequence->psek-builder 'sequence->esek seq n)))
+
+(define (sequence->psek seq [n #f])
+  (sequence->psek-builder 'sequence->psek seq n))
+
+(define (sequence->psek-builder who seq n)
+  (unless (sequence? seq)
+    (raise-argument-error who "sequence?" seq))
+  (unless (or (not n) (exact-nonnegative-integer? n))
+    (raise-argument-error who "(or/c #f exact-nonnegative-integer?)" n))
   (define b (make-psek-builder))
   (if n
       (for ([x seq] [_ (in-range n)]) (psek-builder-add! b x))
       (for ([x seq]) (psek-builder-add! b x)))
-  (psek-edit (psek-builder-close b)))
+  (psek-builder-close b))
 
-(define (sequence->psek seq [n #f])
-  (esek-snapshot-and-clear! (sequence->esek seq n)))
+(define (check-build who n proc)
+  (unless (exact-nonnegative-integer? n)
+    (raise-argument-error who "exact-nonnegative-integer?" n))
+  (check-procedure who proc 1))
 
 (define (build-psek n proc)
-  (unless (exact-nonnegative-integer? n)
-    (raise-argument-error 'build-psek "exact-nonnegative-integer?" n))
+  (check-build 'build-psek n proc)
   (psek-build n proc))
 
 (define (build-esek n proc)
-  (unless (exact-nonnegative-integer? n)
-    (raise-argument-error 'build-esek "exact-nonnegative-integer?" n))
+  (check-build 'build-esek n proc)
   (psek-edit (psek-build n proc)))
 
 (define (make-psek n [v #f])
-  (build-psek n (lambda (_) v)))
+  (unless (exact-nonnegative-integer? n)
+    (raise-argument-error 'make-psek "exact-nonnegative-integer?" n))
+  (psek-build n (lambda (_) v)))
 
 ;; Comprehensions, in the shape of for/gvector and for/mutable-treelist.
 (define-syntax (for/esek stx)

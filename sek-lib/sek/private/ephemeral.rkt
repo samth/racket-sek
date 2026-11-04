@@ -73,6 +73,8 @@
          esek-assign!
          esek-snapshot-and-clear!
          ;; internals used by the iterator and the derived operations
+         esek-ref/who
+         append-esek!
          esek-flush-inner!
          esek-iterator-born!
          esek-iterator-valid?
@@ -94,7 +96,7 @@
                         [folded #:mutable])
   #:authentic #:sealed
   #:property prop:sequence
-  (lambda (e) (in-esek e))
+  (lambda (e) (in-esek/checked e))
   #:property prop:serializable
   (make-serialize-info (lambda (v) (vector (esek->vector v)))
                        (cons 'deserialize-esek
@@ -132,6 +134,8 @@
   (unless (psek? v) (raise-argument-error who "psek?" v)))
 
 (define (make-esek [n 0] [v #f])
+  (unless (exact-nonnegative-integer? n)
+    (raise-argument-error 'make-esek "exact-nonnegative-integer?" n))
   (define id (fresh-id!))
   (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 1 #f))
   (for ([_ (in-range n)]) (esek-add! e v))
@@ -387,17 +391,25 @@
   (raise-arguments-error who "index out of range"
                          "index" i "length" (esek-length e)))
 
+;; A macro, as `psek-ref-body` is, so that `sek-ref` names itself in errors.
+(define-syntax-rule (esek-ref-body who e i)
+  (let ()
+    (check-esek who e)
+    (unless (and (fixnum? i) (unsafe-fx>= i 0))
+      (bad-index who e i))
+    (define-values (where j) (esek-locate e i who))
+    (case where
+      [(front) (chunk-ref (esq-front e) j)]
+      [(ifront) (chunk-ref (esq-ifront e) j)]
+      [(middle) (pt-ref (located-middle e) j 1)]
+      [(iback) (chunk-ref (esq-iback e) j)]
+      [else (chunk-ref (esq-back e) j)])))
+
 (define (esek-ref e i)
-  (check-esek 'esek-ref e)
-  (unless (and (fixnum? i) (unsafe-fx>= i 0))
-    (bad-index 'esek-ref e i))
-  (define-values (where j) (esek-locate e i 'esek-ref))
-  (case where
-    [(front) (chunk-ref (esq-front e) j)]
-    [(ifront) (chunk-ref (esq-ifront e) j)]
-    [(middle) (pt-ref (located-middle e) j 1)]
-    [(iback) (chunk-ref (esq-iback e) j)]
-    [else (chunk-ref (esq-back e) j)]))
+  (esek-ref-body 'esek-ref e i))
+
+(define (esek-ref/who who e i)
+  (esek-ref-body who e i))
 
 (define (esek-set! e i x)
   (check-esek 'esek-set! e)
@@ -554,15 +566,28 @@
 ;; library, an ephemeral `other` is emptied: handing over its representation
 ;; rather than sharing it is what keeps later updates to either sequence out
 ;; of the copy-on-write path.  A persistent `other` is of course untouched.
+;;
+;; Every operation from here to `esek-drop!` empties its argument before it
+;; builds the result, so each checks all of its arguments first: an error
+;; raised after the emptying would lose the caller's elements.
 (define (esek-append! e other [side 'back])
   (check-esek 'esek-append! e)
   (unless (or (esq? other) (psek? other))
     (raise-argument-error 'esek-append! "(or/c esek? psek?)" other))
+  (check-side 'esek-append! side)
   (when (eq? e other)
     (raise-arguments-error 'esek-append! "the two sequences must be distinct"))
+  (append-esek! 'esek-append! e other side))
+
+;; The append without the argument checks, for callers that have made them.
+(define (append-esek! who e other side)
+  (define n (if (esq? other) (esek-length other) (psek-length other)))
+  (check-append-length who (esek-length e) n)
   (define o (if (esq? other) (esek-snapshot-and-clear! other) other))
   (define self (esek-snapshot-and-clear! e))
-  (esek-become! e (if (eq? side 'front) (psek-append o self) (psek-append self o))))
+  (esek-become! e (if (eq? side 'front)
+                      (append-psek who o self)
+                      (append-psek who self o))))
 
 ;; The concatenation of e1 and e2, as a new sequence; both are emptied.
 (define (esek-concat! e1 e2)
@@ -570,12 +595,20 @@
   (check-esek 'esek-concat! e2)
   (when (eq? e1 e2)
     (raise-arguments-error 'esek-concat! "the two sequences must be distinct"))
-  (psek-edit (psek-append (esek-snapshot-and-clear! e1)
+  (check-append-length 'esek-concat! (esek-length e1) (esek-length e2))
+  (psek-edit (append-psek 'esek-concat!
+                          (esek-snapshot-and-clear! e1)
                           (esek-snapshot-and-clear! e2))))
+
+(define (check-split-index who e i)
+  (define n (esek-length e))
+  (unless (and (fixnum? i) (unsafe-fx>= i 0) (unsafe-fx<= i n))
+    (raise-arguments-error who "index out of range" "index" i "length" n)))
 
 ;; Split e at index i into two new sequences; e is emptied.
 (define (esek-split! e i)
   (check-esek 'esek-split! e)
+  (check-split-index 'esek-split! e i)
   (define-values (s1 s2) (psek-split (esek-snapshot-and-clear! e) i))
   (values (psek-edit s1) (psek-edit s2)))
 
@@ -583,6 +616,8 @@
 ;; 'back keeps the front part, 'front keeps the back part.
 (define (esek-carve! e i [side 'back])
   (check-esek 'esek-carve! e)
+  (check-split-index 'esek-carve! e i)
+  (check-side 'esek-carve! side)
   (define-values (s1 s2) (psek-split (esek-snapshot-and-clear! e) i))
   (cond
     [(eq? side 'back) (esek-become! e s1) (psek-edit s2)]
@@ -590,19 +625,27 @@
 
 ;; Truncate e at index i, keeping the front part ('front) or the back part
 ;; ('back).
-;; Only one side is kept, so only one side is built -- psek-take and psek-drop
-;; are the specialized splits.
 (define (esek-take! e i [side 'front])
   (check-esek 'esek-take! e)
-  (define s (esek-snapshot-and-clear! e))
-  (esek-become! e (if (eq? side 'front) (psek-take s i) (psek-drop s i))))
+  (check-split-index 'esek-take! e i)
+  (check-side 'esek-take! side)
+  (keep-part! e i side))
 
 (define (esek-drop! e i [side 'front])
   (check-esek 'esek-drop! e)
-  (esek-take! e i (if (eq? side 'front) 'back 'front)))
+  (check-split-index 'esek-drop! e i)
+  (check-side 'esek-drop! side)
+  (keep-part! e i (if (eq? side 'front) 'back 'front)))
+
+;; Only one side is kept, so only one side is built -- psek-take and psek-drop
+;; are the specialized splits.
+(define (keep-part! e i side)
+  (define s (esek-snapshot-and-clear! e))
+  (esek-become! e (if (eq? side 'front) (psek-take s i) (psek-drop s i))))
 
 (define (esek-for-each e proc)
   (check-esek 'esek-for-each e)
+  (check-procedure 'esek-for-each proc 1)
   (define (chunk-elems c)
     (for ([j (in-fx-range (chunk-length c))])
       (proc (chunk-ref c j))))
@@ -631,13 +674,28 @@
 ;; Streaming traversal.  As with any iterator over a mutable structure, the
 ;; result must not be used across an update to e.
 (define (in-esek e)
+  (reader->sequence (lambda () (esek-reader e))))
+
+(define (esek-reader e)
+  (make-reader (list (cons (esq-front e) 0)
+                     (cons (esq-ifront e) 0)
+                     (cons (esq-middle e) 1)
+                     (cons (esq-iback e) 0)
+                     (cons (esq-back e) 0))))
+
+;; What `for` gets when it is handed an ephemeral sequence directly.  As an
+;; iterator does, it raises when the sequence has been updated since the
+;; traversal began; the plain reader would go on reading the old chunks.
+;; Equality and hashing keep the plain reader, since nothing they call can
+;; update the sequence.
+(define (in-esek/checked e)
   (reader->sequence
+   (lambda () (esek-reader e))
    (lambda ()
-     (make-reader (list (cons (esq-front e) 0)
-                        (cons (esq-ifront e) 0)
-                        (cons (esq-middle e) 1)
-                        (cons (esq-iback e) 0)
-                        (cons (esq-back e) 0))))))
+     (define birth (esek-iterator-born! e))
+     (lambda ()
+       (unless (esek-iterator-valid? e birth)
+         (raise-arguments-error 'in-esek "sequence was updated during the traversal"))))))
 
 (module+ deserialize
   (provide deserialize-esek)

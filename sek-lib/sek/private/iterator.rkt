@@ -114,7 +114,7 @@
 ;; check (see unchecked.rkt): on the wrong kind of value they would read
 ;; whatever happens to be at that offset.
 (define-syntax-rule (check-iter who v)
-  (unless (siter? v) (raise-argument-error who "sek-iterator?" v)))
+  (unless (siter? v) (raise-argument-error who "sek-iter?" v)))
 (define-syntax-rule (check-sek who v)
   (unless (or (psek? v) (esek? v)) (raise-argument-error who "sek?" v)))
 
@@ -667,6 +667,7 @@
 
 (define (sek-iter-move! it [dir 'forward])
   (check-valid! it 'sek-iter-move!)
+  (check-direction 'sek-iter-move! dir)
   (cur-move! (siter-cursor it) dir))
 
 (define (sek-iter-get-and-move! it [dir 'forward])

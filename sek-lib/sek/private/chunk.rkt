@@ -612,7 +612,6 @@
 ;; tag guard and each addition an overflow check.
 (define (chunk-item-at/from c i d q0 acc0)
   (define n (chunk-size c))
-  (define mw (max-item-weight d))
   ;; While the weights are right, the item is found before q reaches n; a data
   ;; race can leave them wrong, and chunk-ref wraps around, so without the
   ;; test the scan could go on forever
@@ -624,19 +623,23 @@
           (values q (fx- i acc))
           (loop (fx+ q 1) (fx+ acc w)))))
   (cond
-    [(fx= mw 1) (values i 0)]
+    ;; depth 0 items are elements, each of weight 1
+    [(fx= d 0) (values i 0)]
     [else
-     (define sh (max-item-weight-shift d))
+     ;; a packed chunk is indexed by a shift, or a division when the
+     ;; capacities are not powers of two.  Where a full chunk's weight would
+     ;; not be a fixnum, config.rkt gives #f for both, and no chunk is packed.
+     (define sh (packed-item-shift d))
      (cond
-       ;; a packed chunk is indexed by a shift, or a division when the
-       ;; capacities are not powers of two
        [sh
         (if (fx= (chunk-weight c) (fxlshift n sh))
-            (values (fxrshift i sh) (fxand i (fx- mw 1)))
+            (values (fxrshift i sh) (fxand i (fx- (fxlshift 1 sh) 1)))
             (scan q0 acc0))]
-       [(fx= (chunk-weight c) (fx* n mw))
-        (values (fxquotient i mw) (fxremainder i mw))]
-       [else (scan q0 acc0)])]))
+       [else
+        (define mw (packed-item-weight d))
+        (if (and mw (fx= (chunk-weight c) (fx* n mw)))
+            (values (fxquotient i mw) (fxremainder i mw))
+            (scan q0 acc0))])]))
 
 (define (chunk-item-at c i d)
   (chunk-item-at/from c i d 0 0))

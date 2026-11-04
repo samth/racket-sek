@@ -73,9 +73,19 @@
                 (next!)])])])]))
   next!)
 
-;; Wrap a reader-producing thunk as a Racket sequence.
-(define (reader->sequence make-next!)
+;; Wrap a reader-producing thunk as a Racket sequence.  make-check!, if
+;; given, is called when the traversal starts and returns a thunk to run
+;; before each later read; an ephemeral sequence uses it to detect an update.
+(define (reader->sequence make-next! [make-check! #f])
   (make-do-sequence
    (lambda ()
+     (define check! (and make-check! (make-check!)))
      (define next! (make-next!))
-     (values (lambda (x) x) (lambda (x) (next!)) (next!) (lambda (x) (not (eq? x done))) #f #f))))
+     (values (lambda (x) x)
+             (if check!
+                 (lambda (x) (check!) (next!))
+                 (lambda (x) (next!)))
+             (next!)
+             (lambda (x) (not (eq? x done)))
+             #f
+             #f))))
