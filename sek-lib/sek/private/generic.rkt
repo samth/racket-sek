@@ -13,7 +13,8 @@
 
 (require (for-syntax racket/base)
          (only-in "unchecked.rkt"
-                  unsafe-vector*-ref unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx> unsafe-fx=)
+                  unsafe-vector*-ref unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx> unsafe-fx=
+                  unsafe-fxabs)
          racket/vector
          (only-in "unchecked.rkt" in-fx-range)
          "config.rkt"
@@ -134,6 +135,83 @@
       (psek-last s)
       (esek-last s)))
 
+;; ------------------------------------------------------- watched traversal
+
+;; An update to an ephemeral sequence while a traversal hands its elements to
+;; the caller's code would show through a run already read from, and could
+;; hand over the private empty-slot marker that a pop leaves behind (see
+;; `raise-updated` in ephemeral.rkt).  So each traversal here watches the
+;; sequence: before each element, and before each step of its iterators, it
+;; checks that the sequence has not been updated since the traversal began.
+;; `watched` is the sequence to check, or #f for a persistent sequence or
+;; when the checks are turned off.
+(define (watched s)
+  (and (esek? s) (check-iterator-validity?) s))
+
+(define (birth-of w)
+  (if w (esek-iterator-born! w) 0))
+
+(define-syntax-rule (unchanged? w birth)
+  (unsafe-fx= birth (unsafe-fxabs (esek-version w))))
+
+(define-syntax-rule (check-unchanged! who w birth)
+  (when w
+    (unless (unchanged? w birth)
+      (raise-updated who))))
+
+;; The same check as a procedure, for the traversals that step iterators one
+;; element at a time: they call it after the caller's code and before the
+;; next step, so that an update is reported in the name of the operation the
+;; caller called rather than of the iterator operation that noticed it.
+(define (watch who s)
+  (define w (watched s))
+  (if w
+      (let ([birth (esek-iterator-born! w)])
+        (lambda ()
+          (unless (unchanged? w birth)
+            (raise-updated who))))
+      void))
+
+;; Fold over the elements of s in direction dir a run at a time, binding x to
+;; each element in turn and acc to the value of body for the one before,
+;; starting from init.  The loop is expanded twice, so that a sequence with
+;; nothing to watch pays nothing for the check.
+(define-syntax-rule (fold-elements who s dir ([acc init]) (x) body ...)
+  (let* ([sq s]
+         [d dir]
+         [w (watched sq)]
+         [it (sek-iterator sq d)])
+    (if w
+        (let ([birth (esek-iterator-born! w)])
+          (fold-runs it d ([acc init]) (x) (check-unchanged! who w birth) body ...))
+        (fold-runs it d ([acc init]) (x) (void) body ...))))
+
+;; The loop of `fold-elements`, which runs `check` before each run and each
+;; element.
+(define-syntax-rule (fold-runs it d ([acc init]) (x) check body ...)
+  (let loop ([acc init])
+    check
+    (if (sek-iter-finished? it)
+        acc
+        (let* ([sg (sek-iter-segment-and-jump! it d)]
+               [v (segment-vector sg)]
+               [o (segment-start sg)]
+               [e (unsafe-fx+ o (segment-length sg))])
+          (loop
+           (if (eq? d 'forward)
+               (let run ([j o] [acc acc])
+                 (cond
+                   [(unsafe-fx= j e) acc]
+                   [else
+                    check
+                    (run (unsafe-fx+ j 1) (let ([x (unsafe-vector*-ref v j)]) body ...))]))
+               (let run ([j (unsafe-fx- e 1)] [acc acc])
+                 (cond
+                   [(unsafe-fx< j o) acc]
+                   [else
+                    check
+                    (run (unsafe-fx- j 1) (let ([x (unsafe-vector*-ref v j)]) body ...))]))))))))
+
 ;; ------------------------------------------------------------- builders
 
 ;; Results are accumulated in an ephemeral sequence -- push at the back is the
@@ -157,22 +235,12 @@
 ;; `add!` is a let-bound lambda in operator position, and the hot half of
 ;; `psek-builder-add!` is small enough to inline across the module boundary --
 ;; so an element that the body drops costs the test and nothing else.
-(define-syntax-rule (build-by-segments like s x add! body ...)
+(define-syntax-rule (build-by-segments who like s x add! body ...)
   (let* ([lk like]
          [sq s]
          [b (make-psek-builder)]
          [add! (lambda (y) (psek-builder-add! b y))])
-    (sek-segments-for-each
-     sq
-     (lambda (sg)
-       (define v (segment-vector sg))
-       (define i (segment-start sg))
-       (define e (unsafe-fx+ i (segment-length sg)))
-       (let loop ([j i])
-         (unless (unsafe-fx= j e)
-           (let ([x (unsafe-vector*-ref v j)])
-             body ...)
-           (loop (unsafe-fx+ j 1))))))
+    (fold-elements who sq 'forward ([ignored (void)]) (x) body ... (void))
     (let ([r (psek-builder-close b)])
       (if (psek? lk) r (psek-edit r)))))
 
@@ -200,69 +268,55 @@
   (check-sek 'sek-for-each s)
   (check-procedure 'sek-for-each proc 1)
   (check-direction 'sek-for-each dir)
-  (sek-segments-for-each s (lambda (sg) (segment-for-each sg proc dir)) dir))
+  (fold-elements 'sek-for-each s dir ([ignored (void)]) (x) (proc x) (void)))
 
 (define (sek-for-each/index s proc [dir 'forward])
   (check-sek 'sek-for-each/index s)
   (check-procedure 'sek-for-each/index proc 2)
   (check-direction 'sek-for-each/index dir)
+  (for-each/index 'sek-for-each/index s proc dir))
+
+(define (for-each/index who s proc dir)
+  (define unchanged! (watch who s))
   (define it (sek-iterator s dir))
   (let loop ()
     (unless (sek-iter-finished? it)
       (define i (sek-iter-index it))
       (proc i (sek-iter-get it))
+      (unchanged!)
       (sek-iter-move! it dir)
       (loop))))
 
 (define (sek-fold-left s proc init)
   (check-sek 'sek-fold-left s)
   (check-procedure 'sek-fold-left proc 2)
-  (define it (sek-iterator s 'forward))
-  (let loop ([acc init])
-    (cond
-      [(sek-iter-finished? it) acc]
-      [else
-       (define sg (sek-iter-segment-and-jump! it 'forward))
-       (define v (segment-vector sg))
-       (define o (segment-start sg))
-       ;; walk the support indices directly rather than an offset plus a
-       ;; counter, which costs a generic addition per element
-       (loop (for/fold ([acc acc])
-                       ([j (in-fx-range o (unsafe-fx+ o (segment-length sg)))])
-               (proc acc (unsafe-vector*-ref v j))))])))
+  (fold-elements 'sek-fold-left s 'forward ([acc init]) (x) (proc acc x)))
 
 (define (sek-fold-right s proc init)
   (check-sek 'sek-fold-right s)
   (check-procedure 'sek-fold-right proc 2)
-  (define it (sek-iterator s 'backward))
-  (let loop ([acc init])
-    (cond
-      [(sek-iter-finished? it) acc]
-      [else
-       (define sg (sek-iter-segment-and-jump! it 'backward))
-       (define v (segment-vector sg))
-       (define o (segment-start sg))
-       (loop (for/fold ([acc acc])
-                       ([j (in-fx-range (unsafe-fx+ o (unsafe-fx- (segment-length sg) 1))
-                                     (unsafe-fx- o 1)
-                                     -1)])
-               (proc (unsafe-vector*-ref v j) acc)))])))
+  (fold-elements 'sek-fold-right s 'backward ([acc init]) (x) (proc x acc)))
 
 ;; The generic-dispatch version, used when a sequence value is passed around
 ;; rather than written directly in a for clause.
 (define (in-sek/proc s [dir 'forward])
   (check-in-sek s dir)
-  (in-sek/unchecked s dir))
+  (in-sek/unchecked 'in-sek s dir))
 
-(define (in-sek/unchecked s dir)
+(define (in-sek/unchecked who s dir)
   (make-do-sequence (lambda ()
+                      (define w (watched s))
+                      (define birth (birth-of w))
                       (define it (sek-iterator s dir))
                       (values (lambda (_) (sek-iter-get it))
                               (lambda (_)
+                                (check-unchanged! who w birth)
                                 (sek-iter-move! it dir)
                                 #f)
                               #f
-                              (lambda (_) (not (sek-iter-finished? it)))
+                              (lambda (_)
+                                (check-unchanged! who w birth)
+                                (not (sek-iter-finished? it)))
                               #f
                               #f))))
 
@@ -287,34 +341,35 @@
 ;; limit, and the step (+1 forward, -1 backward).  All the work happens in one
 ;; inner binding, because :do-in binds its inner clauses in parallel.
 ;;
-;; The loop checks that the sequence has not been updated each time it moves
-;; to a new run, rather than at every element: the check is what an iterator
-;; pays per step, and the loop exists to avoid paying it.  So a loop may see an
-;; update to the run it is reading, and one that stops first never reports it.
+;; Like the other traversals, the loop watches an ephemeral sequence, and
+;; checks before each element that it has not been updated.
 ;;
-;; `check` tests the sequence and the direction, and names the form.
+;; `check` tests the sequence and the direction, and `who` names the form.
 (begin-for-syntax
-  (define ((sek-for-clause check) stx)
+  (define ((sek-for-clause check who) stx)
     (define (expand seq-expr dir-expr id)
-      (with-syntax ([seq-expr seq-expr] [dir-expr dir-expr] [id id] [check check])
+      (with-syntax ([seq-expr seq-expr] [dir-expr dir-expr] [id id] [check check] [who who])
         #'[(id)
            (:do-in
-            ([(it dir)
+            ([(it dir w birth)
               (let* ([s seq-expr] [d dir-expr])
                 (check s d)
-                (values (sek-iterator s d) d))])
+                (let ([w (watched s)])
+                  (values (sek-iterator s d) d w (birth-of w))))])
             #t
             ([v #f] [i 0] [n 0] [step 1])
             #t
             ([(v* i* n* step* id)
-              (if (if (unsafe-fx< step 0) (unsafe-fx> i n) (unsafe-fx< i n))
-                  (values v i n step (unsafe-vector*-ref v i))
-                  (let-values ([(v2 i2 n2 ok?) (sek-loop-refill it dir)])
-                    (if ok?
-                        (values v2 i2 n2
-                                (if (eq? dir 'forward) 1 -1)
-                                (unsafe-vector*-ref v2 i2))
-                        (values #f 0 0 1 #f))))])
+              (begin
+                (check-unchanged! who w birth)
+                (if (if (unsafe-fx< step 0) (unsafe-fx> i n) (unsafe-fx< i n))
+                    (values v i n step (unsafe-vector*-ref v i))
+                    (let-values ([(v2 i2 n2 ok?) (sek-loop-refill it dir)])
+                      (if ok?
+                          (values v2 i2 n2
+                                  (if (eq? dir 'forward) 1 -1)
+                                  (unsafe-vector*-ref v2 i2))
+                          (values #f 0 0 1 #f)))))])
             (if (unsafe-fx< step* 0) (unsafe-fx> i* n*) (unsafe-fx< i* n*))
             #t
             (v* (unsafe-fx+ i* step*) n* step*))]))
@@ -329,7 +384,7 @@
 
 (define-sequence-syntax in-sek
   (lambda () #'in-sek/proc)
-  (sek-for-clause #'check-in-sek))
+  (sek-for-clause #'check-in-sek #''in-sek))
 
 ;; The same loop, restricted to one flavor.  These shadow the plain readers
 ;; that persistent.rkt and ephemeral.rkt define.
@@ -343,19 +398,19 @@
 
 (define (in-psek/proc s [dir 'forward])
   (check-in-psek s dir)
-  (in-sek/unchecked s dir))
+  (in-sek/unchecked 'in-psek s dir))
 
 (define (in-esek/proc e [dir 'forward])
   (check-in-esek e dir)
-  (in-sek/unchecked e dir))
+  (in-sek/unchecked 'in-esek e dir))
 
 (define-sequence-syntax in-psek
   (lambda () #'in-psek/proc)
-  (sek-for-clause #'check-in-psek))
+  (sek-for-clause #'check-in-psek #''in-psek))
 
 (define-sequence-syntax in-esek
   (lambda () #'in-esek/proc)
-  (sek-for-clause #'check-in-esek))
+  (sek-for-clause #'check-in-esek #''in-esek))
 
 (define (sek->list s [dir 'forward])
   (check-sek 'sek->list s)
@@ -382,6 +437,7 @@
   (check-sek 'sek-find s)
   (check-procedure 'sek-find pred 1)
   (check-direction 'sek-find dir)
+  (define unchanged! (watch 'sek-find s))
   (define it (sek-iterator s dir))
   (let loop ()
     (cond
@@ -391,6 +447,7 @@
        (cond
          [(pred x) x]
          [else
+          (unchanged!)
           (sek-iter-move! it dir)
           (loop)])])))
 
@@ -399,12 +456,19 @@
   (check-sek 'sek-find-index s)
   (check-procedure 'sek-find-index pred 1)
   (check-direction 'sek-find-index dir)
+  (find-index 'sek-find-index s pred dir))
+
+(define (find-index who s pred dir)
+  (define unchanged! (watch who s))
   (define it (sek-iterator s dir))
   (let loop ()
     (cond
       [(sek-iter-finished? it) #f]
-      [(pred (sek-iter-get it)) (sek-iter-index it)]
+      [(pred (sek-iter-get it))
+       (unchanged!)
+       (sek-iter-index it)]
       [else
+       (unchanged!)
        (sek-iter-move! it dir)
        (loop)])))
 
@@ -412,6 +476,7 @@
   (check-sek 'sek-find-map s)
   (check-procedure 'sek-find-map proc 1)
   (check-direction 'sek-find-map dir)
+  (define unchanged! (watch 'sek-find-map s))
   (define it (sek-iterator s dir))
   (let loop ()
     (cond
@@ -421,17 +486,20 @@
        (cond
          [r r]
          [else
+          (unchanged!)
           (sek-iter-move! it dir)
           (loop)])])))
 
 (define (sek-for-all? s pred)
   (check-sek 'sek-for-all? s)
   (check-procedure 'sek-for-all? pred 1)
+  (define unchanged! (watch 'sek-for-all? s))
   (define it (sek-iterator s 'forward))
   (let loop ()
     (cond
       [(sek-iter-finished? it) #t]
       [(pred (sek-iter-get it))
+       (unchanged!)
        (sek-iter-move! it 'forward)
        (loop)]
       [else #f])))
@@ -439,23 +507,28 @@
 (define (sek-exists? s pred)
   (check-sek 'sek-exists? s)
   (check-procedure 'sek-exists? pred 1)
+  (exists 'sek-exists? s pred))
+
+(define (exists who s pred)
+  (define unchanged! (watch who s))
   (define it (sek-iterator s 'forward))
   (let loop ()
     (cond
       [(sek-iter-finished? it) #f]
       [(pred (sek-iter-get it)) #t]
       [else
+       (unchanged!)
        (sek-iter-move! it 'forward)
        (loop)])))
 
 (define (sek-member? s v [same? equal?])
   (check-sek 'sek-member? s)
   (check-procedure 'sek-member? same? 2)
-  (sek-exists? s (lambda (y) (same? v y))))
+  (exists 'sek-member? s (lambda (y) (same? v y))))
 
 (define (sek-memq? s v)
   (check-sek 'sek-memq? s)
-  (sek-exists? s (lambda (y) (eq? v y))))
+  (exists 'sek-memq? s (lambda (y) (eq? v y))))
 
 ;; --------------------------------------------------------- binary traversal
 
@@ -488,11 +561,18 @@
   (check-sek 'sek-for-each2 s2)
   (check-procedure 'sek-for-each2 proc 2)
   (check-direction 'sek-for-each2 dir)
+  (for-each2 'sek-for-each2 s1 s2 proc dir))
+
+(define (for-each2 who s1 s2 proc dir)
+  (define unchanged1! (watch who s1))
+  (define unchanged2! (watch who s2))
   (define it1 (sek-iterator s1 dir))
   (define it2 (sek-iterator s2 dir))
   (let loop ()
     (unless (or (sek-iter-finished? it1) (sek-iter-finished? it2))
       (proc (sek-iter-get it1) (sek-iter-get it2))
+      (unchanged1!)
+      (unchanged2!)
       (sek-iter-move! it1 dir)
       (sek-iter-move! it2 dir)
       (loop))))
@@ -501,12 +581,16 @@
   (check-sek 'sek-fold-left2 s1)
   (check-sek 'sek-fold-left2 s2)
   (check-procedure 'sek-fold-left2 proc 3)
+  (define unchanged1! (watch 'sek-fold-left2 s1))
+  (define unchanged2! (watch 'sek-fold-left2 s2))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ([acc init])
     (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
         acc
         (let ([acc (proc acc (sek-iter-get it1) (sek-iter-get it2))])
+          (unchanged1!)
+          (unchanged2!)
           (sek-iter-move! it1 'forward)
           (sek-iter-move! it2 'forward)
           (loop acc)))))
@@ -518,12 +602,16 @@
   (check-sek 'sek-fold-right2 s1)
   (check-sek 'sek-fold-right2 s2)
   (check-procedure 'sek-fold-right2 proc 3)
+  (define unchanged1! (watch 'sek-fold-right2 s1))
+  (define unchanged2! (watch 'sek-fold-right2 s2))
   (define it1 (sek-iterator s1 'backward))
   (define it2 (sek-iterator s2 'backward))
   (let loop ([acc init])
     (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
         acc
         (let ([acc (proc (sek-iter-get it1) (sek-iter-get it2) acc)])
+          (unchanged1!)
+          (unchanged2!)
           (sek-iter-move! it1 'backward)
           (sek-iter-move! it2 'backward)
           (loop acc)))))
@@ -532,12 +620,19 @@
   (check-sek 'sek-for-all2? s1)
   (check-sek 'sek-for-all2? s2)
   (check-procedure 'sek-for-all2? pred 2)
+  (for-all2 'sek-for-all2? s1 s2 pred))
+
+(define (for-all2 who s1 s2 pred)
+  (define unchanged1! (watch who s1))
+  (define unchanged2! (watch who s2))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
     (cond
       [(or (sek-iter-finished? it1) (sek-iter-finished? it2)) #t]
       [(pred (sek-iter-get it1) (sek-iter-get it2))
+       (unchanged1!)
+       (unchanged2!)
        (sek-iter-move! it1 'forward)
        (sek-iter-move! it2 'forward)
        (loop)]
@@ -547,6 +642,8 @@
   (check-sek 'sek-exists2? s1)
   (check-sek 'sek-exists2? s2)
   (check-procedure 'sek-exists2? pred 2)
+  (define unchanged1! (watch 'sek-exists2? s1))
+  (define unchanged2! (watch 'sek-exists2? s2))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -554,6 +651,8 @@
       [(or (sek-iter-finished? it1) (sek-iter-finished? it2)) #f]
       [(pred (sek-iter-get it1) (sek-iter-get it2)) #t]
       [else
+       (unchanged1!)
+       (unchanged2!)
        (sek-iter-move! it1 'forward)
        (sek-iter-move! it2 'forward)
        (loop)])))
@@ -562,7 +661,7 @@
   (check-sek 'sek-equal? s1)
   (check-sek 'sek-equal? s2)
   (check-procedure 'sek-equal? same? 2)
-  (and (= (sek-length s1) (sek-length s2)) (sek-for-all2? s1 s2 same?)))
+  (and (= (sek-length s1) (sek-length s2)) (for-all2 'sek-equal? s1 s2 same?)))
 
 ;; -1, 0 or 1, comparing element by element and then by length.
 ;; cmp compares two elements and returns a negative number, zero, or a
@@ -571,6 +670,8 @@
   (check-sek 'sek-compare s1)
   (check-sek 'sek-compare s2)
   (check-procedure 'sek-compare cmp 2)
+  (define unchanged1! (watch 'sek-compare s1))
+  (define unchanged2! (watch 'sek-compare s2))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
@@ -586,6 +687,8 @@
          (raise-result-error 'sek-compare "real?" c))
        (cond
          [(eqv? c 0)
+          (unchanged1!)
+          (unchanged2!)
           (sek-iter-move! it1 'forward)
           (sek-iter-move! it2 'forward)
           (loop)]
@@ -596,35 +699,38 @@
 (define (sek-map s proc)
   (check-sek 'sek-map s)
   (check-procedure 'sek-map proc 1)
-  (build-by-segments s s x add! (add! (proc x))))
+  (build-by-segments 'sek-map s s x add! (add! (proc x))))
 
 (define (sek-map/index s proc)
   (check-sek 'sek-map/index s)
   (check-procedure 'sek-map/index proc 2)
-  (build-from s (lambda (emit) (sek-for-each/index s (lambda (i x) (emit (proc i x)))))))
+  (build-from s (lambda (emit)
+                  (for-each/index 'sek-map/index s (lambda (i x) (emit (proc i x))) 'forward))))
 
 (define (sek-map2 s1 s2 proc)
   (check-sek 'sek-map2 s1)
   (check-sek 'sek-map2 s2)
   (check-procedure 'sek-map2 proc 2)
-  (build-from s1 (lambda (emit) (sek-for-each2 s1 s2 (lambda (x y) (emit (proc x y)))))))
+  (build-from s1 (lambda (emit)
+                   (for-each2 'sek-map2 s1 s2 (lambda (x y) (emit (proc x y))) 'forward))))
 
 (define (sek-filter s pred)
   (check-sek 'sek-filter s)
   (check-procedure 'sek-filter pred 1)
-  (build-by-segments s s x add! (when (pred x) (add! x))))
+  (build-by-segments 'sek-filter s s x add! (when (pred x) (add! x))))
 
 (define (sek-filter-map s proc)
   (check-sek 'sek-filter-map s)
   (check-procedure 'sek-filter-map proc 1)
-  (build-by-segments s s x add! (let ([y (proc x)]) (when y (add! y)))))
+  (build-by-segments 'sek-filter-map s s x add! (let ([y (proc x)]) (when y (add! y)))))
 
 (define (sek-partition s pred)
   (check-sek 'sek-partition s)
   (check-procedure 'sek-partition pred 1)
   (define yes (open-builder))
   (define no (open-builder))
-  (sek-for-each s (lambda (x) (esek-push-back! (if (pred x) yes no) x)))
+  (fold-elements 'sek-partition s 'forward ([ignored (void)]) (x)
+    (esek-push-back! (if (pred x) yes no) x))
   (values (close-builder yes s) (close-builder no s)))
 
 (define (sek-reverse s)
@@ -684,11 +790,11 @@
   (check-sek 'sek-append-map s)
   (check-procedure 'sek-append-map proc 1)
   (build-from s (lambda (emit)
-                  (sek-for-each s (lambda (x)
-                                    (define t (proc x))
-                                    (unless (sek? t)
-                                      (raise-result-error 'sek-append-map "sek?" t))
-                                    (sek-for-each t emit))))))
+                  (fold-elements 'sek-append-map s 'forward ([ignored (void)]) (x)
+                    (define t (proc x))
+                    (unless (sek? t)
+                      (raise-result-error 'sek-append-map "sek?" t))
+                    (sek-for-each t emit)))))
 
 ;; ---------------------------------------------------------------- ordering
 
@@ -711,12 +817,11 @@
   (define b (open-builder))
   (define first? #t)
   (define previous #f)
-  (sek-for-each s
-                (lambda (x)
-                  (when (or first? (not (same? previous x)))
-                    (esek-push-back! b x))
-                  (set! first? #f)
-                  (set! previous x)))
+  (fold-elements 'sek-uniq s 'forward ([ignored (void)]) (x)
+    (when (or first? (not (same? previous x)))
+      (esek-push-back! b x))
+    (set! first? #f)
+    (set! previous x))
   (close-builder b s))
 
 ;; Merge two sequences that are already sorted.
@@ -724,6 +829,8 @@
   (check-sek 'sek-merge s1)
   (check-sek 'sek-merge s2)
   (check-procedure 'sek-merge less? 2)
+  (define unchanged1! (watch 'sek-merge s1))
+  (define unchanged2! (watch 'sek-merge s2))
   (define b (open-builder))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
@@ -741,7 +848,10 @@
            (drain)))]
       [else
        ;; take from the left on a tie, which is what makes the merge stable
-       (if (less? (sek-iter-get it2) (sek-iter-get it1))
+       (define take-right? (less? (sek-iter-get it2) (sek-iter-get it1)))
+       (unchanged1!)
+       (unchanged2!)
+       (if take-right?
            (esek-push-back! b (sek-iter-get-and-move! it2 'forward))
            (esek-push-back! b (sek-iter-get-and-move! it1 'forward)))
        (loop)]))
@@ -831,7 +941,7 @@
 (define (sek-index-of s v [same? equal?])
   (check-sek 'sek-index-of s)
   (check-procedure 'sek-index-of same? 2)
-  (sek-find-index s (lambda (x) (same? v x))))
+  (find-index 'sek-index-of s (lambda (x) (same? v x)) 'forward))
 
 (define (sek-take-right s n)
   (check-sek 'sek-take-right s)

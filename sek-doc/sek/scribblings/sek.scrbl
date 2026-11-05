@@ -441,9 +441,7 @@ Conversion and iteration; see @racket[in-esek] for iterating in a
 A @racket[sequence] over the elements of @racket[e], in @racket['forward]
 order by default or @racket['backward].  It is fastest written directly in a
 @racket[for] clause.  Updating @racket[e] during the loop is detected, as for
-an @tech{iterator}, except that a loop written directly in a @racket[for]
-clause checks only when it moves to the next chunk.  A full traversal takes
-@math{O(N)} time.}
+an @tech{iterator}.  A full traversal takes @math{O(N)} time.}
 
 @deftogether[(
 @defproc[(esek-fill! [e esek?] [v any/c]

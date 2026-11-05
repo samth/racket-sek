@@ -78,6 +78,8 @@
          esek-flush-inner!
          esek-iterator-born!
          esek-iterator-valid?
+         (rename-out [esq-version esek-version])
+         raise-updated
          esek-invalidate-iterators!
          esek-invalidate-iterators-except!
          esek-become!)
@@ -96,7 +98,7 @@
                         [folded #:mutable])
   #:authentic #:sealed
   #:property prop:sequence
-  (lambda (e) (in-esek/checked e))
+  (lambda (e) (in-esek e))
   #:property prop:serializable
   (make-serialize-info (lambda (v) (vector (esek->vector v)))
                        (cons 'deserialize-esek
@@ -198,6 +200,23 @@
 (define (esek-iterator-valid? e birth)
   (or (not (check-iterator-validity?))
       (unsafe-fx= birth (unsafe-fxabs (esq-version e)))))
+
+;; The same test without the setting, for a traversal, which consults the
+;; setting once rather than at every element.  generic.rkt makes it with
+;; `esek-version`, which it can inline: this procedure, which reads a field
+;; this module does not export, it could not.
+(begin-encourage-inline
+  (define (esek-unchanged? e birth)
+    (unsafe-fx= birth (unsafe-fxabs (esq-version e)))))
+
+;; A traversal that hands elements to the caller's code reads them from a run
+;; of contiguous storage, and that code may update the sequence: a write to the
+;; run shows through, and a pop leaves the private empty-slot marker in a slot
+;; the run still covers.  So such a traversal checks, before each element it
+;; hands over, that the sequence has not been updated since it began, and
+;; raises as an invalidated iterator would.
+(define (raise-updated who)
+  (raise-arguments-error who "sequence was updated during the traversal"))
 
 ;; The middle sequence with both inner chunks pushed onto it.  With e's own id
 ;; as `owner` the pushes may update e's chunks in place; with `no-owner` they
@@ -646,12 +665,18 @@
 (define (esek-for-each e proc)
   (check-esek 'esek-for-each e)
   (check-procedure 'esek-for-each proc 1)
+  (define birth (esek-iterator-born! e))
+  (define checking? (check-iterator-validity?))
+  (define (call x)
+    (when (and checking? (not (esek-unchanged? e birth)))
+      (raise-updated 'esek-for-each))
+    (proc x))
   (define (chunk-elems c)
     (for ([j (in-fx-range (chunk-length c))])
-      (proc (chunk-ref c j))))
+      (call (chunk-ref c j))))
   (chunk-elems (esq-front e))
   (chunk-elems (esq-ifront e))
-  (pt-for-each (esq-middle e) 1 proc)
+  (pt-for-each (esq-middle e) 1 call)
   (chunk-elems (esq-iback e))
   (chunk-elems (esq-back e)))
 
@@ -671,31 +696,23 @@
                    (set! i (add1 i))))
   v)
 
-;; Streaming traversal.  As with any iterator over a mutable structure, the
-;; result must not be used across an update to e.
+;; Streaming traversal: what `for` gets when it is handed an ephemeral
+;; sequence directly, and what equality and hashing walk.  Like an iterator,
+;; it raises when the sequence has been updated since the traversal began; the
+;; reader alone would go on reading the old chunks.
 (define (in-esek e)
-  (reader->sequence (lambda () (esek-reader e))))
-
-(define (esek-reader e)
-  (make-reader (list (cons (esq-front e) 0)
-                     (cons (esq-ifront e) 0)
-                     (cons (esq-middle e) 1)
-                     (cons (esq-iback e) 0)
-                     (cons (esq-back e) 0))))
-
-;; What `for` gets when it is handed an ephemeral sequence directly.  As an
-;; iterator does, it raises when the sequence has been updated since the
-;; traversal began; the plain reader would go on reading the old chunks.
-;; Equality and hashing keep the plain reader, since nothing they call can
-;; update the sequence.
-(define (in-esek/checked e)
   (reader->sequence
-   (lambda () (esek-reader e))
+   (lambda ()
+     (make-reader (list (cons (esq-front e) 0)
+                        (cons (esq-ifront e) 0)
+                        (cons (esq-middle e) 1)
+                        (cons (esq-iback e) 0)
+                        (cons (esq-back e) 0))))
    (lambda ()
      (define birth (esek-iterator-born! e))
      (lambda ()
        (unless (esek-iterator-valid? e birth)
-         (raise-arguments-error 'in-esek "sequence was updated during the traversal"))))))
+         (raise-updated 'in-esek))))))
 
 (module+ deserialize
   (provide deserialize-esek)

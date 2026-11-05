@@ -67,46 +67,77 @@
   (check-equal? (sek->list (sequence->esek '(a b c) 2)) '(a b))
   (check-equal? (sek->list (sequence->psek (in-naturals) 4)) '(0 1 2 3)))
 
-;; An update to an ephemeral sequence during a traversal is an error.  Handed
-;; the sequence directly, or as the value of in-esek, `for` reports it at the
-;; next read, as an iterator does; the for-clause form checks each time it
-;; moves to a new run of storage, so a loop that crosses one reports it.
-(test-case "a traversal that races an update raises"
-  (define (updated-during traverse)
-    (define e (list->esek (range 1000)))
-    (lambda ()
-      (traverse e
-                (lambda (i)
-                  (when (= i 0)
-                    (esek-set! e 500 'changed))))))
-  (for ([traverse (in-list (list (lambda (e hook)
-                                   (for ([x e]
-                                         [i (in-naturals)])
-                                     (hook i)))
-                                 (lambda (e hook)
-                                   (for ([x (sequence-map values e)]
-                                         [i (in-naturals)])
-                                     (hook i)))
-                                 (lambda (e hook)
-                                   (define s (in-esek e))
-                                   (for ([x s]
-                                         [i (in-naturals)])
-                                     (hook i)))
-                                 (lambda (e hook)
-                                   (define s (in-sek e))
-                                   (for ([x s]
-                                         [i (in-naturals)])
-                                     (hook i)))
-                                 (lambda (e hook)
-                                   (for ([x (in-esek e)]
-                                         [i (in-naturals)])
-                                     (hook i)))
-                                 (lambda (e hook)
-                                   (for ([x (in-sek e 'backward)]
-                                         [i (in-naturals)])
-                                     (hook i)))))])
-    (check-exn exn:fail:contract? (updated-during traverse)))
-  ;; reading alone is not an update
+;; An update to an ephemeral sequence during a traversal is an error, which
+;; the traversal reports before it hands over another element.  A traversal
+;; that read ahead and did not check would show the update, and after a pop
+;; could hand over the private value left in the emptied slot.
+(define-syntax-rule (traversals (e see!) [who expr] ...)
+  (list (list 'who (lambda (e see!) expr)) ...))
+
+(define all-traversals
+  (traversals
+   (e see!)
+   [in-esek (for ([x (in-esek e)]) (see! x))]
+   [in-esek (for ([x (in-esek e 'backward)]) (see! x))]
+   [in-sek (for ([x (in-sek e)]) (see! x))]
+   [in-esek (let ([s (in-esek e)]) (for ([x s]) (see! x)))]
+   [in-sek (let ([s (in-sek e)]) (for ([x s]) (see! x)))]
+   [in-esek (for ([x e]) (see! x))]
+   [esek-for-each (esek-for-each e see!)]
+   [sek-for-each (sek-for-each e see!)]
+   [sek-for-each (sek-for-each e see! 'backward)]
+   [sek-for-each/index (sek-for-each/index e (lambda (i x) (see! x)))]
+   [sek-fold-left (sek-fold-left e (lambda (a x) (see! x) a) 0)]
+   [sek-fold-right (sek-fold-right e (lambda (x a) (see! x) a) 0)]
+   [sek-map (sek-map e (lambda (x) (see! x) x))]
+   [sek-map/index (sek-map/index e (lambda (i x) (see! x) x))]
+   [sek-filter (sek-filter e (lambda (x) (see! x) #t))]
+   [sek-filter-map (sek-filter-map e (lambda (x) (see! x) x))]
+   [sek-partition (sek-partition e (lambda (x) (see! x) #t))]
+   [sek-append-map (sek-append-map e (lambda (x) (see! x) (psek x)))]
+   [sek-uniq (sek-uniq e (lambda (a b) (see! b) #f))]
+   [sek-find (sek-find e (lambda (x) (see! x) #f))]
+   [sek-find-index (sek-find-index e (lambda (x) (see! x) #f))]
+   [sek-find-map (sek-find-map e (lambda (x) (see! x) #f))]
+   [sek-for-all? (sek-for-all? e (lambda (x) (see! x) #t))]
+   [sek-exists? (sek-exists? e (lambda (x) (see! x) #f))]
+   [sek-member? (sek-member? e 'z (lambda (v x) (see! x) #f))]
+   [sek-index-of (sek-index-of e 'z (lambda (v x) (see! x) #f))]
+   [sek-for-each2 (sek-for-each2 e (list->esek (range 300)) (lambda (x y) (see! x)))]
+   [sek-fold-left2 (sek-fold-left2 e (list->psek (range 300)) (lambda (a x y) (see! x) a) 0)]
+   [sek-fold-right2 (sek-fold-right2 e (list->psek (range 300)) (lambda (x y a) (see! x) a) 0)]
+   [sek-for-all2? (sek-for-all2? e (list->psek (range 300)) (lambda (x y) (see! x) #t))]
+   [sek-exists2? (sek-exists2? e (list->psek (range 300)) (lambda (x y) (see! x) #f))]
+   [sek-equal? (sek-equal? e (list->psek (range 300)) (lambda (x y) (see! x) #t))]
+   [sek-map2 (sek-map2 e (list->psek (range 300)) (lambda (x y) (see! x) x))]
+   [sek-compare (sek-compare e (list->psek (range 300)) (lambda (x y) (see! x) 0))]
+   [sek-merge (sek-merge e (list->psek (range 300)) (lambda (x y) (see! x) #f))]))
+
+(test-case "a traversal reports an update before it hands over another element"
+  (for* ([t (in-list all-traversals)]
+         [update (in-list (list (lambda (e) (esek-pop-back! e))
+                                (lambda (e) (esek-pop-front! e))
+                                (lambda (e) (esek-set! e 150 'changed))
+                                (lambda (e) (esek-add! e 'added))
+                                (lambda (e) (esek-clear! e))))])
+    (define who (car t))
+    (define e (list->esek (range 300)))
+    (define seen '())
+    (define (see! x)
+      (when (null? seen) (update e))
+      (set! seen (cons x seen)))
+    (check-exn (lambda (x)
+                 (and (exn:fail:contract? x)
+                      (regexp-match? (string-append "^" (regexp-quote (symbol->string who)) ":")
+                                     (exn-message x))))
+               (lambda () ((cadr t) e see!))
+               (format "~a" who))
+    (check-equal? (length seen) 1 (format "~a" who))))
+
+(test-case "reading is not an update"
   (define e (list->esek (range 1000)))
   (check-equal? (for/sum ([x e]) x) (for/sum ([x (in-range 1000)]) x))
-  (check-equal? (for/sum ([x (in-esek e)] [y e]) (- x y)) 0))
+  (check-equal? (for/sum ([x (in-esek e)] [y e]) (- x y)) 0)
+  (check-equal? (sek-fold-left e (lambda (a x) (esek-snapshot e) (+ a x)) 0) 499500)
+  (check-equal? (sek-map e (lambda (x) (esek-ref e x))) e))
+
