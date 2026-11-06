@@ -81,7 +81,8 @@
                      (too-long 'sek-append* (sek-append* (esek e e2)))
                      (check-equal? (esek-length e) (psek-length s))
                      ;; a sequence exactly at the limit takes no more elements
-        (define full (psek-append s (psek-take s (- (max-length) (psek-length s)))))
-        (check-equal? (psek-length full) (max-length))
-        (check-elements full)
-        (too-long 'sek-insert (sek-insert full 0 'x))))))
+                     (define full
+                       (psek-append s (psek-take s (- (max-length) (psek-length s)))))
+                     (check-equal? (psek-length full) (max-length))
+                     (check-elements full)
+                     (too-long 'sek-insert (sek-insert full 0 'x))))))
