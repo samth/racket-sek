@@ -30,8 +30,10 @@ jobs:
           variant: ${{ matrix.racket-variant }}
           packages: ""
 
-      - name: Install sek-lib and sek-test
-        run: raco pkg install --auto --batch sek-lib/ sek-test/
+      # sek-doc too: sek-test depends on it, and --auto would otherwise
+      # install the catalog's copy, built against an older sek-lib.
+      - name: Install sek-lib, sek-doc and sek-test
+        run: raco pkg install --auto --batch sek-lib/ sek-doc/ sek-test/
 
       - name: Test
         run: raco test -e -x -j 2 sek-test/
