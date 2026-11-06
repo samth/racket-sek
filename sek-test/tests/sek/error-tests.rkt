@@ -209,7 +209,7 @@
     (raises/who 'sek-map2 (sek-map2 s s car))
     (raises/who 'sek-merge (sek-merge s s car))
     (raises/who 'sek-equal? (sek-equal? s s car))
-    (raises/who 'sek-compare (sek-compare s s car)))
+    (raises/who 'sek<? (sek<? s s car)))
   (raises/who 'psek-for-each (psek-for-each empty-psek 'wrong))
   (raises/who 'psek-map (psek-map empty-psek 'wrong))
   (raises/who 'esek-for-each (esek-for-each (make-esek) 'wrong))
@@ -217,7 +217,6 @@
   (raises/who 'build-esek (build-esek 0 cons)))
 
 (test-case "a callback's results are checked where the operation uses them"
-  (raises/who 'sek-compare (sek-compare (psek 1) (psek 2) (lambda (a b) 'less)))
   (raises/who 'sek-append-map (sek-append-map (psek 1) (lambda (x) (list x))))
   (raises/who 'sek-unzip (sek-unzip (psek (cons 1 2) 3))))
 

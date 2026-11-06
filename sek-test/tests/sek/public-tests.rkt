@@ -54,13 +54,25 @@
    (sek-fold-left2 (psek 1 2 3) (esek 10 20) (lambda (acc x y) (cons (list x y) acc)) '())
    '((2 20) (1 10))))
 
-;; As in SRFI 67 and OCaml, only an exact 0 means equal.
-(test-case "sek-compare treats only an exact 0 as equal"
-  (check-equal? (sek-compare (psek 1 2) (psek 1 3) -) -1)
-  (check-equal? (sek-compare (psek 1 3) (esek 1 2) -) 1)
-  (check-equal? (sek-compare (psek 1 2) (esek 1 2) -) 0)
-  (check-equal? (sek-compare (psek 1 2) (psek 1 2 0) -) -1)
-  (check-equal? (sek-compare (psek 1 2) (psek 1 2) (lambda (a b) (if (= a b) 0.0 -1.0))) 1))
+;; As in `sort`, elements are ordered by a less-than procedure, and two
+;; elements neither of which is less than the other are equal.
+(test-case "sek<? orders sequences lexicographically by a less-than procedure"
+  (check-true (sek<? (psek 1 2) (psek 1 3) <))
+  (check-false (sek<? (psek 1 3) (esek 1 2) <))
+  (check-false (sek<? (psek 1 2) (esek 1 2) <))
+  (check-true (sek<? (psek 1 2) (psek 1 2 0) <))
+  (check-false (sek<? (psek 1 2 0) (psek 1 2) <))
+  (check-false (sek<? (psek) (esek) <))
+  (check-true (sek<? (psek) (psek 0) <))
+  (check-false (sek<? (psek 0) (psek) <))
+  (check-false (sek<? (psek "b" "A") (psek "B" "a") string-ci<?))
+  (check-false (sek<? (psek "B" "a") (psek "b" "A") string-ci<?))
+  (check-true (sek<? (psek 1.0 2) (psek 1 3) <))
+  ;; strict, so it can be sort's less-than?, and the sort stays stable
+  (check-equal? (map sek->list
+                     (sort (list (psek 2) (psek 1 1) (psek 1) (esek 1 1))
+                           (lambda (a b) (sek<? a b <))))
+                '((1) (1 1) (1 1) (2))))
 
 (test-case "sequence->psek takes at most n elements"
   (check-equal? (sek->list (sequence->psek '(a b) 5)) '(a b))
@@ -110,7 +122,14 @@
    [sek-exists2? (sek-exists2? e (list->psek (range 300)) (lambda (x y) (see! x) #f))]
    [sek-equal? (sek-equal? e (list->psek (range 300)) (lambda (x y) (see! x) #t))]
    [sek-map2 (sek-map2 e (list->psek (range 300)) (lambda (x y) (see! x) x))]
-   [sek-compare (sek-compare e (list->psek (range 300)) (lambda (x y) (see! x) 0))]
+   ;; less-than? is called twice for each pair of equal elements, once each
+   ;; way, so it sees each element of e on the first of the two calls
+   [sek<? (let ([first-call? #f])
+            (sek<? e (list->psek (range 300))
+                   (lambda (x y)
+                     (set! first-call? (not first-call?))
+                     (when first-call? (see! x))
+                     #f)))]
    [sek-merge (sek-merge e (list->psek (range 300)) (lambda (x y) (see! x) #f))]))
 
 (test-case "a traversal reports an update before it hands over another element"

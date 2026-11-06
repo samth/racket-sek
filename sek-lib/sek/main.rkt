@@ -126,7 +126,7 @@
          sek->list
          sek->vector
          sek-equal?
-         sek-compare
+         sek<?
          sek-for-each2
          sek-fold-left2
          sek-fold-right2

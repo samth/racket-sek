@@ -135,18 +135,17 @@
   (check-equal? (sek-exists2? s t >) (and (ormap > xs ys) #t))
   (check-equal? (sek-equal? s (build xs)) #t)
   (check-equal? (sek-equal? s t) (equal? xs ys))
-  (check-equal? (sek-compare s (build xs) (lambda (a b) (- a b))) 0)
+  (define (list<? a b)
+    (cond
+      [(null? b) #f]
+      [(null? a) #t]
+      [(< (car a) (car b)) #t]
+      [(< (car b) (car a)) #f]
+      [else (list<? (cdr a) (cdr b))]))
+  (check-equal? (sek<? s (build xs) <) #f)
   (unless (null? xs)
-    (check-equal? (sek-compare s (build (cdr xs)) (lambda (a b) (- a b)))
-                  (let loop ([a xs]
-                             [b (cdr xs)])
-                    (cond
-                      [(and (null? a) (null? b)) 0]
-                      [(null? a) -1]
-                      [(null? b) 1]
-                      [(= (car a) (car b)) (loop (cdr a) (cdr b))]
-                      [(< (car a) (car b)) -1]
-                      [else 1]))))
+    (check-equal? (sek<? s (build (cdr xs)) <) (list<? xs (cdr xs)))
+    (check-equal? (sek<? (build (cdr xs)) s <) (list<? (cdr xs) xs)))
 
   ;; --- merge of two sorted sequences
   (check-produces s (sek-merge (sek-sort s <) (sek-sort t <) <) (sort (append xs ys) <) 'merge)

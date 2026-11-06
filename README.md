@@ -127,7 +127,7 @@ sequence return the flavor they were given:
 `sek-sub` `sek-take` `sek-drop` `sek-take-right` `sek-drop-right`
 `sek-insert` `sek-delete` `sek-copy` `sek-for-each2` `sek-fold-left2`
 `sek-fold-right2` `sek-map2` `sek-zip` `sek-unzip` `sek-for-all2?`
-`sek-exists2?` `sek-equal?` `sek-compare`
+`sek-exists2?` `sek-equal?` `sek<?`
 
 Each flavor has its constructors (`make-psek`, `build-psek`,
 `sequence->psek`, `for/psek`, `for*/psek` and the same for `esek`), and
@@ -354,6 +354,9 @@ what has been checked. The remaining differences:
 * `sek-sort` is stable, so it covers `stable_sort` too; `sort` there makes no
   such promise.  Given an ephemeral sequence, `sek-sort` returns a new one,
   where `Ephemeral.sort` sorts in place.
+* `sek<?` stands in for `compare`: it takes a less-than procedure, as
+  `sek-sort` does, and returns a boolean, where `compare` takes and returns
+  integer comparisons.
 * `sek-sub` on a persistent sequence always shares the sequence's chunks,
   where the OCaml library copies a slice of at most `T` elements.
 * `sek-iter-reach!` reuses the cursor's position when the target is in the run

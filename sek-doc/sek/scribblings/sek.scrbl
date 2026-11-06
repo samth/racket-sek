@@ -675,13 +675,15 @@ duplicate from a sorted sequence; and a stable merge of two sorted sequences.
               @defproc[(sek-exists2? [s1 sek?] [s2 sek?] [pred (-> any/c any/c any/c)]) boolean?]
               @defproc[(sek-equal? [s1 sek?] [s2 sek?]
                                    [same? (-> any/c any/c any/c) equal?]) boolean?]
-              @defproc[(sek-compare [s1 sek?] [s2 sek?]
-                                    [cmp (-> any/c any/c real?)] ) (or/c -1 0 1)])]{
+              @defproc[(sek<? [s1 sek?] [s2 sek?]
+                              [less-than? (-> any/c any/c any/c)]) boolean?])]{
 
 Operations on two sequences at once.  They stop at the end of the shorter
 sequence, except @racket[sek-equal?], which first compares lengths, and
-@racket[sek-compare], which orders a proper prefix before the sequence that
-extends it.  @racket[sek-zip] pairs elements with @racket[cons], and
+@racket[sek<?], which tests whether @racket[s1] comes before @racket[s2] in
+lexicographic order, with a proper prefix first and elements neither of
+which is @racket[less-than?] the other taken as equal.
+@racket[sek-zip] pairs elements with @racket[cons], and
 @racket[sek-unzip] undoes it.  Each takes @math{O(N)} time plus the cost of
 the calls to the procedure argument.}
 

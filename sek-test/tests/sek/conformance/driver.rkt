@@ -56,12 +56,6 @@
         (reverse acc)
         (loop (cons (sek-iter-get-and-move! it (dir d)) acc)))))
 
-(define (cmp3 a b)
-  (cond
-    [(< a b) -1]
-    [(> a b) 1]
-    [else 0]))
-
 (define (run line)
   (define toks (string-split (string-trim line)))
   (unless (null? toks)
@@ -159,7 +153,13 @@
        (printf "-> ~a\n" (if (sek-exists? (E (a 0)) (lambda (x) (> x (a 1)))) "true" "false"))]
       [("emem") (printf "-> ~a\n" (if (sek-member? (E (a 0)) (a 1)) "true" "false"))]
       [("eequal") (printf "-> ~a\n" (if (sek-equal? (E (a 0)) (E (a 1))) "true" "false"))]
-      [("ecompare") (printf "-> ~a\n" (sek-compare (E (a 0)) (E (a 1)) cmp3))]
+      ;; the reference's three-way compare, from two tests of sek<?
+      [("ecompare")
+       (let ([s1 (E (a 0))] [s2 (E (a 1))])
+         (printf "-> ~a\n" (cond
+                             [(sek<? s1 s2 <) -1]
+                             [(sek<? s2 s1 <) 1]
+                             [else 0])))]
       ;; ---- persistent core
       [("pcreate") (P! (a 0) empty-psek)]
       [("ppush")

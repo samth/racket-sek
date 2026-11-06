@@ -52,7 +52,7 @@
          sek->list
          sek->vector
          sek-equal?
-         sek-compare
+         sek<?
          sek-segments-for-each2
          sek-for-each2
          sek-fold-left2
@@ -663,36 +663,35 @@
   (check-procedure 'sek-equal? same? 2)
   (and (= (sek-length s1) (sek-length s2)) (for-all2 'sek-equal? s1 s2 same?)))
 
-;; -1, 0 or 1, comparing element by element and then by length.
-;; cmp compares two elements and returns a negative number, zero, or a
-;; positive number.  Only an exact 0 means equal, as in SRFI 67 and OCaml.
-(define (sek-compare s1 s2 cmp)
-  (check-sek 'sek-compare s1)
-  (check-sek 'sek-compare s2)
-  (check-procedure 'sek-compare cmp 2)
-  (define unchanged1! (watch 'sek-compare s1))
-  (define unchanged2! (watch 'sek-compare s2))
+;; Whether s1 comes before s2 in lexicographic order: at the first position
+;; where they differ, s1's element is less, or s1 runs out first.  Elements
+;; are ordered by less-than?, as in `sort`, and two elements neither of which
+;; is less than the other are equal.  Like less-than?, the order is strict, so
+;; it can serve as `sort`'s less-than? for sequences.
+(define (sek<? s1 s2 less-than?)
+  (check-sek 'sek<? s1)
+  (check-sek 'sek<? s2)
+  (check-procedure 'sek<? less-than? 2)
+  (define unchanged1! (watch 'sek<? s1))
+  (define unchanged2! (watch 'sek<? s2))
   (define it1 (sek-iterator s1 'forward))
   (define it2 (sek-iterator s2 'forward))
   (let loop ()
-    (define d1 (sek-iter-finished? it1))
-    (define d2 (sek-iter-finished? it2))
     (cond
-      [(and d1 d2) 0]
-      [d1 -1]
-      [d2 1]
+      [(sek-iter-finished? it2) #f]
+      [(sek-iter-finished? it1) #t]
       [else
-       (define c (cmp (sek-iter-get it1) (sek-iter-get it2)))
-       (unless (real? c)
-         (raise-result-error 'sek-compare "real?" c))
+       (define x (sek-iter-get it1))
+       (define y (sek-iter-get it2))
        (cond
-         [(eqv? c 0)
+         [(less-than? x y) #t]
+         [(less-than? y x) #f]
+         [else
           (unchanged1!)
           (unchanged2!)
           (sek-iter-move! it1 'forward)
           (sek-iter-move! it2 'forward)
-          (loop)]
-         [else (if (negative? c) -1 1)])])))
+          (loop)])])))
 
 ;; ------------------------------------------------------------- producers
 

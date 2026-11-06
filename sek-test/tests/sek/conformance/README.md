@@ -84,7 +84,7 @@ both `Ephemeral.map` and `Persistent.map`.
 | `iter2 dir` / `iter2_segments` | `sek-for-each2` / `sek-segments-for-each2` |
 | `fold_left2` / `fold_right2` / `map2` | `sek-fold-left2` / `sek-fold-right2` / `sek-map2` |
 | `for_all2` / `exists2` | `sek-for-all2?` / `sek-exists2?` |
-| `equal` / `compare` | `sek-equal?` / `sek-compare` |
+| `equal` / `compare` | `sek-equal?` / `sek<?`, given a less-than procedure |
 | `sort` / `stable_sort` / `uniq` / `merge` | `sek-sort` (stable) / `sek-uniq` / `sek-merge` |
 | `fill` / `blit` | `esek-fill!` / `esek-copy!` |
 | `format` / `check` | printed by `write`; `sek-validate-psek` / `sek-validate-esek` |
