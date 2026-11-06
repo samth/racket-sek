@@ -36,7 +36,7 @@ jobs:
         run: raco pkg install --auto --batch sek-lib/ sek-doc/ sek-test/
 
       - name: Test
-        run: raco test -e -x -j 2 sek-test/
+        run: raco test -e -j 2 sek-test/
 
   docs:
     name: "docs build"
@@ -57,7 +57,7 @@ jobs:
         run: raco pkg install --auto --batch sek-lib/ sek-doc/ sek-test/
 
       - name: Check that every export is documented
-        run: raco test -e -x sek-test/tests/sek/test-docs-complete.rkt
+        run: raco test -e sek-test/tests/sek/test-docs-complete.rkt
 
   lint:
     name: "packages are well-formed"

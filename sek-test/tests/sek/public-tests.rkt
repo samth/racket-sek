@@ -159,4 +159,3 @@
   (check-equal? (for/sum ([x (in-esek e)] [y e]) (- x y)) 0)
   (check-equal? (sek-fold-left e (lambda (a x) (esek-snapshot e) (+ a x)) 0) 499500)
   (check-equal? (sek-map e (lambda (x) (esek-ref e x))) e))
-
