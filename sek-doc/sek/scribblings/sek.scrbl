@@ -597,10 +597,11 @@ time in the worst case.
 The usual list-shaped operations.  @racket[sek-append*] concatenates a
 sequence of sequences; given an ephemeral one it empties both it and its
 elements.  Each takes @math{O(N)} time plus the cost of the calls to
-@racket[proc] or @racket[pred], where @math{N} counts the elements of the
-result for @racket[sek-append*] and @racket[sek-append-map]; on an ephemeral
-sequence @racket[sek-append*] instead takes
-@math{O(K log_K N + log_K^2 N)} time per element of @racket[s].}
+@racket[proc] or @racket[pred], where @math{N} counts the elements of both
+@racket[s] and the result for @racket[sek-append*] and
+@racket[sek-append-map]; on an ephemeral sequence @racket[sek-append*]
+instead takes @math{O(K log_K N + log_K^2 N)} time per element of
+@racket[s].}
 
 @deftogether[(@defproc[(sek-sub [s sek?] [start exact-nonnegative-integer?]
                                 [size exact-nonnegative-integer?]) sek?]

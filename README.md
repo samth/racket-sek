@@ -65,7 +65,7 @@ operations and the conformance harness follow the authors' OCaml library,
 every ephemeral sequence carries one. If they match, the chunk is not shared
 with anybody and can be written in place. `esek-snapshot` hands the sequence a
 *fresh* id, so every chunk in it instantly stops being recognizable as owned —
-which is why a snapshot copies no chunk and yet is safe.
+which is why a snapshot need not copy the sequence and yet is safe.
 
 **Monotonic updates** (§3.3). A chunk is a view onto a partially-filled
 circular buffer. Filling a slot that lies outside every view cannot be observed
