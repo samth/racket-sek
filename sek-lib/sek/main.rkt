@@ -157,6 +157,8 @@
          sek-copy
          esek-fill!
          esek-copy!
+         esek-map!
+         esek-map/index!
          make-psek
          build-psek
          build-esek

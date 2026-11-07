@@ -476,6 +476,28 @@ items
 items
 ]}
 
+@deftogether[(
+@defproc[(esek-map! [e esek?] [proc (-> any/c any/c)]) void?]
+@defproc[(esek-map/index! [e esek?]
+                          [proc (-> exact-nonnegative-integer? any/c any/c)]) void?]
+)]{
+
+Replace each element of @racket[e], from first to last, with the result of
+@racket[proc] on it, or on its index and it, as @racket[vector-map!] and
+@racket[mutable-treelist-map!] do.  Updating @racket[e] in @racket[proc] is
+an error, detected as for an @tech{iterator}.  Each takes the same time as
+@racket[esek-fill!] over the whole sequence, plus the cost of the calls to
+@racket[proc].
+
+@examples[
+#:eval the-eval
+(define s (psek 1 2 3))
+(define e (psek-edit s))
+(esek-map/index! e (lambda (i x) (+ x i)))
+(esek-snapshot e)
+s
+]}
+
 @defproc[(esek-snapshot [e esek?]) psek?]{
 
 Returns a @tech{persistent sequence} with the current contents of @racket[e].

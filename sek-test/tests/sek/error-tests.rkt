@@ -213,6 +213,11 @@
   (raises/who 'psek-for-each (psek-for-each empty-psek 'wrong))
   (raises/who 'psek-map (psek-map empty-psek 'wrong))
   (raises/who 'esek-for-each (esek-for-each (make-esek) 'wrong))
+  (raises/who 'esek-map! (esek-map! (make-esek) 'wrong))
+  (raises/who 'esek-map! (esek-map! (make-esek) cons))
+  (raises/who 'esek-map/index! (esek-map/index! (make-esek) car))
+  (raises/who 'esek-map! (esek-map! (psek 1 2) add1))
+  (raises/who 'esek-map/index! (esek-map/index! (psek 1 2) +))
   (raises/who 'build-psek (build-psek 0 cons))
   (raises/who 'build-esek (build-esek 0 cons)))
 

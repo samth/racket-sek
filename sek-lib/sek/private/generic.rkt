@@ -13,8 +13,8 @@
 
 (require (for-syntax racket/base)
          (only-in "unchecked.rkt"
-                  unsafe-vector*-ref unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx> unsafe-fx=
-                  unsafe-fxabs)
+                  unsafe-vector*-ref unsafe-vector*-set! unsafe-fx+ unsafe-fx- unsafe-fx< unsafe-fx>
+                  unsafe-fx= unsafe-fxabs)
          racket/vector
          (only-in "unchecked.rkt" in-fx-range)
          "config.rkt"
@@ -84,6 +84,8 @@
          sek-copy
          esek-fill!
          esek-copy!
+         esek-map!
+         esek-map/index!
          make-psek
          build-psek
          build-esek
@@ -1017,6 +1019,55 @@
           (segment-set! sg j x))
         (sek-iter-jump! it 'forward k)
         (loop (- remaining k))))))
+
+;; Replace each element with the result of proc on it, in place, as
+;; `vector-map!` and `mutable-treelist-map!` do; the /index version passes
+;; the index as well.  Like esek-fill!, this writes through writable segments,
+;; one run at a time.
+;;
+;; proc is the caller's code, and runs between the writes to one run, so after
+;; each call two things are checked.  An update to e invalidates the iterator,
+;; and raises here as it would in any traversal.  A snapshot of e is a read,
+;; and leaves the iterator valid, but it takes ownership of every chunk away
+;; from e: writing on into the run would change the snapshot.  So the map then
+;; writes through the iterator instead, which copies the chunk, and takes the
+;; rest of the run afresh.
+(define (esek-map! e proc)
+  (unless (esek? e) (raise-argument-error 'esek-map! "esek?" e))
+  (check-procedure 'esek-map! proc 1)
+  (map-in-place! 'esek-map! e (lambda (i x) (proc x))))
+
+(define (esek-map/index! e proc)
+  (unless (esek? e) (raise-argument-error 'esek-map/index! "esek?" e))
+  (check-procedure 'esek-map/index! proc 2)
+  (map-in-place! 'esek-map/index! e proc))
+
+(define (map-in-place! who e proc)
+  (define it (sek-iterator e 'forward))
+  (let loop ([i 0])
+    (unless (sek-iter-finished? it)
+      (define sg (sek-iter-writable-segment it 'forward))
+      (define id (esek-id e))
+      (define v (segment-vector sg))
+      (define o (segment-start sg))
+      (define k (segment-length sg))
+      (let run ([j 0])
+        (cond
+          [(unsafe-fx= j k)
+           (sek-iter-jump! it 'forward k)
+           (loop (unsafe-fx+ i k))]
+          [else
+           (define y (proc (unsafe-fx+ i j) (unsafe-vector*-ref v (unsafe-fx+ o j))))
+           (cond
+             [(not (sek-iter-valid? it)) (raise-updated who)]
+             [(eq? (esek-id e) id)
+              (unsafe-vector*-set! v (unsafe-fx+ o j) y)
+              (run (unsafe-fx+ j 1))]
+             [else
+              (sek-iter-jump! it 'forward j)
+              (sek-iter-set! it y)
+              (sek-iter-move! it 'forward)
+              (loop (unsafe-fx+ i (unsafe-fx+ j 1)))])])))))
 
 ;; Shaped like `vector-copy!`: the destination and its start, then the source
 ;; and the range of it to take.

@@ -130,7 +130,9 @@
                      (set! first-call? (not first-call?))
                      (when first-call? (see! x))
                      #f)))]
-   [sek-merge (sek-merge e (list->psek (range 300)) (lambda (x y) (see! x) #f))]))
+   [sek-merge (sek-merge e (list->psek (range 300)) (lambda (x y) (see! x) #f))]
+   [esek-map! (esek-map! e (lambda (x) (see! x) x))]
+   [esek-map/index! (esek-map/index! e (lambda (i x) (see! x) x))]))
 
 (test-case "a traversal reports an update before it hands over another element"
   (for* ([t (in-list all-traversals)]
@@ -159,3 +161,37 @@
   (check-equal? (for/sum ([x (in-esek e)] [y e]) (- x y)) 0)
   (check-equal? (sek-fold-left e (lambda (a x) (esek-snapshot e) (+ a x)) 0) 499500)
   (check-equal? (sek-map e (lambda (x) (esek-ref e x))) e))
+
+(test-case "esek-map! and esek-map/index! update in place"
+  (for ([n (in-list '(0 1 10 300 100000))])
+    (define e (list->esek (range n)))
+    (define it (sek-iterator e))
+    (esek-map! e (lambda (x) (* 2 x)))
+    (check-equal? (esek->list e) (for/list ([i (in-range n)]) (* 2 i)))
+    (esek-map/index! e (lambda (i x) (+ x i)))
+    (check-equal? (esek->list e) (for/list ([i (in-range n)]) (* 3 i)))
+    ;; an update, so it invalidates other iterators
+    (unless (zero? n)
+      (check-exn exn:fail:contract? (lambda () (sek-iter-get it))))))
+
+;; The transient pattern: edit a persistent sequence, update it in place,
+;; take a snapshot.  The original is never touched.
+(test-case "esek-map! on an edited sequence leaves the original alone"
+  (define s (for/psek ([i (in-range 1000)]) i))
+  (define e (psek-edit s))
+  (esek-map/index! e (lambda (i x) (+ x i)))
+  (check-equal? (psek->list (esek-snapshot e)) (for/list ([i (in-range 1000)]) (* 2 i)))
+  (check-equal? (psek->list s) (range 1000)))
+
+;; A snapshot taken by proc is a read, but it takes ownership of e's chunks
+;; away: the rest of the map must copy them rather than write into the
+;; snapshot.
+(test-case "a snapshot taken during esek-map! keeps its contents"
+  (define e (list->esek (range 1000)))
+  (define snap #f)
+  (esek-map! e (lambda (x)
+                 (when (= x 150) (set! snap (esek-snapshot e)))
+                 (* 2 x)))
+  (check-equal? (esek->list e) (for/list ([i (in-range 1000)]) (* 2 i)))
+  (check-equal? (psek->list snap)
+                (append (for/list ([i (in-range 150)]) (* 2 i)) (range 150 1000))))

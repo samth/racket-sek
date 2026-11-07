@@ -104,7 +104,7 @@ The public interface is eight names: `sek-iterator`, `sek-iter?`,
 out the whole run it is sitting on, as a *segment* — a vector, a start index
 and a length — and that is how `in-sek`, the folds and everything in the next
 section are built: a traversal becomes a series of tight vector loops.
-Writable segments are what make `esek-fill!` and `esek-copy!` cost
+Writable segments are what make `esek-fill!`, `esek-copy!` and `esek-map!` cost
 O(size + K log_K n) instead of a tree descent per element.  Segments are not
 exported.
 
@@ -131,7 +131,8 @@ sequence return the flavor they were given:
 
 Each flavor has its constructors (`make-psek`, `build-psek`,
 `sequence->psek`, `for/psek`, `for*/psek` and the same for `esek`), and
-ephemeral sequences have `esek-fill!` and `esek-copy!`.
+ephemeral sequences have `esek-fill!`, `esek-copy!`, `esek-map!` and
+`esek-map/index!`.
 
 Ephemeral sequences also have the reference library's in-place structural
 operations, which consume the sequences they are given: `esek-append!`
