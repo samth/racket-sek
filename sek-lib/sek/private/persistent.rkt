@@ -503,10 +503,18 @@
        (proc x))]
     [else (pt-for-each r 0 proc)]))
 
+;; Walks the tree into a builder, calling proc from first to last.
 (define (psek-map s proc)
   (check-psek 'psek-map s)
   (check-procedure 'psek-map proc 1)
-  (list->psek (map proc (psek->list s))))
+  (define r (psq-rep s))
+  (cond
+    [(not r) empty-psek]
+    [(vector? r) (wrap-rep (vector-map proc r))]
+    [else
+     (define b (make-psek-builder))
+     (pt-for-each r 0 (lambda (x) (psek-builder-add! b (proc x))))
+     (psek-builder-close b)]))
 
 ;; Streaming traversal: `for` over a sequence walks the tree directly instead
 ;; of building an intermediate list.
@@ -533,7 +541,10 @@
 (define psek-push-front psek-cons)
 (define psek-push-back psek-add)
 
-(define (vector->psek v) (list->psek (vector->list v)))
+;; Reads through vector-ref, so a chaperoned vector is copied as it reads.
+(define (vector->psek v)
+  (unless (vector? v) (raise-argument-error 'vector->psek "vector?" v))
+  (psek-build (vector-length v) (lambda (i) (vector-ref v i))))
 
 (define (psek . xs)
   (list->psek xs))

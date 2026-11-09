@@ -558,7 +558,12 @@
      (set-esq-id! e (fresh-id!))
      (esq (fresh-id!) (esq-front e) (esq-ifront e) (esq-middle e)
           (esq-iback e) (esq-back e) 1 #f)]
-    [(copy) (list->esek (esek->list e))]
+    ;; pushed one at a time rather than built, so that the copy owns its
+    ;; chunks and its own later writes copy nothing
+    [(copy)
+     (define c (make-esek))
+     (esek-for-each e (lambda (x) (esek-add! c x)))
+     c]
     [else (raise-argument-error 'esek-copy "(or/c 'share 'copy)" mode)]))
 
 (define (esek-become! e s)
@@ -717,7 +722,10 @@
 (module+ deserialize
   (provide deserialize-esek)
   (define deserialize-esek
-    (make-deserialize-info (lambda (v) (list->esek (vector->list v)))
+    (make-deserialize-info (lambda (v)
+                             (define e (make-esek))
+                             (for ([x (in-vector v)]) (esek-add! e x))
+                             e)
                            (lambda () (error 'deserialize-esek "cycles not supported")))))
 
 (define (list->esek xs)

@@ -195,3 +195,22 @@
   (check-equal? (esek->list e) (for/list ([i (in-range 1000)]) (* 2 i)))
   (check-equal? (psek->list snap)
                 (append (for/list ([i (in-range 150)]) (* 2 i)) (range 150 1000))))
+
+;; Lengths on either side of the short-sequence threshold (32) and of one
+;; chunk (128), where psek-map and vector->psek take different paths.
+(define conversion-lengths '(0 1 31 32 33 127 128 129 1000 100000))
+
+(test-case "psek-map calls its procedure on each element, first to last"
+  (for ([n (in-list conversion-lengths)])
+    (define calls '())
+    (define r (psek-map (list->psek (range n))
+                        (lambda (x) (set! calls (cons x calls)) (* 2 x))))
+    (check-equal? (psek->list r) (for/list ([i (in-range n)]) (* 2 i)))
+    (check-equal? (reverse calls) (range n))))
+
+(test-case "vector->psek copies the vector"
+  (for ([n (in-list conversion-lengths)])
+    (define v (build-vector n values))
+    (define p (vector->psek v))
+    (unless (zero? n) (vector-set! v 0 'changed))
+    (check-equal? (psek->list p) (range n))))
