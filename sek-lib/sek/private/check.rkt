@@ -10,11 +10,8 @@
          "persistent.rkt"
          "ephemeral.rkt")
 
-(provide check-tree
-         check-chunk
-         check-psek
-         check-esek
-         sek-check-failure)
+(provide check-psek
+         check-esek)
 
 (define (sek-check-failure fmt . args)
   (raise (exn:fail:sek (string-append "sek invariant violated: " (apply format fmt args))

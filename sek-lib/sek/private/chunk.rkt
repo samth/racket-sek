@@ -72,7 +72,6 @@
          chunk-aligned?
          chunk-data
          chunk-segment-at
-         chunk-index->support-index
          inconsistent-structure)
 
 ;; ---------------------------------------------------------------- ownership
@@ -216,11 +215,6 @@
           "sek: the sequence's structure is inconsistent; was an ephemeral sequence updated by two threads at once?"
           (current-continuation-marks))))
 
-;; ------------------------------------------------------------------ measure
-
-;; The weight of an item of depth d: elements weigh 1, deeper items are chunks
-;; that carry their own weight.
-
 (define (chunk-index->support-index c i)
   (define k (chunk-capacity c))
   (wrap+ (+ (chunk-head c) i) k))
@@ -257,6 +251,10 @@
 ;; ownership invariant requires this of every uniquely-owned chunk --
 ;; `chunk-aligned?` is above, with the rest of the inlined accessors.
 
+;; ------------------------------------------------------------------ measure
+
+;; The weight of an item of depth d: elements weigh 1, deeper items are chunks
+;; that carry their own weight.
 (define (unit-measure x)
   1)
 (define weight-measure chunk-weight)
@@ -530,14 +528,6 @@
 
 ;; --------------------------------------------------------------------- set
 
-;; Replace item i.  wold/wnew are the weights of the outgoing and incoming
-;; items.
-;; Make the chunk uniquely owned by `owner`, copying it if it is shared.  This
-;; is what a caller wants when it is about to write into the chunk's data
-;; vector directly, rather than through `chunk-set` -- iterators do exactly
-;; that.  It used to be spelled "set element i to itself", which forced the
-;; copy-on-write path as a side effect; that stopped working once `chunk-set`
-;; learned to recognize a write that changes nothing.
 ;; A private copy of a chunk's backing store, and the head the copy should use.
 ;;
 ;; When the view covers the whole support there is nothing to clear and nothing
@@ -554,6 +544,10 @@
      (chunk-blit! c 0 (chunk-size c) data 0)
      (values data 0)]))
 
+;; Make the chunk uniquely owned by `owner`, copying it if it is shared.  This
+;; is what a caller wants when it is about to write into the chunk's data
+;; vector directly, rather than through `chunk-set` -- iterators do exactly
+;; that.
 (define (chunk-own c owner)
   (cond
     [(chunk-owned? c owner) c]
@@ -562,6 +556,8 @@
      (define-values (data head) (chunk-copy-store c))
      (chunk (support* data head n) head n (chunk-weight c) owner)]))
 
+;; Replace item i.  wold/wnew are the weights of the outgoing and incoming
+;; items.
 (define (chunk-set c i x wold wnew owner)
   (cond
     [(chunk-owned? c owner)

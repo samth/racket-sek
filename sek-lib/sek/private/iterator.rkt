@@ -753,7 +753,7 @@
 ;; store.  When it is not, we go through the sequence's own `set`, which
 ;; copies the path and leaves the chunk owned, and then rebuild the cursor --
 ;; so the first write to a shared chunk is expensive and the rest are not.
-(define (ensure-owned! it who)
+(define (ensure-owned! it)
   (define e (siter-seq it))
   (define c (siter-cursor it))
   (define ch (cur-chunk c))
@@ -776,7 +776,7 @@
 
 (define (sek-iter-set! it x)
   (check-writable it 'sek-iter-set!)
-  (ensure-owned! it 'sek-iter-set!)
+  (ensure-owned! it)
   (define c (siter-cursor it))
   ;; the same guard as `cur-get`: ensure-owned! may have moved the cursor
   (define v (cur-support c))
@@ -792,7 +792,7 @@
 
 (define (sek-iter-writable-segment it [dir 'forward])
   (check-writable it 'sek-iter-writable-segment)
-  (ensure-owned! it 'sek-iter-writable-segment)
+  (ensure-owned! it)
   (cur-segment (siter-cursor it) dir))
 
 (define (sek-iter-writable-segment* it [dir 'forward])
