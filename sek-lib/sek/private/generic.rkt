@@ -174,19 +174,47 @@
             (raise-updated who))))
       void))
 
+;; The vector of a short persistent sequence, or #f.  A traversal walks it
+;; directly: making an iterator costs more than reading thirty-two elements.
+(define (short-vector s)
+  (and (psek? s)
+       (let ([r (psek-rep s)])
+         (and (vector? r) r))))
+
 ;; Fold over the elements of s in direction dir a run at a time, binding x to
 ;; each element in turn and acc to the value of body for the one before,
-;; starting from init.  The loop is expanded twice, so that a sequence with
-;; nothing to watch pays nothing for the check.
+;; starting from init.  The loop is expanded three times: for a short
+;; persistent sequence, and with and without the check, so that a sequence
+;; with nothing to watch pays nothing for it.
 (define-syntax-rule (fold-elements who s dir ([acc init]) (x) body ...)
   (let* ([sq s]
          [d dir]
-         [w (watched sq)]
-         [it (sek-iterator sq d)])
-    (if w
-        (let ([birth (esek-iterator-born! w)])
-          (fold-runs it d ([acc init]) (x) (check-unchanged! who w birth) body ...))
-        (fold-runs it d ([acc init]) (x) (void) body ...))))
+         [sv (short-vector sq)])
+    (cond
+      [sv (fold-run sv 0 (vector-length sv) d ([acc init]) (x) (void) body ...)]
+      [else
+       (let ([w (watched sq)]
+             [it (sek-iterator sq d)])
+         (if w
+             (let ([birth (esek-iterator-born! w)])
+               (fold-runs it d ([acc init]) (x) (check-unchanged! who w birth) body ...))
+             (fold-runs it d ([acc init]) (x) (void) body ...)))])))
+
+;; Fold over slots [o, e) of v, in direction d, running `check` before each.
+(define-syntax-rule (fold-run v o e d ([acc init]) (x) check body ...)
+  (if (eq? d 'forward)
+      (let run ([j o] [acc init])
+        (cond
+          [(unsafe-fx= j e) acc]
+          [else
+           check
+           (run (unsafe-fx+ j 1) (let ([x (unsafe-vector*-ref v j)]) body ...))]))
+      (let run ([j (unsafe-fx- e 1)] [acc init])
+        (cond
+          [(unsafe-fx< j o) acc]
+          [else
+           check
+           (run (unsafe-fx- j 1) (let ([x (unsafe-vector*-ref v j)]) body ...))]))))
 
 ;; The loop of `fold-elements`, which runs `check` before each run and each
 ;; element.
@@ -199,20 +227,52 @@
                [v (segment-vector sg)]
                [o (segment-start sg)]
                [e (unsafe-fx+ o (segment-length sg))])
-          (loop
-           (if (eq? d 'forward)
-               (let run ([j o] [acc acc])
-                 (cond
-                   [(unsafe-fx= j e) acc]
-                   [else
-                    check
-                    (run (unsafe-fx+ j 1) (let ([x (unsafe-vector*-ref v j)]) body ...))]))
-               (let run ([j (unsafe-fx- e 1)] [acc acc])
-                 (cond
-                   [(unsafe-fx< j o) acc]
-                   [else
-                    check
-                    (run (unsafe-fx- j 1) (let ([x (unsafe-vector*-ref v j)]) body ...))]))))))))
+          (loop (fold-run v o e d ([acc acc]) (x) check body ...))))))
+
+;; The same for two sequences at once: x and y are bound to the elements of
+;; s1 and s2 at the same distance from the end the traversal starts at, and
+;; the fold stops where the shorter sequence does.  Matching runs of the two
+;; are walked together.
+(define-syntax-rule (fold-elements2 who s1 s2 dir ([acc init]) (x y) body ...)
+  (let* ([d dir]
+         [fwd? (eq? d 'forward)]
+         [w1 (watched s1)]
+         [birth1 (birth-of w1)]
+         [w2 (watched s2)]
+         [birth2 (birth-of w2)]
+         [it1 (sek-iterator s1 d)]
+         [it2 (sek-iterator s2 d)])
+    (let loop ([acc init])
+      (check-unchanged! who w1 birth1)
+      (check-unchanged! who w2 birth2)
+      (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
+          acc
+          (let*-values ([(v1 p1 n1) (run-toward it1 d fwd?)]
+                        [(v2 p2 n2) (run-toward it2 d fwd?)]
+                        [(k) (if (unsafe-fx< n1 n2) n1 n2)]
+                        [(step) (if fwd? 1 -1)])
+            (let run ([j 0] [p1 p1] [p2 p2] [acc acc])
+              (check-unchanged! who w1 birth1)
+              (check-unchanged! who w2 birth2)
+              (cond
+                [(unsafe-fx= j k)
+                 (sek-iter-jump! it1 d k)
+                 (sek-iter-jump! it2 d k)
+                 (loop acc)]
+                [else
+                 (run (unsafe-fx+ j 1) (unsafe-fx+ p1 step) (unsafe-fx+ p2 step)
+                      (let ([x (unsafe-vector*-ref v1 p1)]
+                            [y (unsafe-vector*-ref v2 p2)])
+                        body ...))])))))))
+
+;; The run an iterator is on, as its vector, the slot of the current element,
+;; and how many elements lie from there to the run's end in the direction of
+;; travel.
+(define (run-toward it d fwd?)
+  (define sg (sek-iter-segment it d))
+  (define o (segment-start sg))
+  (define n (segment-length sg))
+  (values (segment-vector sg) (if fwd? o (unsafe-fx+ o (unsafe-fx- n 1))) n))
 
 ;; ------------------------------------------------------------- builders
 
@@ -295,22 +355,48 @@
   (check-in-sek s dir)
   (in-sek/unchecked 'in-sek s dir))
 
+;; A run at a time, like the for-clause form: the state is the run's vector
+;; and a position in it, and the iterator is consulted once per run.
 (define (in-sek/unchecked who s dir)
-  (make-do-sequence (lambda ()
-                      (define w (watched s))
-                      (define birth (birth-of w))
-                      (define it (sek-iterator s dir))
-                      (values (lambda (_) (sek-iter-get it))
-                              (lambda (_)
-                                (check-unchanged! who w birth)
-                                (sek-iter-move! it dir)
-                                #f)
-                              #f
-                              (lambda (_)
-                                (check-unchanged! who w birth)
-                                (not (sek-iter-finished? it)))
-                              #f
-                              #f))))
+  (make-do-sequence
+   (lambda ()
+     (define w (watched s))
+     (define birth (birth-of w))
+     (define sv (short-vector s))
+     (define it (and (not sv) (sek-iterator s dir)))
+     (define step (if (eq? dir 'forward) 1 -1))
+     (define v sv)
+     (define j 0)
+     (define end 0)
+     (define (refill!)
+       (check-unchanged! who w birth)
+       (define-values (v2 j2 end2 more?)
+         (if it (sek-loop-refill it dir) (values #f 0 0 #f)))
+       (set! v v2)
+       (set! j j2)
+       (set! end end2)
+       more?)
+     (define more?
+       (cond
+         [sv
+          (define n (vector-length sv))
+          (set! j (if (eq? dir 'forward) 0 (unsafe-fx- n 1)))
+          (set! end (if (eq? dir 'forward) n -1))
+          (unsafe-fx< 0 n)]
+         [else (refill!)]))
+     (values (lambda (_)
+               (check-unchanged! who w birth)
+               (unsafe-vector*-ref v j))
+             (lambda (_)
+               (set! j (unsafe-fx+ j step))
+               (when (unsafe-fx= j end)
+                 (set! more? (refill!)))
+               #f)
+             #f
+             (lambda (_) more?)
+             #f
+             #f))))
+
 
 ;; Refill the loop state from the iterator's next run of contiguous storage.
 ;; Returns the vector, the position to read, the limit, and whether there is
@@ -343,20 +429,27 @@
       (with-syntax ([seq-expr seq-expr] [dir-expr dir-expr] [id id] [check check] [who who])
         #'[(id)
            (:do-in
-            ([(it dir w birth)
+            ([(it dir w birth v0 i0 n0)
               (let* ([s seq-expr] [d dir-expr])
                 (check s d)
-                (let ([w (watched s)])
-                  (values (sek-iterator s d) d w (birth-of w))))])
+                (let ([w (watched s)] [sv (short-vector s)])
+                  ;; a short persistent sequence is its own single run
+                  (if sv
+                      (let ([len (vector-length sv)])
+                        (if (eq? d 'forward)
+                            (values #f d w 0 sv 0 len)
+                            (values #f d w 0 sv (unsafe-fx- len 1) -1)))
+                      (values (sek-iterator s d) d w (birth-of w) #f 0 0))))])
             #t
-            ([v #f] [i 0] [n 0] [step 1])
+            ([v v0] [i i0] [n n0] [step (if (eq? dir 'forward) 1 -1)])
             #t
             ([(v* i* n* step* id)
               (begin
                 (check-unchanged! who w birth)
                 (if (if (unsafe-fx< step 0) (unsafe-fx> i n) (unsafe-fx< i n))
                     (values v i n step (unsafe-vector*-ref v i))
-                    (let-values ([(v2 i2 n2 ok?) (sek-loop-refill it dir)])
+                    (let-values ([(v2 i2 n2 ok?)
+                                  (if it (sek-loop-refill it dir) (values #f 0 0 #f))])
                       (if ok?
                           (values v2 i2 n2
                                   (if (eq? dir 'forward) 1 -1)
@@ -432,30 +525,74 @@
 (define-syntax-rule (search-elements who s dir (x i) [hit test] result default)
   (let* ([sq s]
          [d dir]
-         [w (watched sq)]
-         [birth (birth-of w)]
-         [it (sek-iterator sq d)])
-    (let loop ([i (if (eq? d 'forward) 0 (unsafe-fx- (sek-length sq) 1))])
-      (check-unchanged! who w birth)
-      (if (sek-iter-finished? it)
+         [sv (short-vector sq)])
+    (cond
+      [sv
+       (let ([n (vector-length sv)])
+         (search-run sv 0 n d (if (eq? d 'forward) 0 (unsafe-fx- n 1))
+                     (x i) [hit test] (void) result (lambda (i) default)))]
+      [else
+       (let* ([w (watched sq)]
+              [birth (birth-of w)]
+              [it (sek-iterator sq d)])
+         (let loop ([i0 (if (eq? d 'forward) 0 (unsafe-fx- (sek-length sq) 1))])
+           (check-unchanged! who w birth)
+           (if (sek-iter-finished? it)
+               default
+               (let* ([sg (sek-iter-segment-and-jump! it d)]
+                      [v (segment-vector sg)]
+                      [o (segment-start sg)]
+                      [e (unsafe-fx+ o (segment-length sg))])
+                 (search-run v o e d i0
+                             (x i) [hit test] (check-unchanged! who w birth) result loop)))))])))
+
+;; Search slots [o, e) of v in direction d, counting indices from i0; `check`
+;; runs after each test, and `next` gets the index after the last one.
+(define-syntax-rule (search-run v o e d i0 (x i) [hit test] check result next)
+  (if (eq? d 'forward)
+      (let run ([j o] [i i0])
+        (if (unsafe-fx= j e)
+            (next i)
+            (let* ([x (unsafe-vector*-ref v j)] [hit test])
+              check
+              (if hit result (run (unsafe-fx+ j 1) (unsafe-fx+ i 1))))))
+      (let run ([j (unsafe-fx- e 1)] [i i0])
+        (if (unsafe-fx< j o)
+            (next i)
+            (let* ([x (unsafe-vector*-ref v j)] [hit test])
+              check
+              (if hit result (run (unsafe-fx- j 1) (unsafe-fx- i 1))))))))
+
+;; The search for two sequences at once, forward, as `fold-elements2` pairs
+;; their elements.
+(define-syntax-rule (search-elements2 who s1 s2 (x y) [hit test] result default)
+  (let* ([w1 (watched s1)]
+         [birth1 (birth-of w1)]
+         [w2 (watched s2)]
+         [birth2 (birth-of w2)]
+         [it1 (sek-iterator s1 'forward)]
+         [it2 (sek-iterator s2 'forward)])
+    (let loop ()
+      (check-unchanged! who w1 birth1)
+      (check-unchanged! who w2 birth2)
+      (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
           default
-          (let* ([sg (sek-iter-segment-and-jump! it d)]
-                 [v (segment-vector sg)]
-                 [o (segment-start sg)]
-                 [e (unsafe-fx+ o (segment-length sg))])
-            (if (eq? d 'forward)
-                (let run ([j o] [i i])
-                  (if (unsafe-fx= j e)
-                      (loop i)
-                      (let* ([x (unsafe-vector*-ref v j)] [hit test])
-                        (check-unchanged! who w birth)
-                        (if hit result (run (unsafe-fx+ j 1) (unsafe-fx+ i 1))))))
-                (let run ([j (unsafe-fx- e 1)] [i i])
-                  (if (unsafe-fx< j o)
-                      (loop i)
-                      (let* ([x (unsafe-vector*-ref v j)] [hit test])
-                        (check-unchanged! who w birth)
-                        (if hit result (run (unsafe-fx- j 1) (unsafe-fx- i 1))))))))))))
+          (let*-values ([(v1 p1 n1) (run-toward it1 'forward #t)]
+                        [(v2 p2 n2) (run-toward it2 'forward #t)]
+                        [(k) (if (unsafe-fx< n1 n2) n1 n2)])
+            (let run ([j 0])
+              (cond
+                [(unsafe-fx= j k)
+                 (sek-iter-jump! it1 'forward k)
+                 (sek-iter-jump! it2 'forward k)
+                 (loop)]
+                [else
+                 (let* ([x (unsafe-vector*-ref v1 (unsafe-fx+ p1 j))]
+                        [y (unsafe-vector*-ref v2 (unsafe-fx+ p2 j))]
+                        [hit test])
+                   (check-unchanged! who w1 birth1)
+                   (check-unchanged! who w2 birth2)
+                   (if hit result (run (unsafe-fx+ j 1))))])))))))
 
 ;; The first element satisfying pred, or #f.  Use sek-find-index when an
 ;; element could itself be #f.
@@ -537,36 +674,13 @@
   (for-each2 'sek-for-each2 s1 s2 proc dir))
 
 (define (for-each2 who s1 s2 proc dir)
-  (define unchanged1! (watch who s1))
-  (define unchanged2! (watch who s2))
-  (define it1 (sek-iterator s1 dir))
-  (define it2 (sek-iterator s2 dir))
-  (let loop ()
-    (unless (or (sek-iter-finished? it1) (sek-iter-finished? it2))
-      (proc (sek-iter-get it1) (sek-iter-get it2))
-      (unchanged1!)
-      (unchanged2!)
-      (sek-iter-move! it1 dir)
-      (sek-iter-move! it2 dir)
-      (loop))))
+  (fold-elements2 who s1 s2 dir ([ignored (void)]) (x y) (proc x y) (void)))
 
 (define (sek-fold-left2 s1 s2 proc init)
   (check-sek 'sek-fold-left2 s1)
   (check-sek 'sek-fold-left2 s2)
   (check-procedure 'sek-fold-left2 proc 3)
-  (define unchanged1! (watch 'sek-fold-left2 s1))
-  (define unchanged2! (watch 'sek-fold-left2 s2))
-  (define it1 (sek-iterator s1 'forward))
-  (define it2 (sek-iterator s2 'forward))
-  (let loop ([acc init])
-    (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
-        acc
-        (let ([acc (proc acc (sek-iter-get it1) (sek-iter-get it2))])
-          (unchanged1!)
-          (unchanged2!)
-          (sek-iter-move! it1 'forward)
-          (sek-iter-move! it2 'forward)
-          (loop acc)))))
+  (fold-elements2 'sek-fold-left2 s1 s2 'forward ([acc init]) (x y) (proc acc x y)))
 
 ;; As in the reference, where fold_right2 is iter2 backward: the two
 ;; sequences are paired from their last elements, so when the lengths differ
@@ -575,19 +689,7 @@
   (check-sek 'sek-fold-right2 s1)
   (check-sek 'sek-fold-right2 s2)
   (check-procedure 'sek-fold-right2 proc 3)
-  (define unchanged1! (watch 'sek-fold-right2 s1))
-  (define unchanged2! (watch 'sek-fold-right2 s2))
-  (define it1 (sek-iterator s1 'backward))
-  (define it2 (sek-iterator s2 'backward))
-  (let loop ([acc init])
-    (if (or (sek-iter-finished? it1) (sek-iter-finished? it2))
-        acc
-        (let ([acc (proc (sek-iter-get it1) (sek-iter-get it2) acc)])
-          (unchanged1!)
-          (unchanged2!)
-          (sek-iter-move! it1 'backward)
-          (sek-iter-move! it2 'backward)
-          (loop acc)))))
+  (fold-elements2 'sek-fold-right2 s1 s2 'backward ([acc init]) (x y) (proc x y acc)))
 
 (define (sek-for-all2? s1 s2 pred)
   (check-sek 'sek-for-all2? s1)
@@ -596,45 +698,23 @@
   (for-all2 'sek-for-all2? s1 s2 pred))
 
 (define (for-all2 who s1 s2 pred)
-  (define unchanged1! (watch who s1))
-  (define unchanged2! (watch who s2))
-  (define it1 (sek-iterator s1 'forward))
-  (define it2 (sek-iterator s2 'forward))
-  (let loop ()
-    (cond
-      [(or (sek-iter-finished? it1) (sek-iter-finished? it2)) #t]
-      [(pred (sek-iter-get it1) (sek-iter-get it2))
-       (unchanged1!)
-       (unchanged2!)
-       (sek-iter-move! it1 'forward)
-       (sek-iter-move! it2 'forward)
-       (loop)]
-      [else #f])))
+  (search-elements2 who s1 s2 (x y) [miss (not (pred x y))] #f #t))
 
 (define (sek-exists2? s1 s2 pred)
   (check-sek 'sek-exists2? s1)
   (check-sek 'sek-exists2? s2)
   (check-procedure 'sek-exists2? pred 2)
-  (define unchanged1! (watch 'sek-exists2? s1))
-  (define unchanged2! (watch 'sek-exists2? s2))
-  (define it1 (sek-iterator s1 'forward))
-  (define it2 (sek-iterator s2 'forward))
-  (let loop ()
-    (cond
-      [(or (sek-iter-finished? it1) (sek-iter-finished? it2)) #f]
-      [(pred (sek-iter-get it1) (sek-iter-get it2)) #t]
-      [else
-       (unchanged1!)
-       (unchanged2!)
-       (sek-iter-move! it1 'forward)
-       (sek-iter-move! it2 'forward)
-       (loop)])))
+  (search-elements2 'sek-exists2? s1 s2 (x y) [hit (pred x y)] #t #f))
 
 (define (sek-equal? s1 s2 [same? equal?])
   (check-sek 'sek-equal? s1)
   (check-sek 'sek-equal? s2)
   (check-procedure 'sek-equal? same? 2)
   (and (= (sek-length s1) (sek-length s2)) (for-all2 'sek-equal? s1 s2 same?)))
+
+;; Sequences used directly, and `equal?` and hashing, traverse by runs too.
+(set-sek-traversals! (lambda (who s) (in-sek/unchecked who s 'forward))
+                     for-all2)
 
 ;; Whether s1 comes before s2 in lexicographic order: at the first position
 ;; where they differ, s1's element is less, or s1 runs out first.  Elements
@@ -645,26 +725,15 @@
   (check-sek 'sek<? s1)
   (check-sek 'sek<? s2)
   (check-procedure 'sek<? less-than? 2)
-  (define unchanged1! (watch 'sek<? s1))
-  (define unchanged2! (watch 'sek<? s2))
-  (define it1 (sek-iterator s1 'forward))
-  (define it2 (sek-iterator s2 'forward))
-  (let loop ()
-    (cond
-      [(sek-iter-finished? it2) #f]
-      [(sek-iter-finished? it1) #t]
-      [else
-       (define x (sek-iter-get it1))
-       (define y (sek-iter-get it2))
-       (cond
-         [(less-than? x y) #t]
-         [(less-than? y x) #f]
-         [else
-          (unchanged1!)
-          (unchanged2!)
-          (sek-iter-move! it1 'forward)
-          (sek-iter-move! it2 'forward)
-          (loop)])])))
+  ;; when neither differs first, the shorter sequence comes first
+  (define shorter? (< (sek-length s1) (sek-length s2)))
+  (search-elements2 'sek<? s1 s2 (x y)
+                    [order (cond
+                             [(less-than? x y) 'before]
+                             [(less-than? y x) 'after]
+                             [else #f])]
+                    (eq? order 'before)
+                    shorter?))
 
 ;; ------------------------------------------------------------- producers
 
@@ -860,6 +929,11 @@
 
 (define (copy-slice s start size)
   (define b (make-psek-builder))
+  (copy-range! b s start size)
+  (close-builder b s))
+
+;; Add the `size` elements of s from `start` on to builder b, a run at a time.
+(define (copy-range! b s start size)
   (unless (eqv? size 0)
     (define it (sek-iterator-at-sentinel s 'front))
     (sek-iter-reach! it start)
@@ -869,18 +943,17 @@
         (define k (min remaining (segment-length sg)))
         (define v (segment-vector sg))
         (define o (segment-start sg))
-        (for ([j (in-range k)])
-          (psek-builder-add! b (vector-ref v (+ o j))))
+        (for ([j (in-fx-range o (unsafe-fx+ o k))])
+          (psek-builder-add! b (unsafe-vector*-ref v j)))
         (sek-iter-jump! it 'forward k)
-        (loop (- remaining k)))))
-  (close-builder b s))
+        (loop (- remaining k))))))
 
-;; Neither of these modifies s; the in-place versions are esek-take! and
-;; esek-drop!.
-;; Insert, delete, index-of and the right-hand take and drop, which
-;; racket/treelist has and this did not.  Insert and delete go through split
-;; and append rather than rebuilding, so they cost a split and a concatenation
-;; rather than O(N).
+;; None of these modifies s; the in-place versions are esek-take! and
+;; esek-drop!.  On a persistent sequence, insert and delete go through split
+;; and append, so they cost a split and a concatenation rather than O(N), and
+;; take and drop are the one-sided splits.  On an ephemeral sequence all of
+;; them copy, as `sek-sub` does and for the same reason: sharing would cost s
+;; the ownership of its chunks.
 (define (psek-insert-at s i v)
   (define-values (before after) (psek-split s i))
   (append-psek 'sek-insert (psek-add before v) after))
@@ -890,9 +963,15 @@
   (define n (sek-length s))
   (unless (and (exact-nonnegative-integer? i) (<= i n))
     (raise-arguments-error 'sek-insert "index out of range" "index" i "length" n))
-  (if (psek? s)
-      (psek-insert-at s i v)
-      (psek-edit (psek-insert-at (esek-snapshot s) i v))))
+  (cond
+    [(psek? s) (psek-insert-at s i v)]
+    [else
+     (check-append-length 'sek-insert n 1)
+     (define b (make-psek-builder))
+     (copy-range! b s 0 i)
+     (psek-builder-add! b v)
+     (copy-range! b s i (- n i))
+     (close-builder b s)]))
 
 (define (psek-delete-at s i)
   (psek-append (psek-take s i) (psek-drop s (add1 i))))
@@ -902,9 +981,13 @@
   (define n (sek-length s))
   (unless (and (exact-nonnegative-integer? i) (< i n))
     (raise-arguments-error 'sek-delete "index out of range" "index" i "length" n))
-  (if (psek? s)
-      (psek-delete-at s i)
-      (psek-edit (psek-delete-at (esek-snapshot s) i))))
+  (cond
+    [(psek? s) (psek-delete-at s i)]
+    [else
+     (define b (make-psek-builder))
+     (copy-range! b s 0 i)
+     (copy-range! b s (add1 i) (- n i 1))
+     (close-builder b s)]))
 
 ;; `same?` receives the value being searched for first, as
 ;; `treelist-index-of` calls its `eql?`.
@@ -937,14 +1020,14 @@
   (check-split-index 'sek-take s n)
   (if (psek? s)
       (psek-take s n)
-      (psek-edit (psek-take (esek-snapshot s) n))))
+      (copy-slice s 0 n)))
 
 (define (sek-drop s n)
   (check-sek 'sek-drop s)
   (check-split-index 'sek-drop s n)
   (if (psek? s)
       (psek-drop s n)
-      (psek-edit (psek-drop (esek-snapshot s) n))))
+      (copy-slice s n (- (sek-length s) n))))
 
 (define (sek-copy s #:mode [mode 'copy])
   (check-sek 'sek-copy s)
@@ -1117,7 +1200,7 @@
 
 (define (build-esek n proc)
   (check-build 'build-esek n proc)
-  (psek-edit (psek-build n proc)))
+  (esek-build n proc))
 
 (define (make-psek n [v #f])
   (unless (exact-nonnegative-integer? n)

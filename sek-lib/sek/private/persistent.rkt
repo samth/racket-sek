@@ -47,6 +47,7 @@
          append-psek
          psek-split
          psek-build
+         build-tree
          make-psek-builder
          psek-builder-add!
          psek-builder-close
@@ -85,7 +86,7 @@
   #:constructor-name wrap-rep
   #:authentic #:sealed
   #:property prop:sequence
-  (lambda (s) (in-psek s))
+  (lambda (s) (elements s))
   #:property prop:stream
   (vector (lambda (s) (psek-empty? s))
           (lambda (s) (psek-first s))
@@ -104,11 +105,14 @@
      ;; Length is O(1) and settles most comparisons; the walk after it
      ;; allocates nothing, where converting to lists allocated both.
      (and (fx= (psek-length a) (psek-length b))
-          (for/and ([x (in-psek a)] [y (in-psek b)]) (rec x y))))
+          (let ([all2? (sek-all2?)])
+            (if all2?
+                (all2? 'equal? a b rec)
+                (for/and ([x (in-psek a)] [y (in-psek b)]) (rec x y))))))
    (define (hash-proc a rec)
-     (hash-elements (in-psek a) (psek-length a) rec))
+     (hash-elements (elements a) (psek-length a) rec))
    (define (hash2-proc a rec)
-     (hash-elements (in-psek a) (psek-length a) rec))]
+     (hash-elements (elements a) (psek-length a) rec))]
   #:property prop:custom-print-quotable 'never
   #:methods gen:custom-write
   [(define (write-proc s port mode)
@@ -140,21 +144,28 @@
 ;; which is the shape `make-level` wants.  Every chunk but the last is full, so
 ;; the density invariant holds by construction.
 (define (psek-build n proc)
-  (define k (capacity-at 0))
-  (define (chunk-at i len)
-    (chunk-build k len (lambda (j) (proc (+ i j))) no-owner))
   (cond
     [(eqv? n 0) empty-psek]
     [(<= n (short-threshold)) (wrap-rep (build-vector n proc))]
-    [(<= n k) (wrap-rep (make-level (chunk-at 0 n) #f (make-chunk k no-owner)))]
+    [else (wrap-rep (build-tree n proc no-owner))]))
+
+;; The tree of n > 0 elements, element i being (proc i), with every chunk
+;; owned by `owner`.  proc is called on 0 through n-1 in order.
+(define (build-tree n proc owner)
+  (define k (capacity-at 0))
+  (define (chunk-at i len)
+    (chunk-build k len (lambda (j) (proc (+ i j))) owner))
+  (cond
+    [(<= n k) (make-level (chunk-at 0 n) #f (make-chunk k owner))]
     [else
      (define rest (remainder n k))
      (define last-start (- n (if (eqv? rest 0) k rest)))
      (define front (chunk-at 0 k))
      (define middle
        (for/fold ([t #f]) ([i (in-range k last-start k)])
-         (pt-push-back t (chunk-at i k) k 1 no-owner)))
-     (wrap-rep (make-level front middle (chunk-at last-start (- n last-start))))]))
+         (pt-push-back t (chunk-at i k) k 1 owner)))
+     (define back (chunk-at last-start (- n last-start)))
+     (make-level front middle back)]))
 
 ;; The same idea as `psek-build`, for callers that do not know the length in
 ;; advance: collect elements into a chunk-sized buffer and emit a whole chunk
@@ -262,15 +273,11 @@
                  (set! i (add1 i))))
   v)
 
+;; A compact vector holds at most T elements, and T is at most the leaf
+;; capacity, so it always fits in one chunk.
 (define (vector->tree v)
   (define k (capacity-at 0))
-  (define n (vector-length v))
-  (cond
-    [(eqv? n 0) #f]
-    [(<= n k) (make-level (chunk-of-vector v k unit-measure no-owner) #f (make-chunk k no-owner))]
-    [else
-     (for/fold ([t #f]) ([x (in-vector v)])
-       (pt-push-back t x 1 0 no-owner))]))
+  (make-level (chunk-of-vector v k unit-measure no-owner) #f (make-chunk k no-owner)))
 
 ;; The rep of s as a tree, converting the compact form if necessary.
 (define (rep->tree r)
@@ -516,8 +523,17 @@
      (pt-for-each r 0 (lambda (x) (psek-builder-add! b (proc x))))
      (psek-builder-close b)]))
 
-;; Streaming traversal: `for` over a sequence walks the tree directly instead
-;; of building an intermediate list.
+;; The elements as a Racket sequence: what `for` gets when it is handed a
+;; persistent sequence directly, and what equality and hashing walk.
+(define (elements s)
+  (define r (psq-rep s))
+  (define f (sek-sequencer))
+  (cond
+    [(vector? r) (in-vector r)]
+    [f (f 'in-psek s)]
+    [else (in-psek s)]))
+
+;; The fallback: a reader that walks the tree directly.
 (define (in-psek s)
   (define r (psq-rep s))
   (cond

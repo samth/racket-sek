@@ -33,6 +33,9 @@
          check-procedure
          check-direction
          check-side
+         sek-sequencer
+         sek-all2?
+         set-sek-traversals!
          sek-configure!
          (struct-out exn:fail:sek))
 
@@ -151,6 +154,23 @@
 (define (check-side who side)
   (unless (or (eq? side 'front) (eq? side 'back))
     (raise-argument-error who "(or/c 'front 'back)" side)))
+
+;; How a sequence is traversed when it is used directly as a Racket sequence,
+;; and by `equal?` and hashing.  generic.rkt installs the traversals by runs
+;; that `in-sek` and the folds use; the modules that define the sequences load
+;; before it and cannot name them.  Until they are installed those modules
+;; fall back to the reader in iterate.rkt, which only code that loads them
+;; without generic.rkt sees.
+;;
+;;   sequencer : who seq -> sequence?       the elements as a Racket sequence
+;;   all2?     : who seq seq proc -> any    whether proc holds of each pair
+(define sequencer #f)
+(define all2? #f)
+(define (sek-sequencer) sequencer)
+(define (sek-all2?) all2?)
+(define (set-sek-traversals! s a)
+  (set! sequencer s)
+  (set! all2? a))
 
 ;; Settings must be chosen before any sequence is built; mixing capacities
 ;; within one structure breaks the density invariant checks.

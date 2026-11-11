@@ -636,11 +636,11 @@ The @racket[size] elements of @racket[s] starting at @racket[start], the first
 @racket[sek-copy] is the identity on a persistent sequence and
 @racket[esek-copy] on an ephemeral one.  None of them modifies @racket[s].
 
-@racket[sek-take] and @racket[sek-drop] take @math{O(K log_K N + log_K^2 N)}
-time.  So does @racket[sek-sub] on a @tech{persistent sequence}; on an
-@tech{ephemeral sequence} it copies the slice instead, in
-@math{O(size + K log_K N)} time, which does not make later updates to
-@racket[s] more expensive.}
+On a @tech{persistent sequence}, @racket[sek-sub], @racket[sek-take] and
+@racket[sek-drop] take @math{O(K log_K N + log_K^2 N)} time.  On an
+@tech{ephemeral sequence} they copy the elements of the result instead, in
+@math{O(M + K log_K N)} time for a result of length @math{M}, which does not
+make later updates to @racket[s] more expensive.}
 
 @deftogether[(
 @defproc[(sek-take-right [s sek?] [n exact-nonnegative-integer?]) sek?]
@@ -666,8 +666,9 @@ or without the last @racket[n] elements, respectively.  Neither modifies
 Produce a sequence like @racket[s], except that @racket[v] is inserted before
 the element at @racket[i], or that the element at @racket[i] is removed.  If
 @racket[i] is @racket[(sek-length s)] then @racket[sek-insert] adds
-@racket[v] at the end.  Neither modifies @racket[s], and each takes
-@math{O(K log_K N + log_K^2 N)} time.
+@racket[v] at the end.  Neither modifies @racket[s].  Each takes
+@math{O(K log_K N + log_K^2 N)} time on a @tech{persistent sequence}, and
+@math{O(N)} time on an @tech{ephemeral sequence}, whose elements it copies.
 
 @examples[
 #:eval the-eval

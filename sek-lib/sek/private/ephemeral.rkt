@@ -41,6 +41,7 @@
                      [esq-iback esek-iback]
                      [esq-back esek-back])
          make-esek
+         esek-build
          esek
          esek-length
          esek-empty?
@@ -95,7 +96,7 @@
                         [folded #:mutable])
   #:authentic #:sealed
   #:property prop:sequence
-  (lambda (e) (in-esek e))
+  (lambda (e) (elements e))
   #:property prop:serializable
   (make-serialize-info (lambda (v) (vector (esek->vector v)))
                        (cons 'deserialize-esek
@@ -108,11 +109,14 @@
   #:methods gen:equal+hash
   [(define (equal-proc a b rec)
      (and (fx= (esek-length a) (esek-length b))
-          (for/and ([x (in-esek a)] [y (in-esek b)]) (rec x y))))
+          (let ([all2? (sek-all2?)])
+            (if all2?
+                (all2? 'equal? a b rec)
+                (for/and ([x (in-esek a)] [y (in-esek b)]) (rec x y))))))
    (define (hash-proc a rec)
-     (hash-elements (in-esek a) (esek-length a) rec))
+     (hash-elements (elements a) (esek-length a) rec))
    (define (hash2-proc a rec)
-     (hash-elements (in-esek a) (esek-length a) rec))]
+     (hash-elements (elements a) (esek-length a) rec))]
   #:property prop:custom-print-quotable 'never
   #:methods gen:custom-write
   [(define (write-proc e port mode)
@@ -135,10 +139,19 @@
 (define (make-esek [n 0] [v #f])
   (unless (exact-nonnegative-integer? n)
     (raise-argument-error 'make-esek "exact-nonnegative-integer?" n))
+  (esek-build n (lambda (_) v)))
+
+;; An ephemeral sequence of n elements, element i being (proc i), built a
+;; chunk at a time as `psek-build` builds, but with every chunk owned by the
+;; new sequence, so that its own later writes copy nothing.  proc is called on
+;; 0 through n-1 in order.
+(define (esek-build n proc)
   (define id (fresh-id!))
-  (define e (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 1 #f))
-  (for ([_ (in-range n)]) (esek-add! e v))
-  e)
+  (cond
+    [(eqv? n 0) (esq id empty-chunk empty-chunk #f empty-chunk empty-chunk 1 #f)]
+    [else
+     (define t (build-tree n proc id))
+     (esq id (lvl-front t) empty-chunk (lvl-middle t) empty-chunk (lvl-back t) 1 #f)]))
 
 (define (esek . xs)
   (list->esek xs))
@@ -697,10 +710,15 @@
                    (set! i (add1 i))))
   v)
 
-;; Streaming traversal: what `for` gets when it is handed an ephemeral
-;; sequence directly, and what equality and hashing walk.  Like an iterator,
-;; it raises when the sequence has been updated since the traversal began; the
-;; reader alone would go on reading the old chunks.
+;; The elements as a Racket sequence: what `for` gets when it is handed an
+;; ephemeral sequence directly, and what equality and hashing walk.
+(define (elements e)
+  (define f (sek-sequencer))
+  (if f (f 'in-esek e) (in-esek e)))
+
+;; The fallback: a reader over the five parts.  Like an iterator, it raises
+;; when the sequence has been updated since the traversal began; the reader
+;; alone would go on reading the old chunks.
 (define (in-esek e)
   (reader->sequence
    (lambda ()
@@ -719,12 +737,13 @@
   (provide deserialize-esek)
   (define deserialize-esek
     (make-deserialize-info (lambda (v)
-                             (define e (make-esek))
-                             (for ([x (in-vector v)]) (esek-add! e x))
-                             e)
+                             (esek-build (vector-length v) (lambda (i) (vector-ref v i))))
                            (lambda () (error 'deserialize-esek "cycles not supported")))))
 
+;; Pushed one at a time, which leaves the sequence owning its chunks, and
+;; which for a list is as fast as building: there is no index to build by.
 (define (list->esek xs)
+  (unless (list? xs) (raise-argument-error 'list->esek "list?" xs))
   (define e (make-esek))
   (for ([x (in-list xs)])
     (esek-add! e x))

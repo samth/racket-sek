@@ -80,22 +80,19 @@
 ;; the state of every chunk reachable from a persistent sequence.
 (define no-owner #f)
 
-(define id-counter 0)
 ;; An ownership identifier is compared against a chunk's on every push, pop
 ;; and write, and the only thing ever asked of it is whether two of them are
-;; the same one.  It used to be a counter, which made that comparison `eqv?`
-;; -- and `eqv?` on two values the compiler cannot prove are fixnums is a
-;; pointer test, three tag tests and a call to the generic `eqv?`, because a
-;; counter may in principle reach a bignum.  A freshly allocated record can
-;; only be compared with `eq?`, which is one instruction.  The counter is kept
-;; inside it so an id still prints as something a person can follow.
-(struct/unchecked owner-id (n) #:authentic #:sealed
+;; the same one.  So it is a freshly allocated record, compared with `eq?`,
+;; which is one instruction; a counter would need `eqv?`, which on two values
+;; the compiler cannot prove are fixnums is a pointer test, three tag tests
+;; and a call.  Allocation also makes ids distinct across threads with no
+;; shared state.
+(struct/unchecked owner-id () #:authentic #:sealed
   #:property prop:custom-write
-  (lambda (o port mode) (fprintf port "#<owner ~a>" (owner-id-n o))))
+  (lambda (o port mode) (fprintf port "#<owner ~a>" (eq-hash-code o))))
 
 (define (fresh-id!)
-  (set! id-counter (add1 id-counter))
-  (owner-id id-counter))
+  (owner-id))
 
 ;; ------------------------------------------------------------------- layout
 

@@ -276,3 +276,78 @@
   (esek-add! b 'y)
   (check-equal? (esek-length a) 301)
   (check-equal? (esek->list b) '(y)))
+
+;; The two-sequence operations walk matching runs of both sequences, which
+;; end at different places when the lengths or the flavors differ.
+(test-case "two-sequence operations agree with lists at every pair of lengths"
+  (for* ([n (in-list '(0 1 33 129 700))]
+         [m (in-list '(0 5 128 300 700))]
+         [a (in-list (both (range n)))]
+         [b (in-list (both (range 1000 (+ 1000 m))))])
+    (define xs (range n))
+    (define ys (range 1000 (+ 1000 m)))
+    (define k (min n m))
+    (define pairs (map list (take xs k) (take ys k)))
+    (define back-pairs (map list (take-right xs k) (take-right ys k)))
+    (define seen '())
+    (sek-for-each2 a b (lambda (x y) (set! seen (cons (list x y) seen))))
+    (check-equal? (reverse seen) pairs)
+    (set! seen '())
+    (sek-for-each2 a b (lambda (x y) (set! seen (cons (list x y) seen))) 'backward)
+    (check-equal? seen back-pairs)
+    (check-equal? (sek->list (sek-map2 a b list)) pairs)
+    (check-equal? (sek-fold-left2 a b (lambda (acc x y) (cons (list x y) acc)) '()) (reverse pairs))
+    (check-equal? (sek-fold-right2 a b (lambda (x y acc) (cons (list x y) acc)) '()) back-pairs)
+    (check-equal? (sek-for-all2? a b <) #t)
+    (check-equal? (sek-exists2? a b (lambda (x y) (= (+ x 1000) y (+ 1000 (sub1 k))))) (> k 0))
+    (check-equal? (sek-equal? a b) (= n m 0))
+    (check-equal? (sek<? a b <) (> m 0))
+    (check-equal? (sek<? b a <) (and (= m 0) (> n 0)))
+    (check-equal? (sek-equal? a (list->esek xs)) #t)
+    (check-equal? (sek<? a (list->psek xs) <) #f)))
+
+(test-case "a sequence used directly, equal? and hashing see every element"
+  (for ([n (in-list conversion-lengths)])
+    (define xs (range n))
+    (for ([s (in-list (both xs))])
+      (check-equal? (for/list ([x s]) x) xs)
+      (check-equal? (sequence->list s) xs)
+      (define same (if (psek? s) (for/psek ([x (in-list xs)]) x) (for/esek ([x (in-list xs)]) x)))
+      (check-true (equal? s same))
+      (check-equal? (equal-hash-code s) (equal-hash-code same))
+      (unless (zero? n)
+        (check-false (equal? s (sek-map same (lambda (x) (if (= x (sub1 n)) 'other x)))))))))
+
+;; On an ephemeral sequence these copy, so the argument keeps its contents
+;; and the ownership of its chunks.
+(test-case "sek-take, sek-drop, sek-insert and sek-delete build a new sequence"
+  (for* ([n (in-list conversion-lengths)]
+         [s (in-list (both (range n)))]
+         [i (in-list (remove-duplicates (list 0 (quotient n 3) (quotient n 2) n)))])
+    (define xs (range n))
+    (check-equal? (sek->list (sek-take s i)) (take xs i))
+    (check-equal? (sek->list (sek-drop s i)) (drop xs i))
+    (check-equal? (sek->list (sek-take-right s i)) (take-right xs i))
+    (check-equal? (sek->list (sek-drop-right s i)) (drop-right xs i))
+    (check-equal? (sek->list (sek-insert s i 'new)) (append (take xs i) '(new) (drop xs i)))
+    (when (< i n)
+      (check-equal? (sek->list (sek-delete s i)) (append (take xs i) (drop xs (add1 i)))))
+    (check-equal? (psek? (sek-insert s i 'new)) (psek? s))
+    (check-equal? (sek->list s) xs)))
+
+(test-case "the ephemeral constructors agree at every length"
+  (for ([n (in-list conversion-lengths)])
+    (define xs (range n))
+    (for ([e (in-list (list (list->esek xs) (build-esek n values) (sequence->esek xs)
+                            (for/esek ([x (in-list xs)]) x)))])
+      (check-equal? (esek->list e) xs)
+      (esek-add! e 'end)
+      (esek-cons! e 'front)
+      (unless (zero? n) (esek-set! e (add1 (quotient n 2)) (quotient n 2)))
+      (check-equal? (esek->list e) (append '(front) xs '(end))))
+    (define m (make-esek n 'x))
+    (check-equal? (esek->list m) (make-list n 'x))
+    (unless (zero? n)
+      (esek-set! m (sub1 n) 'y)
+      (check-equal? (esek-last m) 'y)))
+  (check-exn #rx"^list->esek: " (lambda () (list->esek 'x))))
