@@ -43,7 +43,7 @@ benchmarks and conformance harness in `sek-test/tests/sek/`.
 | `sek-lib/sek/private/ptree.rkt` | §3.1–3.2 | the Sek tree: push, pop, get, set, split, concat, merge |
 | `sek-lib/sek/private/persistent.rkt` | §3.5 | `psek`, including the compact representation of short sequences |
 | `sek-lib/sek/private/ephemeral.rkt` | §3.6 | `esek`, including the inner front/back chunks |
-| `sek-lib/sek/private/iterate.rkt` | — | lazy left-to-right traversal, behind `prop:sequence` |
+| `sek-lib/sek/private/iterate.rkt` | — | a lazy left-to-right reader, which `equal?` and `for` use only when `generic.rkt` is not loaded |
 | `sek-lib/sek/private/segment.rkt` | `Segment` | runs of contiguous storage, used internally |
 | `sek-lib/sek/private/iterator.rkt` | `Iterator` (§5.4) | first-class cursors, with invalidation checking |
 | `sek-lib/sek/private/generic.rkt` | `Generic`, `PublicSignature` | the derived operation surface |
@@ -190,10 +190,10 @@ both, and the two traces — the result of every command plus the full contents
 of a dozen sequences after it — must be identical.
 
 ```
-cd sek-test/tests/sek/conformance && ./build.sh && ./run.sh 1 8 700
+cd sek-test/tests/sek/conformance && ./build.sh && ./run-all.sh 1 8 700
 ```
 
-Ten configurations of the tunable settings, eight seeds each, all match.
+`run-all.sh` runs the seeds at ten configurations of the tunable settings.
 
 ## Benchmarks
 
@@ -345,7 +345,7 @@ OCaml library. Agreement with the reference is not a claim, it is checked:
 same generated script and compares the traces — the result of every operation
 and the full contents of a dozen sequences after each one. See the README there
 for the harness, the operation-by-operation mapping between the two APIs, and
-what has been checked. The remaining differences:
+the configurations it runs at. The remaining differences:
 
 * Sequences are parameterized by neither an element type nor a `default` value;
   logically empty slots get a private sentinel instead, which removes the

@@ -1,8 +1,8 @@
 # Conformance with the reference implementation
 
 This directory checks this library against the authors' OCaml library,
-[Sek](https://gitlab.inria.fr/fpottier/sek/) — not by reading it, but by
-running both on the same input and comparing.
+[Sek](https://gitlab.inria.fr/fpottier/sek/), by running both on the same
+input and comparing.
 
 ```sh
 ./build.sh          # clone and build the OCaml reference (needs ocamlfind)
@@ -23,12 +23,16 @@ replayed at several capacities:
 SEK_LEAF=2 SEK_NODE=2 SEK_THRESHOLD=2 ./run.sh 1 8 700
 ```
 
-## What has been checked
+## What is checked
 
-Ten configurations — `(leaf, node, threshold)` of (128,16,32), (2,2,2),
-(3,2,2), (4,4,4), (5,3,5), (8,4,6), (16,8,12), (32,4,8), plus
-`overwrite_empty_slots = false` and `check_iterator_validity = false` — each at
-eight seeds of ~820 commands. Every trace matched.
+`run-all.sh` runs the seeds at ten configurations: `(leaf, node, threshold)`
+of (128,16,32), (2,2,2), (3,2,2), (4,4,4), (5,3,5), (8,4,6), (16,8,12) and
+(32,4,8), and the default shape with `overwrite_empty_slots = false` and with
+`check_iterator_validity = false`.  Every trace must match at each.
+
+```sh
+./run-all.sh 1 8 700
+```
 
 The scripts cover push, pop, peek, get, set, length, clear, assign, copy in
 both modes, concat, append, split, carve, take, drop, sub, fill, blit,
@@ -121,13 +125,10 @@ segments.  The driver requires the full set from `sek/private/iterator` and
   a private sentinel does that job, so the argument does not appear.
 * **`sort` is stable**, so it also serves as `stable_sort`.
 * **`sek-sub` on a persistent sequence always shares.** The OCaml version
-  copies a slice of at most T elements and shares a longer one; splitting is
-  faster here at every size, from 16 elements (0.002 ms against 0.003) to half
-  a million (0.002 ms against 2.1), and `psek-take` normalizes a short result
-  into the compact vector anyway. Same result either way.
+  copies a slice of at most T elements and shares a longer one. The result is
+  the same either way.
 * **`psek-edit` and `esek-snapshot` do not copy the front and back chunks**,
-  where the OCaml versions do. Observationally identical, and measurably
-  better: a loop that snapshots after every push runs ten times faster this
-  way (see `bench/README.md`), because the next push usually extends a chunk
-  monotonically and copies nothing.
+  where the OCaml versions do. The results are the same, and a loop that
+  snapshots after every push copies nothing when the next push extends a
+  chunk monotonically.
 * **`threshold = 0`** is supported here and not there, as described above.
