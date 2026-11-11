@@ -172,19 +172,19 @@
          (try-it (mtl-rest x) (mtl-cons (mutable-treelist-first x) y) z))))
   (try-it (one-to n) (mtl-empty) (mtl-empty)))
 
-;; esek: an ephemeral sequence, copied the same way.  esek-copy shares its
+;; esek: an ephemeral sequence, copied the same way.  esek-copy in share mode shares its
 ;; chunks and separates them lazily, and esek-append! takes a persistent
 ;; second argument without consuming it, so neither copy is a deep one.
 (define (es-rest e)
-  (define r (esek-copy e))
+  (define r (esek-copy e #:mode 'share))
   (esek-pop-front! r)
   r)
 (define (es-cons x e)
-  (define r (esek-copy e))
+  (define r (esek-copy e #:mode 'share))
   (esek-push-front! r x)
   r)
 (define (es-append a b)
-  (define r (esek-copy a))
+  (define r (esek-copy a #:mode 'share))
   (sek-for-each b (lambda (x) (esek-push-back! r x)))
   r)
 (define-nqueens nqueens/esek ((make-esek) esek-empty? esek-first es-rest es-cons es-append))

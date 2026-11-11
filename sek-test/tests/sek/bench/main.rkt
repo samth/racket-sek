@@ -91,7 +91,7 @@
 ;; A destructive operation needs an instance of its own.  For a persistent
 ;; structure this is free; for an ephemeral one the copy is charged to the
 ;; measurement, which is the honest way round -- it is what using a mutable
-;; structure in a persistent way actually costs.  `esek-copy` is O(1), so for
+;; structure in a persistent way actually costs.  `esek-copy` in share mode is O(1), so for
 ;; sek it is nearly free; `mutable-treelist-copy` is about 0.5 ns per element
 ;; and a gvector's is about 1.4.
 (define (fresh-of i s) ((impl-fresh i) s))
@@ -118,7 +118,7 @@
       #:filter sek-filter
       #:map sek-map
       #:snapshot esek-snapshot
-      #:fresh esek-copy))
+      #:fresh (lambda (e) (esek-copy e #:mode 'share))))
 
 (define psek-impl
   (mk "psek" 'persistent
