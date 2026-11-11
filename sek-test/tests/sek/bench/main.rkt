@@ -95,6 +95,11 @@
 ;; sek it is nearly free; `mutable-treelist-copy` is about 0.5 ns per element
 ;; and a gvector's is about 1.4.
 (define (fresh-of i s) ((impl-fresh i) s))
+;; Append b to a fresh instance of a, leaving b as it was.  `esek-append!`
+;; empties an ephemeral second argument, so that one is copied too; the other
+;; destructive appends only read theirs.
+(define (append-keeping i a b)
+  ((impl-append i) (fresh-of i a) (if (esek? b) (fresh-of i b) b)))
 
 (define esek-impl
   (mk "esek" 'ephemeral
@@ -929,7 +934,7 @@
    "concat: append two sequences of n/2 elements, ns per concatenation"
    sizes
    (append
-    ;; A destructive append consumes its left argument, so the ephemeral rows
+    ;; A destructive append changes its left argument, so the ephemeral rows
     ;; pay for a fresh copy of it -- which is what appending to a mutable
     ;; sequence and keeping the original actually costs.
     (for/list ([i (in-list all-impls)])
@@ -938,7 +943,7 @@
               (define ap (impl-append i))
               (define a (build-of i (quotient n 2)))
               (define b (build-of i (quotient n 2)))
-              (and ap (measure 1 (lambda () (ap (fresh-of i a) b)) #:max-reps 2000)))))
+              (and ap (measure 1 (lambda () (append-keeping i a b)) #:max-reps 2000)))))
     (list
      (cons "  vector"
            (for/list ([n (in-list sizes)])

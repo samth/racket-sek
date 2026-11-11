@@ -305,9 +305,9 @@
               (for/list ([v (in-list variants)])
                 (define m (case v [("2") 2] [("n/10") (quotient n 10)] [else n]))
                 (define other (if (equal? v "self") s (build-of i m)))
-                ;; a destructive append eats its left argument, so it gets a
-                ;; copy -- and is charged for it
-                (measure 1 #:max-reps 2000 (lambda () (ap (fresh-of i s) other)))))))
+                ;; a destructive append changes its left argument, so it
+                ;; gets a copy -- and is charged for it
+                (measure 1 #:max-reps 2000 (lambda () (append-keeping i s other)))))))
     (list
      (cons "  vector"
            (let ([v (build-vector n values)])

@@ -2,7 +2,7 @@
 ;; Torn states: fault injection for the memory-safety guards, driven by
 ;; aufheben (https://github.com/samth/aufheben).
 ;;
-;; The argument in THREADS.md is that a race can leave a field of the
+;; The argument in sek-doc/THREADS.md is that a race can leave a field of the
 ;; structure holding a wrong value, but never a value of the wrong kind, and
 ;; that the guards keep every unchecked operation's precondition true whatever
 ;; those values are.  Races reach such states rarely; this test makes them

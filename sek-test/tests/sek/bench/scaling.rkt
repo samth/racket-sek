@@ -43,8 +43,12 @@
 
 (struct row (name blurb needs make) #:transparent)
 
+;; The k-th index into a sequence of length n.  The step is 0.618 of n, so
+;; that even a handful of operations -- all a structure with a linear
+;; operation gets at the larger sizes -- lands all over the sequence.
 (define (index-for n k)
-  (fxmodulo (fx* k 977) (fxmax 1 n)))
+  (define len (fxmax 1 n))
+  (fxmodulo (fx* (fx+ k 1) (fx+ 1 (fxquotient (fx* len 618) 1000))) len))
 
 (define ROWS
   (list (row "ref"

@@ -51,10 +51,9 @@ benchmarks and conformance harness in `sek-test/tests/sek/`.
 | `sek-lib/sek/private/unchecked.rkt` | — | the only module with unchecked operations, and the checked and jitter builds |
 | `sek-test/tests/sek/` | §4.2 | randomized differential testing against list/vector references |
 | `sek-test/tests/sek/bench/` | §4.3 | benchmarks against Racket's sequences and against the OCaml library |
-| `agent-docs/` | — | notes for coding agents on validating a change |
 | `sek-test/tests/sek/conformance/` | — | differential testing against the OCaml library itself |
 | `sek-test/tests/sek/stress/` | — | a fuzzer that races threads on shared sequences |
-| `THREADS.md` | — | what threads may do with a sequence, and why we believe it is safe |
+| `sek-doc/THREADS.md` | — | what threads may do with a sequence, and why we believe it is safe |
 
 The paper describes the data structure; segments, iterators, the derived
 operations and the conformance harness follow the authors' OCaml library,
@@ -226,7 +225,7 @@ in nanoseconds per operation unless a unit is given:
 | `set` at a random index | 96.0 | 966 | 416 | 51.6 | 56.9 | 22 ms |
 | construction, per element | 7.7 | 8.0 | 110 | 123 | 124 | 82.1 |
 | `map`, per element | 11.2 | 10.3 | 107 | 39.8 | 89.1 | 24.8 |
-| append two halves | 246 | 798 | 1919 | 2.9 ms | 61 ms | 12 ms |
+| append two halves | 1180 | 801 | 1978 | 3.2 ms | 60 ms | 12 ms |
 | split at a random index | 422 | 234 | 447 | 15 ms | 54 ms | 9.4 ms |
 | one change, then a snapshot | 70.2 | — | — | 3.4 ms | — | — |
 

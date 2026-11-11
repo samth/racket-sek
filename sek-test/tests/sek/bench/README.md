@@ -68,7 +68,10 @@ does not exist.  Two devices keep the linear rows affordable:
 
 A destructive operation needs an instance of its own, so the ephemeral rows of
 `concat`, `split` and the slicing scenarios pay for a copy: `esek-copy` in
-share mode, which is O(1), and a full copy for the others.
+share mode, which is O(1), and a full copy for the others.  `esek-append!`
+also empties an ephemeral second argument, so the `esek` rows of `concat` and
+`bulk-append` copy both arguments; neither copy then owns its chunks, and the
+append copies the chunks it writes to.
 
 In `workloads.rkt`, `n/a` marks an implementation whose linear operations
 would make the script quadratic at that size.
@@ -109,7 +112,7 @@ At a million elements, nanoseconds per operation unless a unit is given:
 | construction, per element | 7.7 | 8.0 | 110 | 123 | 124 | 82.1 | 18.3 |
 | `map`, per element | 11.2 | 10.3 | 107 | 39.8 | 89.1 | 24.8 | 17.6 |
 | `filter`, per input element | 18.2 | 17.3 | 44.4 | 29.8 | 45.8 | 19.5 | 24.1 |
-| append two halves | 246 | 798 | 1919 | 2.9 ms | 61 ms | 12 ms | 15 ms |
+| append two halves | 1180 | 801 | 1978 | 3.2 ms | 60 ms | 12 ms | 14 ms |
 | split at a random index | 422 | 234 | 447 | 15 ms | 54 ms | 9.4 ms | 19 ms |
 | slice, on a 10% grid | 692 | 428 | 650 | 21 ms | 60 ms | 21 ms | 26 ms |
 | one change, then a snapshot | 70.2 | — | — | 3.4 ms | — | — | — |
@@ -214,11 +217,11 @@ The fitted slopes from `scaling.rkt`, over 1k to 1M elements:
 
 | | esek | psek | treelist | mutable-treelist | gvector | array |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `ref` | 0.04 | 0.04 | 0.02 | 0.01 | 0.00 | 0.01 |
-| `set` | 0.04 | 0.04 | 0.10 | 0.01 | 0.00 | 0.00 |
-| push, then pop | 0.00 | −0.03 | 0.08 | 0.07 | 0.00 | 0.00 |
-| split, then append | 0.07 | 0.09 | 0.15 | 1.21 | 1.14 | 1.19 |
-| checkpoint | 0.01 | 0.01 | 0.01 | 1.17 | 1.25 | 1.14 |
+| `ref` | 0.06 | 0.06 | 0.01 | 0.01 | 0.00 | 0.01 |
+| `set` | 0.07 | 0.07 | 0.10 | 0.01 | 0.00 | 0.00 |
+| push, then pop | 0.01 | −0.03 | 0.09 | 0.08 | 0.00 | 0.00 |
+| split, then append | 0.10 | 0.12 | 0.17 | 1.16 | 1.11 | 1.20 |
+| checkpoint | 0.01 | 0.01 | 0.01 | 1.16 | 1.24 | 1.14 |
 
 ### Against the OCaml library
 
@@ -240,7 +243,7 @@ Racket ÷ OCaml, so a ratio above one means this library is slower.
 | queue, persistent | 29.0 | 39.8 | 0.73 |
 | construction, ephemeral, per element | 7.67 | 8.91 | 0.86 |
 | construction, persistent, per element | 7.97 | 8.98 | 0.89 |
-| concat | 798 | 890 | 0.90 |
+| concat | 801 | 890 | 0.90 |
 | queue, ephemeral | 17.3 | 16.8 | 1.03 |
 | push and pop at the front, ephemeral | 18.0 | 16.6 | 1.08 |
 | traversal through an iterator, per element | 14.2 | 12.0 | 1.18 |
