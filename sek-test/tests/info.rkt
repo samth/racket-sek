@@ -10,11 +10,3 @@
   '("sek/bench"
     "sek/conformance"
     "sek/stress"))
-
-;; The benchmarks compare against `gvector-append!`, which is not in a released
-;; data-lib -- it exists only on the gvector branch they were written to
-;; measure.  So they cannot be compiled on a stock installation, and are
-;; shipped as source.  Run them with a data-lib that has it; see
-;; sek/bench/README.md.
-(define compile-omit-paths
-  '("sek/bench"))

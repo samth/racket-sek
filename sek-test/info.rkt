@@ -13,7 +13,9 @@
 (define build-deps '(["sek-lib" #:version "1.0"]
                      "sek-doc"
                      "racket-index"
-                     "rackunit-lib"))
+                     "rackunit-lib"
+                     ;; the benchmarks compare against gvectors
+                     "data-lib"))
 
 (define update-implies '("sek-lib"))
 

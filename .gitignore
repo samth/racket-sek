@@ -6,3 +6,6 @@ sek-test/tests/sek/bench/bench-ocaml
 sek-test/tests/sek/conformance/build/
 sek-test/tests/sek/conformance/sek-ocaml/
 sek-test/tests/sek/conformance/driver
+sek-test/tests/sek/bench/results*.json
+sek-test/tests/sek/bench/results*.txt
+sek-test/tests/sek/bench/report*.html
