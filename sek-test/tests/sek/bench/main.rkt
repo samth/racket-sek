@@ -160,13 +160,9 @@
       #:filter (lambda (t p) (treelist-filter p t))
       #:map treelist-map))
 
-;; Shortening a mutable treelist at the front and then copying or snapshotting
-;; it used to raise `vector-length: contract violation`; that was a bug in
-;; `treelist-copy-for-mutable`, which assumed every node was a bare vector and
-;; met a node carrying a size vector.  Fixed in racket/collects/racket/
-;; treelist.rkt, with a regression test in racket-test-core's treelist.rktl,
-;; and needs a Racket newer than 9.3.0.2 to run the split-parts, take-drop and
-;; slice rows below.
+;; The split-parts, take-drop and slice rows need a Racket newer than 9.3.0.2:
+;; before that, copying or snapshotting a mutable treelist that had been
+;; shortened at the front raised `vector-length: contract violation`.
 (define mtreelist-impl
   (mk "mutable-treelist" 'ephemeral
       #:empty (lambda (_) (make-mutable-treelist 0))
