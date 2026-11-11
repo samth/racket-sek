@@ -75,14 +75,11 @@
          ;; internals used by the iterator and the derived operations
          esek-ref/who
          append-esek!
-         esek-flush-inner!
          esek-iterator-born!
          esek-iterator-valid?
          (rename-out [esq-version esek-version])
          raise-updated
-         esek-invalidate-iterators!
-         esek-invalidate-iterators-except!
-         esek-become!)
+         esek-invalidate-iterators-except!)
 
 (struct/unchecked esq
         ([id #:mutable] [front #:mutable]
@@ -582,8 +579,7 @@
   (check-esek 'esek-assign! e1)
   (check-esek 'esek-assign! e2)
   (unless (eq? e1 e2)
-    (esek-become! e1 (esek-snapshot e2))
-    (esek-clear! e2))
+    (esek-become! e1 (esek-snapshot-and-clear! e2)))
   (void))
 
 ;; Append the contents of `other` to `e` at the given end.  As in the OCaml

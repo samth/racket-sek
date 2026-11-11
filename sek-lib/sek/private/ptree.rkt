@@ -42,8 +42,7 @@
          pt-drop
          pt-concat
          pt-for-each
-         pt-items-for-each
-         pt-of-list)
+         pt-items-for-each)
 
 ;; weight : total number of atomic elements below this level
 (struct/unchecked lvl (weight front middle back) #:authentic #:sealed)
@@ -638,7 +637,3 @@
     (define b (lvl-back t))
     (for ([i (in-fx-range (chunk-length b))])
       (proc (chunk-ref b i)))))
-
-(define (pt-of-list xs owner)
-  (for/fold ([t #f]) ([x (in-list xs)])
-    (pt-push-back t x 1 0 owner)))

@@ -61,9 +61,7 @@
          psek-map
          psek
          wrap-rep
-         psek-of-tree
-         normalize
-         rep->tree)
+         psek-of-tree)
 
 ;; ------------------------------------------------------------- the datatype
 
@@ -207,7 +205,8 @@
   (define k (bld-cap b))
   (define n (bld-n b))
   (define buf (bld-buf b))
-  (define partial
+  ;; the elements still in the buffer, as a chunk; built only where needed
+  (define (partial)
     (and (> n 0) (chunk-build k n (lambda (i) (unsafe-vector*-ref buf i)) no-owner)))
   (define front (bld-front b))
   (define held (bld-held b))
@@ -219,15 +218,16 @@
      (cond
        [(eqv? n 0) empty-psek]
        [(<= n (short-threshold)) (wrap-rep (vector-copy (bld-buf b) 0 n))]
-       [else (wrap-rep (make-level partial #f (make-chunk k no-owner)))])]
+       [else (wrap-rep (make-level (partial) #f (make-chunk k no-owner)))])]
     [else
      (define-values (mid back)
        (cond
-         [partial
-          (values (if held
-                      (pt-push-back (bld-middle b) held (chunk-weight held) 1 no-owner)
-                      (bld-middle b))
-                  partial)]
+         [(partial)
+          => (lambda (last)
+               (values (if held
+                           (pt-push-back (bld-middle b) held (chunk-weight held) 1 no-owner)
+                           (bld-middle b))
+                       last))]
          [held (values (bld-middle b) held)]
          [else (values (bld-middle b) (make-chunk k no-owner))]))
      (wrap-rep (normalize (make-level front mid back)))]))
@@ -525,16 +525,18 @@
     [(vector? r) (in-vector r)]
     [else (reader->sequence (lambda () (make-reader (list (cons r 0)))))]))
 
-;; Bulk construction claims a private ownership id and builds the tree with
-;; in-place pushes, then drops the id.  Because ids are never reused, the
-;; chunks are unowned from then on -- this is just a cheaper way of writing the
-;; same repeated psek-push-back.
+;; A short list becomes the compact vector directly; a longer one goes
+;; through a builder, which fills a chunk at a time.
 (define (list->psek xs)
+  (unless (list? xs) (raise-argument-error 'list->psek "list?" xs))
   (define n (length xs))
   (cond
     [(eqv? n 0) empty-psek]
     [(<= n (short-threshold)) (wrap-rep (list->vector xs))]
-    [else (wrap-rep (pt-of-list xs (fresh-id!)))]))
+    [else
+     (define b (make-psek-builder))
+     (for ([x (in-list xs)]) (psek-builder-add! b x))
+     (psek-builder-close b)]))
 
 ;; The push names are what the paper and the OCaml library call these, and
 ;; are kept so that code written against either goes on working.
